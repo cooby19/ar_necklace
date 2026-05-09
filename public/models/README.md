@@ -15,3 +15,4 @@ Model alignment recommendations:
 - Keep the model centered around the origin on X.
 - Keep the model width close to one scene unit if possible.
 - If the model appears backwards, upside down, or too large, adjust the values in `src/config/necklaces.js`.
+- If the GLB includes a modeled neck for occlusion, keep that neck as a separate Blender object/mesh and name it with a keyword from `occluderParts.nameIncludes` in `src/config/necklaces.js`, such as `neck`, `脖子`, or `圓柱體`. The app keeps matched parts invisible while writing them to the depth buffer, so necklace segments behind the neck can be hidden without drawing the neck model.

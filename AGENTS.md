@@ -38,7 +38,7 @@ npm run preview
 - `src/core/CameraStream.js`：封裝 `getUserMedia`、video 播放與停止。
 - `src/core/FaceTracker.js`：封裝 MediaPipe Face Mesh 初始化、每幀送入 video、結果回呼與錯誤回呼。
 - `src/core/NecklaceController.js`：把 landmarks 轉成項鍊位置、比例、旋轉與透明度。
-- `src/core/NecklaceScene.js`：Three.js 場景、GLB 載入、模型正規化、透明度、座標轉換與渲染。
+- `src/core/NecklaceScene.js`：Three.js 場景、GLB 載入、模型正規化、隱形深度遮擋、透明度、座標轉換與渲染。
 - `src/core/Smoother.js`：標量與向量的線性平滑器。
 - `src/core/DebugOverlay.js`：在 2D canvas 上畫 landmarks、下巴、脖子估算點、臉寬線與 debug 文字。
 - `public/models/README.md`：項鍊 GLB 模型放置與建模對位建議。
@@ -105,6 +105,7 @@ npm run preview
 - 建議 GLB pivot 放在項鍊上緣中心或佩戴 anchor 附近。
 - 建議模型正面面向相機，X 軸置中，寬度接近 1 個 Three.js 單位。
 - 若模型載入後太大、太小、反向、上下顛倒或 anchor 不準，先調 `src/config/necklaces.js`；若 pivot 差距太大，應回建模工具修 origin 後重新匯出。
+- 若 GLB 包含脖子遮擋模型，應保持為獨立物件或 mesh，並讓名稱符合 `occluderParts.nameIncludes`。程式會讓該模型不寫入顏色但寫入 Depth Buffer，用來遮住位於脖子後方的項鍊段。
 
 ## UI 與互動
 
@@ -119,7 +120,7 @@ npm run preview
 - 目前只支援單人臉部追蹤。
 - 最適合正面或接近正面的臉。
 - 脖子位置是 2D landmark 推估，不是真實人體或頸部 3D 重建。
-- 沒有遮擋、碰撞、衣領互動或高精度貼合。
+- 支援 GLB 內建脖子模型的隱形深度遮擋，但仍沒有物理碰撞、衣領互動或高精度人體貼合。
 - iOS Safari 的相機權限、WebGL 與效能可能依裝置和系統版本不同。
 - `TRACKING_TUNING` 中有 `minVisibilityConfidence`、`missingFaceFadeStep`、`presentFaceFadeStep`，目前程式主要使用 smoothing opacity 來處理淡入淡出，這些欄位未被核心流程直接使用。
 
@@ -132,4 +133,5 @@ npm run preview
 - 優先保持目前的純前端架構，不要引入後端，除非需求明確要求。
 - 修改追蹤效果時，優先從 `src/config/tuning.js` 與 `src/config/necklaces.js` 調整，再考慮改核心演算法。
 - 新增項鍊款式時，將 GLB 放入 `public/models/`，再於 `src/config/necklaces.js` 新增一筆設定。
+- README 與主要維護文件優先使用繁體中文撰寫；必要技術名詞可保留英文原文，但說明內容盡量中文化。
 - 如果改動相機、Face Mesh、WebGL 或座標轉換，建議用 `npm run dev` 在瀏覽器實測相機、模型載入、追蹤與 debug overlay。
