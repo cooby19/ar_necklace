@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Web AR Necklace MVP</title>
+  </head>
+  <body>
+    <main id="app" class="app-shell">
+      <section class="stage" aria-label="AR necklace preview">
+        <video id="cameraVideo" class="camera-video" autoplay playsinline muted></video>
+        <canvas id="threeCanvas" class="overlay-canvas"></canvas>
+        <canvas id="debugCanvas" class="overlay-canvas debug-canvas"></canvas>
+
+        <div class="status-panel" aria-live="polite">
+          <div class="status-row">
+            <span class="status-dot" id="trackingDot"></span>
+            <span id="trackingLabel">尚未啟動</span>
+          </div>
+          <div class="status-metrics" id="trackingMetrics">等待相機權限</div>
+        </div>
+      </section>
+
+      <aside class="controls" aria-label="AR controls">
+        <div class="brand-block">
+          <h1>Necklace AR MVP</h1>
+          <p>Face Mesh neck tracking demo</p>
+        </div>
+
+        <button id="startButton" class="primary-button" type="button">開始相機</button>
+
+        <label class="switch-row">
+          <input id="necklaceToggle" type="checkbox" checked />
+          <span>顯示項鍊</span>
+        </label>
+
+        <label class="switch-row">
+          <input id="debugToggle" type="checkbox" />
+          <span>Debug 視覺化</span>
+        </label>
+
+        <label class="select-row" for="necklaceSelect">
+          <span>項鍊款式</span>
+          <select id="necklaceSelect"></select>
+        </label>
+
+        <div id="errorBox" class="error-box" role="alert" hidden></div>
+      </aside>
+    </main>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
