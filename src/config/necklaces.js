@@ -3,7 +3,7 @@ export const NECKLACES = [
     id: 'default-necklace',
     label: '經典細鍊',
     description: '柔和日常款',
-    url: '/models/necklace.glb',
+    url: `${import.meta.env.BASE_URL}models/necklace.glb`,
     preserveAuthorOrigin: true,
     occluderParts: {
       // Mesh/object/material names containing these words become invisible depth occluders.

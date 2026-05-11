@@ -15,7 +15,7 @@ export class FaceTracker {
     this.faceMesh = new FaceMesh({
       // Assets are copied from node_modules into public/vendor so the MVP does
       // not need a CDN at runtime.
-      locateFile: (file) => `/vendor/mediapipe/face_mesh/${file}`,
+      locateFile: (file) => `${import.meta.env.BASE_URL}vendor/mediapipe/face_mesh/${file}`,
     });
 
     this.faceMesh.setOptions({
