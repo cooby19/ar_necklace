@@ -1,4 +1,37 @@
-import { FaceMesh } from '@mediapipe/face_mesh';
+const FACE_MESH_SCRIPT_URL = `${import.meta.env.BASE_URL}vendor/mediapipe/face_mesh/face_mesh.js`;
+
+let faceMeshScriptPromise = null;
+
+async function loadFaceMeshConstructor() {
+  if (window.FaceMesh) {
+    return window.FaceMesh;
+  }
+
+  if (!faceMeshScriptPromise) {
+    faceMeshScriptPromise = new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = FACE_MESH_SCRIPT_URL;
+      script.async = true;
+      script.crossOrigin = 'anonymous';
+      script.onload = () => {
+        if (window.FaceMesh) {
+          resolve(window.FaceMesh);
+          return;
+        }
+
+        faceMeshScriptPromise = null;
+        reject(new Error('MediaPipe FaceMesh 載入後沒有提供 FaceMesh 建構子。'));
+      };
+      script.onerror = () => {
+        faceMeshScriptPromise = null;
+        reject(new Error(`無法載入 MediaPipe Face Mesh：${FACE_MESH_SCRIPT_URL}`));
+      };
+      document.head.appendChild(script);
+    });
+  }
+
+  return faceMeshScriptPromise;
+}
 
 export class FaceTracker {
   constructor({ video, onResults, onError }) {
@@ -12,7 +45,9 @@ export class FaceTracker {
   }
 
   async init() {
-    this.faceMesh = new FaceMesh({
+    const FaceMeshConstructor = await loadFaceMeshConstructor();
+
+    this.faceMesh = new FaceMeshConstructor({
       // Assets are copied from node_modules into public/vendor so the MVP does
       // not need a CDN at runtime.
       locateFile: (file) => `${import.meta.env.BASE_URL}vendor/mediapipe/face_mesh/${file}`,

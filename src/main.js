@@ -248,6 +248,7 @@ async function startExperience() {
     setStatus('idle', '相機已啟動', '正在尋找臉部');
     elements.startButton.textContent = '相機運作中';
   } catch (error) {
+    camera.stop();
     showError(`無法啟動相機：${error.message ?? error}`);
     setStatus('error', '相機啟動失敗', '請確認瀏覽器權限與 HTTPS/localhost 環境');
     elements.stage.classList.remove('is-camera-on');

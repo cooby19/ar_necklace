@@ -42,8 +42,8 @@ export class NecklaceScene {
     this.currentModel = null;
     this.opacity = 0;
 
-    await this.assertGlbFile(config.url);
-    const gltf = await this.loader.loadAsync(config.url);
+    const glbBuffer = await this.fetchGlbFile(config.url);
+    const gltf = await this.parseGlbFile(glbBuffer, config.url);
     const model = gltf.scene;
     this.markOccluderParts(model);
     this.prepareModel(model);
@@ -54,27 +54,50 @@ export class NecklaceScene {
     return model;
   }
 
-  async assertGlbFile(url) {
-    const response = await fetch(url, {
-      headers: {
-        // Only the GLB header is needed: bytes 0-3 should be "glTF".
-        Range: 'bytes=0-15',
-      },
-    });
+  async fetchGlbFile(url) {
+    const response = await fetch(url, { cache: 'no-store' });
 
     if (!response.ok) {
       throw new Error(`模型檔無法讀取，HTTP ${response.status}`);
     }
 
-    const bytes = new Uint8Array(await response.arrayBuffer());
+    const buffer = await response.arrayBuffer();
+    this.assertGlbFile(buffer, url, response.headers.get('content-type') ?? '');
+    return buffer;
+  }
+
+  assertGlbFile(buffer, url, contentType) {
+    if (buffer.byteLength < 20) {
+      throw new Error(`模型檔太小，無法解析 GLB。請確認檔案位置是 ${url}`);
+    }
+
+    const view = new DataView(buffer);
+    const bytes = new Uint8Array(buffer, 0, 4);
     const magic = String.fromCharCode(...bytes.slice(0, 4));
-    const contentType = response.headers.get('content-type') ?? '';
 
     if (magic !== 'glTF') {
       const looksLikeHtml = contentType.includes('text/html') || magic.startsWith('<');
       const reason = looksLikeHtml ? '目前路徑回傳 HTML，通常代表檔案不存在或 URL 錯誤' : '檔案標頭不是 GLB';
       throw new Error(`${reason}。請確認檔案位置是 ${url}`);
     }
+
+    const version = view.getUint32(4, true);
+    const declaredLength = view.getUint32(8, true);
+
+    if (version !== 2) {
+      throw new Error(`GLB 版本 ${version} 不支援，請使用 glTF 2.0 匯出的 .glb。`);
+    }
+
+    if (declaredLength !== buffer.byteLength) {
+      throw new Error(
+        `GLB 檔案長度不完整或已損毀，標頭宣告 ${declaredLength} bytes，實際讀到 ${buffer.byteLength} bytes。`,
+      );
+    }
+  }
+
+  parseGlbFile(buffer, url) {
+    const assetBasePath = url.slice(0, url.lastIndexOf('/') + 1);
+    return this.loader.parseAsync(buffer, assetBasePath);
   }
 
   prepareModel(model) {
