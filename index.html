@@ -3,14 +3,22 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <title>Web AR Necklace MVP</title>
+    <title>AR Necklace Try-On</title>
   </head>
   <body>
     <main id="app" class="app-shell">
       <section class="stage" aria-label="AR necklace preview">
+        <div class="stage-placeholder" aria-hidden="true">
+          <div class="necklace-outline"></div>
+        </div>
         <video id="cameraVideo" class="camera-video" autoplay playsinline muted></video>
         <canvas id="threeCanvas" class="overlay-canvas"></canvas>
         <canvas id="debugCanvas" class="overlay-canvas debug-canvas"></canvas>
+
+        <div class="stage-topbar" aria-hidden="true">
+          <span class="studio-mark">Soft Jewelry Studio</span>
+          <span class="live-pill">Live AR</span>
+        </div>
 
         <div class="status-panel" aria-live="polite">
           <div class="status-row">
@@ -19,33 +27,125 @@
           </div>
           <div class="status-metrics" id="trackingMetrics">等待相機權限</div>
         </div>
+
+        <button
+          id="captureButton"
+          class="capture-button"
+          type="button"
+          aria-label="拍照產生分享美圖"
+          title="拍照產生分享美圖"
+          disabled
+        >
+          <svg aria-hidden="true" viewBox="0 0 24 24">
+            <path d="M14.5 5.5h-5L8.2 7.3H5.8A2.8 2.8 0 0 0 3 10.1v6.1A2.8 2.8 0 0 0 5.8 19h12.4a2.8 2.8 0 0 0 2.8-2.8v-6.1a2.8 2.8 0 0 0-2.8-2.8h-2.4L14.5 5.5Z" />
+            <circle cx="12" cy="13" r="3.4" />
+          </svg>
+        </button>
       </section>
 
       <aside class="controls" aria-label="AR controls">
-        <div class="brand-block">
-          <h1>Necklace AR MVP</h1>
-          <p>Face Mesh neck tracking demo</p>
-        </div>
+        <header class="brand-block">
+          <p class="eyebrow">Soft Jewelry Studio</p>
+          <h1>項鍊試戴</h1>
+          <p>柔和、乾淨的線上飾品預覽。</p>
+        </header>
 
-        <button id="startButton" class="primary-button" type="button">開始相機</button>
+        <section class="control-section" aria-label="試戴控制">
+          <div class="section-heading">
+            <span>試戴</span>
+            <span>Live preview</span>
+          </div>
 
-        <label class="switch-row">
-          <input id="necklaceToggle" type="checkbox" checked />
-          <span>顯示項鍊</span>
-        </label>
+          <button id="startButton" class="primary-button" type="button">
+            <span aria-hidden="true">◎</span>
+            開始相機
+          </button>
 
-        <label class="switch-row">
-          <input id="debugToggle" type="checkbox" />
-          <span>Debug 視覺化</span>
-        </label>
+          <label class="switch-row">
+            <span>
+              <strong>顯示項鍊</strong>
+              <small>佩戴預覽</small>
+            </span>
+            <input id="necklaceToggle" type="checkbox" checked />
+          </label>
+        </section>
 
-        <label class="select-row" for="necklaceSelect">
-          <span>項鍊款式</span>
-          <select id="necklaceSelect"></select>
-        </label>
+        <section class="control-section" aria-labelledby="styleHeading">
+          <div class="section-heading">
+            <span id="styleHeading">款式</span>
+            <span>Collection</span>
+          </div>
+
+          <div id="necklaceCards" class="necklace-card-list" role="radiogroup" aria-label="項鍊款式"></div>
+          <select id="necklaceSelect" hidden></select>
+        </section>
+
+        <section class="control-section" aria-labelledby="tuningHeading">
+          <div class="section-heading">
+            <span id="tuningHeading">微調</span>
+            <span>Fit</span>
+          </div>
+
+          <div class="tuning-list">
+            <label class="range-row" for="verticalOffsetRange">
+              <span>上下位置</span>
+              <output id="verticalOffsetValue" for="verticalOffsetRange">0</output>
+            </label>
+            <input id="verticalOffsetRange" class="range-control" type="range" min="-60" max="60" step="1" value="0" />
+
+            <label class="range-row" for="scaleRange">
+              <span>大小</span>
+              <output id="scaleValue" for="scaleRange">100%</output>
+            </label>
+            <input id="scaleRange" class="range-control" type="range" min="80" max="120" step="1" value="100" />
+
+            <label class="range-row" for="rotationRange">
+              <span>旋轉</span>
+              <output id="rotationValue" for="rotationRange">0°</output>
+            </label>
+            <input id="rotationRange" class="range-control" type="range" min="-15" max="15" step="1" value="0" />
+          </div>
+
+          <button id="resetTuningButton" class="secondary-button" type="button">重置微調</button>
+        </section>
+
+        <details class="advanced-panel">
+          <summary>進階</summary>
+          <label class="switch-row">
+            <span>
+              <strong>Debug 視覺化</strong>
+              <small>landmarks overlay</small>
+            </span>
+            <input id="debugToggle" type="checkbox" />
+          </label>
+        </details>
 
         <div id="errorBox" class="error-box" role="alert" hidden></div>
       </aside>
+
+      <div id="shareSheet" class="share-sheet" hidden>
+        <button class="share-sheet__backdrop" type="button" aria-label="關閉分享預覽" data-close-share></button>
+        <section class="share-card" role="dialog" aria-modal="true" aria-labelledby="shareTitle">
+          <header class="share-card__header">
+            <div>
+              <p class="eyebrow">Soft Jewelry Studio</p>
+              <h2 id="shareTitle">試戴美圖</h2>
+            </div>
+            <button class="icon-button" type="button" aria-label="關閉分享預覽" data-close-share>
+              <svg aria-hidden="true" viewBox="0 0 24 24">
+                <path d="m6 6 12 12M18 6 6 18" />
+              </svg>
+            </button>
+          </header>
+
+          <img id="shareImage" class="share-image" alt="已產生的項鍊試戴分享圖" />
+
+          <div class="share-actions">
+            <button id="downloadCaptureButton" class="secondary-button" type="button">下載圖片</button>
+            <button id="shareCaptureButton" class="primary-button" type="button">分享</button>
+          </div>
+        </section>
+      </div>
     </main>
     <script type="module" src="/src/main.js"></script>
   </body>

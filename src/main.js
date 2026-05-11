@@ -11,15 +11,39 @@ const elements = {
   video: document.querySelector('#cameraVideo'),
   threeCanvas: document.querySelector('#threeCanvas'),
   debugCanvas: document.querySelector('#debugCanvas'),
+  stagePlaceholder: document.querySelector('.stage-placeholder'),
+  captureButton: document.querySelector('#captureButton'),
   startButton: document.querySelector('#startButton'),
   necklaceToggle: document.querySelector('#necklaceToggle'),
   debugToggle: document.querySelector('#debugToggle'),
+  necklaceCards: document.querySelector('#necklaceCards'),
   necklaceSelect: document.querySelector('#necklaceSelect'),
+  verticalOffsetRange: document.querySelector('#verticalOffsetRange'),
+  verticalOffsetValue: document.querySelector('#verticalOffsetValue'),
+  scaleRange: document.querySelector('#scaleRange'),
+  scaleValue: document.querySelector('#scaleValue'),
+  rotationRange: document.querySelector('#rotationRange'),
+  rotationValue: document.querySelector('#rotationValue'),
+  resetTuningButton: document.querySelector('#resetTuningButton'),
+  shareSheet: document.querySelector('#shareSheet'),
+  shareImage: document.querySelector('#shareImage'),
+  downloadCaptureButton: document.querySelector('#downloadCaptureButton'),
+  shareCaptureButton: document.querySelector('#shareCaptureButton'),
+  closeShareButtons: document.querySelectorAll('[data-close-share]'),
   errorBox: document.querySelector('#errorBox'),
   trackingDot: document.querySelector('#trackingDot'),
   trackingLabel: document.querySelector('#trackingLabel'),
   trackingMetrics: document.querySelector('#trackingMetrics'),
 };
+
+const TUNING_DEFAULTS = {
+  verticalOffset: 0,
+  scale: 100,
+  rotation: 0,
+};
+
+const SHARE_IMAGE_SIZE = 1080;
+const SHARE_FILE_NAME = 'soft-jewelry-try-on.png';
 
 const state = {
   cameraStarted: false,
@@ -28,6 +52,13 @@ const state = {
   lastLandmarks: null,
   lastDebugData: null,
   selectedNecklace: NECKLACES[0],
+  captureDataUrl: '',
+  captureBlob: null,
+  adjustments: {
+    verticalOffset: 0,
+    scaleMultiplier: 1,
+    rotationOffset: 0,
+  },
 };
 
 const camera = new CameraStream(elements.video);
@@ -52,25 +83,52 @@ init();
 function init() {
   populateNecklaceSelect();
   wireUi();
+  updateTuningFromControls();
   loadSelectedNecklace();
   animate();
 }
 
 function populateNecklaceSelect() {
   elements.necklaceSelect.innerHTML = '';
+  elements.necklaceCards.innerHTML = '';
 
   NECKLACES.forEach((necklace) => {
     const option = document.createElement('option');
     option.value = necklace.id;
     option.textContent = necklace.label;
     elements.necklaceSelect.append(option);
+
+    const card = document.createElement('button');
+    card.className = 'necklace-card';
+    card.type = 'button';
+    card.dataset.necklaceId = necklace.id;
+    card.setAttribute('role', 'radio');
+
+    const preview = document.createElement('span');
+    preview.className = 'necklace-card__preview';
+    preview.setAttribute('aria-hidden', 'true');
+
+    const content = document.createElement('span');
+    content.className = 'necklace-card__content';
+
+    const label = document.createElement('strong');
+    label.textContent = necklace.label;
+
+    const description = document.createElement('small');
+    description.textContent = necklace.description ?? '試戴款式';
+
+    content.append(label, description);
+    card.append(preview, content);
+    elements.necklaceCards.append(card);
   });
 
   elements.necklaceSelect.value = state.selectedNecklace.id;
+  syncNecklaceCards();
 }
 
 function wireUi() {
   elements.startButton.addEventListener('click', startExperience);
+  elements.captureButton.addEventListener('click', handleCapture);
 
   elements.debugToggle.addEventListener('change', () => {
     debugOverlay.setEnabled(elements.debugToggle.checked);
@@ -82,24 +140,89 @@ function wireUi() {
     }
   });
 
-  elements.necklaceSelect.addEventListener('change', () => {
-    const next = NECKLACES.find((necklace) => necklace.id === elements.necklaceSelect.value);
-    if (!next) return;
-    state.selectedNecklace = next;
-    controller.reset();
-    loadSelectedNecklace();
+  elements.necklaceCards.addEventListener('click', (event) => {
+    const card = event.target.closest('[data-necklace-id]');
+    if (!card) return;
+    selectNecklace(card.dataset.necklaceId);
   });
+
+  elements.necklaceSelect.addEventListener('change', () => {
+    selectNecklace(elements.necklaceSelect.value);
+  });
+
+  elements.verticalOffsetRange.addEventListener('input', updateTuningFromControls);
+  elements.scaleRange.addEventListener('input', updateTuningFromControls);
+  elements.rotationRange.addEventListener('input', updateTuningFromControls);
+  elements.resetTuningButton.addEventListener('click', resetTuningControls);
+  elements.downloadCaptureButton.addEventListener('click', downloadCapture);
+  elements.shareCaptureButton.addEventListener('click', shareCapture);
+  elements.closeShareButtons.forEach((button) => {
+    button.addEventListener('click', closeShareSheet);
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && !elements.shareSheet.hidden) {
+      closeShareSheet();
+    }
+  });
+}
+
+function selectNecklace(necklaceId) {
+  const next = NECKLACES.find((necklace) => necklace.id === necklaceId);
+  if (!next) return;
+
+  elements.necklaceSelect.value = next.id;
+  syncNecklaceCards();
+
+  if (next.id === state.selectedNecklace.id) return;
+
+  state.selectedNecklace = next;
+  controller.reset();
+  loadSelectedNecklace();
+}
+
+function syncNecklaceCards() {
+  const cards = elements.necklaceCards.querySelectorAll('[data-necklace-id]');
+  cards.forEach((card) => {
+    const isSelected = card.dataset.necklaceId === state.selectedNecklace.id;
+    card.classList.toggle('is-selected', isSelected);
+    card.setAttribute('aria-checked', String(isSelected));
+  });
+}
+
+function resetTuningControls() {
+  elements.verticalOffsetRange.value = String(TUNING_DEFAULTS.verticalOffset);
+  elements.scaleRange.value = String(TUNING_DEFAULTS.scale);
+  elements.rotationRange.value = String(TUNING_DEFAULTS.rotation);
+  updateTuningFromControls();
+}
+
+function updateTuningFromControls() {
+  const verticalOffset = Number(elements.verticalOffsetRange.value);
+  const scale = Number(elements.scaleRange.value);
+  const rotation = Number(elements.rotationRange.value);
+
+  state.adjustments = {
+    verticalOffset: verticalOffset / 1000,
+    scaleMultiplier: scale / 100,
+    rotationOffset: (rotation * Math.PI) / 180,
+  };
+
+  controller.setAdjustments(state.adjustments);
+  elements.verticalOffsetValue.textContent = formatSignedNumber(verticalOffset);
+  elements.scaleValue.textContent = `${scale}%`;
+  elements.rotationValue.textContent = `${formatSignedNumber(rotation)}°`;
 }
 
 async function loadSelectedNecklace() {
   state.modelLoaded = false;
   clearError();
-  setStatus('loading', '載入模型中', state.selectedNecklace.url);
+  setStatus('loading', '款式載入中', state.selectedNecklace.label);
 
   try {
     await scene.loadNecklace(state.selectedNecklace);
     state.modelLoaded = true;
-    setStatus('idle', '模型已載入', '可以開始相機');
+    setStatus('idle', '款式已就緒', '開啟相機後即可試戴');
   } catch (error) {
     const message =
       `無法載入 ${state.selectedNecklace.url}。請確認 .glb 已放在 public/models/necklace.glb。` +
@@ -120,14 +243,229 @@ async function startExperience() {
     debugOverlay.resize();
     await faceTracker.start();
     state.cameraStarted = true;
-    setStatus('idle', '相機已啟動', '正在等待臉部偵測');
+    elements.stage.classList.add('is-camera-on');
+    elements.captureButton.disabled = false;
+    setStatus('idle', '相機已啟動', '正在尋找臉部');
     elements.startButton.textContent = '相機運作中';
   } catch (error) {
     showError(`無法啟動相機：${error.message ?? error}`);
     setStatus('error', '相機啟動失敗', '請確認瀏覽器權限與 HTTPS/localhost 環境');
+    elements.stage.classList.remove('is-camera-on');
+    elements.captureButton.disabled = true;
     elements.startButton.disabled = false;
     elements.startButton.textContent = '開始相機';
   }
+}
+
+async function handleCapture() {
+  clearError();
+
+  if (!state.cameraStarted || elements.video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+    setStatus('idle', '尚未開啟相機', '請先啟動相機再拍照');
+    return;
+  }
+
+  if (!state.hasFace) {
+    setStatus('idle', '尚未偵測到臉', '請將臉保持在畫面中央後再拍照');
+    return;
+  }
+
+  if (!elements.necklaceToggle.checked) {
+    setStatus('idle', '項鍊目前隱藏', '請先開啟項鍊預覽再拍照');
+    return;
+  }
+
+  elements.captureButton.disabled = true;
+  elements.captureButton.classList.add('is-capturing');
+
+  try {
+    scene.render();
+    const captureCanvas = createBrandedCapture();
+    state.captureDataUrl = captureCanvas.toDataURL('image/png');
+    state.captureBlob = await canvasToBlob(captureCanvas);
+    elements.shareImage.src = state.captureDataUrl;
+    elements.shareSheet.hidden = false;
+    setStatus('tracking', '美圖已產出', '可下載或分享給朋友');
+  } catch (error) {
+    showError(`無法產生美圖：${error.message ?? error}`);
+  } finally {
+    elements.captureButton.disabled = !state.cameraStarted;
+    elements.captureButton.classList.remove('is-capturing');
+  }
+}
+
+function createBrandedCapture() {
+  const stageRect = elements.stage.getBoundingClientRect();
+  const sourceWidth = Math.max(1, Math.round(stageRect.width));
+  const sourceHeight = Math.max(1, Math.round(stageRect.height));
+  const sourceCanvas = document.createElement('canvas');
+  sourceCanvas.width = sourceWidth;
+  sourceCanvas.height = sourceHeight;
+
+  const sourceContext = sourceCanvas.getContext('2d');
+  drawMirroredCoverVideo(sourceContext, elements.video, sourceWidth, sourceHeight);
+  sourceContext.drawImage(elements.threeCanvas, 0, 0, sourceWidth, sourceHeight);
+
+  const outputCanvas = document.createElement('canvas');
+  outputCanvas.width = SHARE_IMAGE_SIZE;
+  outputCanvas.height = SHARE_IMAGE_SIZE;
+  const outputContext = outputCanvas.getContext('2d');
+
+  outputContext.fillStyle = '#fffaf7';
+  outputContext.fillRect(0, 0, SHARE_IMAGE_SIZE, SHARE_IMAGE_SIZE);
+  drawCoverImage(outputContext, sourceCanvas, 0, 0, SHARE_IMAGE_SIZE, SHARE_IMAGE_SIZE);
+  drawShareImagePolish(outputContext, SHARE_IMAGE_SIZE);
+  drawBrandLogo(outputContext);
+
+  return outputCanvas;
+}
+
+function drawMirroredCoverVideo(context, video, width, height) {
+  const videoWidth = video.videoWidth || width;
+  const videoHeight = video.videoHeight || height;
+  const scale = Math.max(width / videoWidth, height / videoHeight);
+  const drawWidth = videoWidth * scale;
+  const drawHeight = videoHeight * scale;
+  const drawX = (width - drawWidth) / 2;
+  const drawY = (height - drawHeight) / 2;
+
+  context.save();
+  context.translate(width, 0);
+  context.scale(-1, 1);
+  context.drawImage(video, drawX, drawY, drawWidth, drawHeight);
+  context.restore();
+}
+
+function drawCoverImage(context, image, x, y, width, height) {
+  const sourceWidth = image.width;
+  const sourceHeight = image.height;
+  const scale = Math.max(width / sourceWidth, height / sourceHeight);
+  const cropWidth = width / scale;
+  const cropHeight = height / scale;
+  const cropX = (sourceWidth - cropWidth) / 2;
+  const cropY = (sourceHeight - cropHeight) / 2;
+  context.drawImage(image, cropX, cropY, cropWidth, cropHeight, x, y, width, height);
+}
+
+function drawShareImagePolish(context, size) {
+  const topGradient = context.createLinearGradient(0, 0, 0, size * 0.28);
+  topGradient.addColorStop(0, 'rgba(47, 42, 42, 0.2)');
+  topGradient.addColorStop(1, 'rgba(47, 42, 42, 0)');
+  context.fillStyle = topGradient;
+  context.fillRect(0, 0, size, size * 0.32);
+
+  const bottomGradient = context.createLinearGradient(0, size * 0.62, 0, size);
+  bottomGradient.addColorStop(0, 'rgba(255, 250, 247, 0)');
+  bottomGradient.addColorStop(1, 'rgba(255, 250, 247, 0.72)');
+  context.fillStyle = bottomGradient;
+  context.fillRect(0, size * 0.58, size, size * 0.42);
+
+  context.strokeStyle = 'rgba(255, 250, 247, 0.72)';
+  context.lineWidth = 18;
+  context.strokeRect(9, 9, size - 18, size - 18);
+}
+
+function drawBrandLogo(context) {
+  const x = 56;
+  const y = 56;
+  const width = 426;
+  const height = 78;
+
+  context.save();
+  drawRoundedRect(context, x, y, width, height, 24);
+  context.fillStyle = 'rgba(255, 250, 247, 0.88)';
+  context.fill();
+  context.strokeStyle = 'rgba(234, 219, 221, 0.9)';
+  context.lineWidth = 2;
+  context.stroke();
+
+  context.beginPath();
+  context.arc(x + 40, y + 39, 24, 0, Math.PI * 2);
+  context.fillStyle = '#c8a96a';
+  context.fill();
+
+  context.fillStyle = '#fffaf7';
+  context.font = '800 18px Inter, system-ui, sans-serif';
+  context.textBaseline = 'middle';
+  context.fillText('SJ', x + 28, y + 40);
+
+  context.fillStyle = '#2f2a2a';
+  context.font = '800 25px Inter, system-ui, sans-serif';
+  context.fillText('Soft Jewelry Studio', x + 82, y + 34);
+
+  context.fillStyle = '#a96f78';
+  context.font = '600 15px Inter, system-ui, sans-serif';
+  context.fillText('AR Necklace Try-On', x + 84, y + 56);
+  context.restore();
+}
+
+function drawRoundedRect(context, x, y, width, height, radius) {
+  const safeRadius = Math.min(radius, width / 2, height / 2);
+  context.beginPath();
+  context.moveTo(x + safeRadius, y);
+  context.lineTo(x + width - safeRadius, y);
+  context.quadraticCurveTo(x + width, y, x + width, y + safeRadius);
+  context.lineTo(x + width, y + height - safeRadius);
+  context.quadraticCurveTo(x + width, y + height, x + width - safeRadius, y + height);
+  context.lineTo(x + safeRadius, y + height);
+  context.quadraticCurveTo(x, y + height, x, y + height - safeRadius);
+  context.lineTo(x, y + safeRadius);
+  context.quadraticCurveTo(x, y, x + safeRadius, y);
+  context.closePath();
+}
+
+function canvasToBlob(canvas) {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (blob) {
+        resolve(blob);
+        return;
+      }
+      reject(new Error('瀏覽器無法輸出圖片'));
+    }, 'image/png');
+  });
+}
+
+function downloadCapture() {
+  if (!state.captureDataUrl) return;
+
+  const link = document.createElement('a');
+  link.href = state.captureDataUrl;
+  link.download = SHARE_FILE_NAME;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setStatus('idle', '圖片已下載', '可以上傳 Instagram 或傳給朋友');
+}
+
+async function shareCapture() {
+  if (!state.captureBlob) return;
+
+  const file = new File([state.captureBlob], SHARE_FILE_NAME, { type: 'image/png' });
+  const sharePayload = {
+    files: [file],
+    title: '我的項鍊試戴',
+    text: 'Soft Jewelry Studio AR Necklace Try-On',
+  };
+
+  if (navigator.canShare?.(sharePayload)) {
+    try {
+      await navigator.share(sharePayload);
+      setStatus('idle', '分享面板已開啟', '選擇 Instagram、訊息或好友');
+    } catch (error) {
+      if (error.name !== 'AbortError') {
+        showError(`分享失敗：${error.message ?? error}`);
+      }
+    }
+    return;
+  }
+
+  downloadCapture();
+  setStatus('idle', '此瀏覽器不支援直接分享', '已改為下載圖片');
+}
+
+function closeShareSheet() {
+  elements.shareSheet.hidden = true;
 }
 
 function handleFaceResults(results) {
@@ -150,21 +488,28 @@ function updateTrackingStatus() {
   if (!state.cameraStarted) return;
 
   if (!state.hasFace) {
-    setStatus('idle', '未偵測到臉', '項鍊已平滑淡出');
+    setStatus('idle', '正在尋找臉部', '請將臉保持在畫面中央');
     return;
   }
 
   if (!state.lastDebugData) {
-    setStatus('idle', '追蹤準備中', '等待 landmarks 穩定');
+    setStatus('idle', '貼合準備中', '等待臉部資訊穩定');
     return;
   }
 
   const data = state.lastDebugData;
   setStatus(
     'tracking',
-    '正在追蹤',
-    `neck x/y: ${data.neckPoint.x.toFixed(3)}, ${data.neckPoint.y.toFixed(3)} · scale ${data.scale.toFixed(2)} · yaw ${data.rotationY.toFixed(2)}`,
+    '正在試戴',
+    elements.debugToggle.checked
+      ? `neck x/y: ${data.neckPoint.x.toFixed(3)}, ${data.neckPoint.y.toFixed(3)} · scale ${data.scale.toFixed(2)} · yaw ${data.rotationY.toFixed(2)}`
+      : '貼合中，保持自然正面即可',
   );
+}
+
+function formatSignedNumber(value) {
+  if (value > 0) return `+${value}`;
+  return String(value);
 }
 
 function setStatus(kind, label, metrics) {

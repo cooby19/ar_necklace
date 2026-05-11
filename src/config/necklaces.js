@@ -1,7 +1,8 @@
 export const NECKLACES = [
   {
     id: 'default-necklace',
-    label: 'Default necklace',
+    label: '經典細鍊',
+    description: '柔和日常款',
     url: '/models/necklace.glb',
     preserveAuthorOrigin: true,
     occluderParts: {

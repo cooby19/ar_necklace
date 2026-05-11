@@ -12,6 +12,7 @@ export class NecklaceScene {
       canvas,
       alpha: true,
       antialias: true,
+      preserveDrawingBuffer: true,
     });
     this.loader = new GLTFLoader();
     this.necklaceRoot = new THREE.Group();

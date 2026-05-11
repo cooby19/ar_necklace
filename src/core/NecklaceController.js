@@ -10,7 +10,19 @@ export class NecklaceController {
     this.rotationSmoother = new ScalarSmoother(TRACKING_TUNING.smoothing.rotation, 0);
     this.yawSmoother = new ScalarSmoother(TRACKING_TUNING.smoothing.yaw, 0);
     this.opacitySmoother = new ScalarSmoother(TRACKING_TUNING.smoothing.opacity, 0);
+    this.adjustments = {
+      verticalOffset: 0,
+      scaleMultiplier: 1,
+      rotationOffset: 0,
+    };
     this.lastDebugData = null;
+  }
+
+  setAdjustments(adjustments) {
+    this.adjustments = {
+      ...this.adjustments,
+      ...adjustments,
+    };
   }
 
   updateFromLandmarks(landmarks, shouldShowNecklace) {
@@ -23,8 +35,12 @@ export class NecklaceController {
     const neckPoint = this.estimateNeckPoint(metrics);
     const worldPosition = this.scene.screenToWorld(neckPoint);
     const worldFaceWidth = this.scene.normalizedLengthToWorldX(metrics.faceWidth);
-    const targetScale = clamp(worldFaceWidth * TRACKING_TUNING.necklaceWidthToFaceWidth, 0.18, 2.4);
-    const targetRotation = -metrics.roll;
+    const targetScale = clamp(
+      worldFaceWidth * TRACKING_TUNING.necklaceWidthToFaceWidth * this.adjustments.scaleMultiplier,
+      0.18,
+      2.4,
+    );
+    const targetRotation = -metrics.roll + this.adjustments.rotationOffset;
     const targetYaw = this.estimateYaw(metrics);
     const targetOpacity = shouldShowNecklace ? 1 : 0;
 
@@ -64,7 +80,7 @@ export class NecklaceController {
 
     return {
       x,
-      y,
+      y: y + this.adjustments.verticalOffset,
       z: metrics.chin.z ?? 0,
     };
   }
