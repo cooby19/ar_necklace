@@ -79,10 +79,12 @@ export class NecklaceScene {
   prepareModel(model) {
     const box = new THREE.Box3().setFromObject(model);
     const size = box.getSize(new THREE.Vector3());
-    const center = box.getCenter(new THREE.Vector3());
 
-    // Normalize the asset around origin so tracking transforms behave predictably.
-    model.position.sub(center);
+    if (!this.modelConfig?.preserveAuthorOrigin) {
+      const center = box.getCenter(new THREE.Vector3());
+      // Legacy assets may be authored away from origin, so center them unless the GLB origin is the anchor.
+      model.position.sub(center);
+    }
 
     const maxDimension = Math.max(size.x, size.y, size.z);
     if (maxDimension > 0) {
@@ -178,10 +180,10 @@ export class NecklaceScene {
     });
   }
 
-  updateTransform({ position, scale, rotationZ }) {
+  updateTransform({ position, scale, rotationY, rotationZ }) {
     this.necklaceRoot.position.set(position.x, position.y, position.z);
     this.necklaceRoot.scale.setScalar(scale);
-    this.necklaceRoot.rotation.set(0, 0, rotationZ);
+    this.necklaceRoot.rotation.set(0, rotationY, rotationZ);
   }
 
   screenToWorld(normalizedPoint) {

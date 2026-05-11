@@ -49,6 +49,8 @@ export function computeFaceMetrics(landmarks) {
   const faceWidth = distance2D(leftCheek, rightCheek);
   const faceHeight = distance2D(forehead, chin);
   const roll = Math.atan2(rightCheek.y - leftCheek.y, rightCheek.x - leftCheek.x);
+  const yawSignal =
+    noseTip && faceWidth > 0 ? clamp((noseTip.x - cheekCenter.x) / faceWidth, -0.6, 0.6) : 0;
 
   return {
     chin,
@@ -60,5 +62,6 @@ export function computeFaceMetrics(landmarks) {
     faceWidth,
     faceHeight,
     roll,
+    yawSignal,
   };
 }

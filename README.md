@@ -71,6 +71,7 @@ public/models/necklace.glb
   id: 'silver-chain',
   label: '銀色鍊款',
   url: '/models/silver-chain.glb',
+  preserveAuthorOrigin: true,
   occluderParts: {
     nameIncludes: ['neck', '脖', '頸', '圓柱'],
   },
@@ -89,6 +90,8 @@ public/models/necklace.glb
 ## 脖子遮擋模型
 
 如果 GLB 裡有用來對位或遮擋的脖子模型，請在 Blender 中保持它是獨立物件或獨立 mesh，並把名稱命名成 `neck`、`neck_helper`、`脖子`、`頸部`、`圓柱體` 等可被 `occluderParts.nameIncludes` 命中的名稱。
+
+目前預設會保留 Blender 匯出的作者原點，也就是 `preserveAuthorOrigin: true`。建議把整組「脖子 + 項鍊」的 origin 放在脖子正面、項鍊實際掛上的位置。程式會把這個 origin 對準偵測到的脖子 anchor，因此它就是 AR 穿戴時的掛點。
 
 被命中的脖子模型會保留在 Three.js 場景裡，但使用特殊深度材質：
 
@@ -147,13 +150,21 @@ scale = faceWidthWorld * necklaceWidthToFaceWidth
 - `neckOffsetFromChin`：項鍊 anchor 在下巴下方的距離，比例基準是臉高。
 - `necklaceWidthToFaceWidth`：項鍊相對臉寬的寬度比例。
 - `necklaceVerticalLift`：項鍊垂直微調，負值會往上。
+- `yawStrength`：側臉時項鍊繞 Y 軸旋轉的強度，數值越大越有側視透視感。
+- `yawDirection`：側臉旋轉方向，若轉側臉時項鍊往反方向旋轉，將 `1` 改成 `-1`。
+- `maxYawRadians`：側臉旋轉的最大角度限制，避免極端 landmarks 讓模型翻太多。
+- `yawAnchorBlend`：側臉時 anchor 從下巴往臉側中心靠近的比例，數值越大越貼近側邊脖子。
+- `yawPositionShift`：側臉時項鍊 anchor 的小幅水平補償。
+- `sideViewVerticalLift`：側臉時項鍊 anchor 的垂直補償，負值會往上貼近下顎與脖子交界。
 - `smoothing.position`：位置平滑，數值越小越穩但延遲越高。
 - `smoothing.scale`：縮放平滑。
 - `smoothing.rotation`：旋轉平滑。
+- `smoothing.yaw`：側臉 Y 軸旋轉平滑。
 - `smoothing.opacity`：淡入淡出平滑。
 
 模型資產修正參數在 `src/config/necklaces.js`：
 
+- `preserveAuthorOrigin`：是否保留 GLB 作者原點作為 AR anchor。新模型建議設為 `true`。
 - `occluderParts.nameIncludes`：哪些物件、mesh 或材質名稱要被視為隱形遮擋模型。
 - `baseScale`：模型本身比例修正。
 - `offsetX` / `offsetY` / `offsetZ`：模型 anchor 微調。
@@ -164,11 +175,13 @@ scale = faceWidthWorld * necklaceWidthToFaceWidth
 為了更容易對位：
 
 - 項鍊 pivot 建議放在項鍊上緣中心或佩戴中心。
+- 整組「脖子 + 項鍊」的 origin 建議放在脖子正面、項鍊佩戴掛點。
 - 模型正面應面向相機。
 - 模型左右應以 X 軸置中。
 - 模型寬度建議接近 1 個 Three.js 單位。
 - 脖子遮擋模型建議略大於實際要遮擋的項鍊後半段，避免邊緣漏出。
 - 項鍊後半段應在模型空間中位於脖子遮擋模型後方，才能被深度測試擋住。
+- 若側臉時項鍊仍太像正面貼圖，優先調高 `yawStrength`；若旋轉太誇張，降低 `yawStrength` 或 `maxYawRadians`。
 
 若模型載入後偏移明顯，可以先用 `src/config/necklaces.js` 微調。如果模型本身 pivot 在遠離項鍊的位置，建議回到 Blender 或建模工具把 origin 設到項鍊上緣中心，再重新匯出 GLB。
 

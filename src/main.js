@@ -163,7 +163,7 @@ function updateTrackingStatus() {
   setStatus(
     'tracking',
     '正在追蹤',
-    `neck x/y: ${data.neckPoint.x.toFixed(3)}, ${data.neckPoint.y.toFixed(3)} · scale ${data.scale.toFixed(2)}`,
+    `neck x/y: ${data.neckPoint.x.toFixed(3)}, ${data.neckPoint.y.toFixed(3)} · scale ${data.scale.toFixed(2)} · yaw ${data.rotationY.toFixed(2)}`,
   );
 }
 
