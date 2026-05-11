@@ -38,7 +38,7 @@ npm run preview
 - `src/core/CameraStream.js`：封裝 `getUserMedia`、video 播放與停止。
 - `src/core/FaceTracker.js`：封裝 MediaPipe Face Mesh 初始化、每幀送入 video、結果回呼與錯誤回呼。
 - `src/core/NecklaceController.js`：把 landmarks 轉成項鍊位置、比例、旋轉與透明度。
-- `src/core/NecklaceScene.js`：Three.js 場景、GLB 載入、模型正規化、透明度、座標轉換與渲染。
+- `src/core/NecklaceScene.js`：Three.js 場景、GLB 載入、模型正規化、隱形深度遮擋、透明度、座標轉換與渲染。
 - `src/core/Smoother.js`：標量與向量的線性平滑器。
 - `src/core/DebugOverlay.js`：在 2D canvas 上畫 landmarks、下巴、脖子估算點、臉寬線與 debug 文字。
 - `public/models/README.md`：項鍊 GLB 模型放置與建模對位建議。
@@ -54,8 +54,8 @@ npm run preview
 5. 每個 animation frame 將 video frame 送進 Face Mesh。
 6. 偵測到臉時，`NecklaceController` 呼叫 `computeFaceMetrics()` 取得臉部量測。
 7. 控制器根據下巴位置和臉高估算脖子點，轉換到 Three.js world 座標。
-8. 控制器使用臉寬推算項鍊 scale，使用左右臉側連線推算 roll，並套用平滑。
-9. `NecklaceScene` 更新項鍊 group 的 position、scale、rotation 與材質 opacity。
+8. 控制器使用臉寬推算項鍊 scale，使用左右臉側連線推算 roll，使用鼻尖相對臉中心偏移估算 yaw，並套用平滑。
+9. `NecklaceScene` 更新項鍊 group 的 position、scale、rotation 與材質 opacity。若款式設定 `preserveAuthorOrigin: true`，GLB 作者原點會保留為 AR anchor。
 10. 未偵測到臉或關閉顯示項鍊時，項鍊會平滑淡出。
 
 ## Landmark 與追蹤假設
@@ -74,6 +74,7 @@ npm run preview
 - 臉寬：左右臉側的 2D 距離。
 - 臉高：額頭到下巴的 2D 距離。
 - 頭部傾斜：左右臉側連線的 `atan2`。
+- 側臉 yaw：鼻尖相對左右臉側中心的水平偏移，乘上 `yawStrength` 後 clamp 到 `maxYawRadians`。
 - 脖子中心：`chin.y + faceHeight * neckOffsetFromChin + necklaceVerticalLift`，X 使用下巴 X。
 - 項鍊 scale：world space 的臉寬乘上 `necklaceWidthToFaceWidth`，並 clamp 在 `0.18` 到 `2.4`。
 
@@ -84,15 +85,23 @@ npm run preview
 - `neckOffsetFromChin`：項鍊 anchor 在下巴下方的距離，比例基準是臉高。
 - `necklaceWidthToFaceWidth`：項鍊相對臉寬的寬度比例。
 - `necklaceVerticalLift`：項鍊垂直微調，負值往上。
+- `yawStrength`：側臉時項鍊繞 Y 軸旋轉的強度。
+- `yawDirection`：側臉旋轉方向，若模型往反方向轉可在 `1` 和 `-1` 間切換。
+- `maxYawRadians`：側臉 Y 軸旋轉最大值。
+- `yawAnchorBlend`：側臉時 anchor 從下巴往臉側中心靠近的比例。
+- `yawPositionShift`：側臉時項鍊 anchor 的小幅水平補償。
+- `sideViewVerticalLift`：側臉時項鍊 anchor 的垂直補償。
 - `smoothing.position`：位置平滑，數值越小越穩但延遲越高。
 - `smoothing.scale`：縮放平滑。
 - `smoothing.rotation`：旋轉平滑。
+- `smoothing.yaw`：側臉旋轉平滑。
 - `smoothing.opacity`：淡入淡出平滑。
 - `debug.landmarkSampleStep`：debug canvas 抽樣繪製 landmarks 的間隔。
 - `debug.pointRadius`：debug canvas landmark 點半徑。
 
 模型修正主要調整 `src/config/necklaces.js`：
 
+- `preserveAuthorOrigin`：保留 GLB 作者原點作為穿戴 anchor，新模型建議開啟。
 - `baseScale`：模型自身大小修正。
 - `offsetX` / `offsetY` / `offsetZ`：模型 anchor 微調。
 - `rotationX` / `rotationY` / `rotationZ`：模型朝向修正，單位是 radians。
@@ -101,10 +110,12 @@ npm run preview
 
 - 預設模型必須是有效 GLB，且檔案標頭應為 `glTF`。
 - `NecklaceScene.assertGlbFile()` 會用 `Range: bytes=0-15` 先檢查模型 URL，若路徑回 HTML 或檔案不是 GLB 會報錯。
-- 載入模型後會用 bounding box 將模型中心移到 origin，並以最大尺寸正規化。
+- 若 `preserveAuthorOrigin` 為 `false`，載入模型後會用 bounding box 將模型中心移到 origin；若為 `true`，保留 GLB 作者原點，只做尺寸正規化。
 - 建議 GLB pivot 放在項鍊上緣中心或佩戴 anchor 附近。
+- 若 GLB 是「脖子 + 項鍊」穿戴組合，整組 origin 應放在脖子正面、項鍊實際掛點，並設定 `preserveAuthorOrigin: true`。
 - 建議模型正面面向相機，X 軸置中，寬度接近 1 個 Three.js 單位。
 - 若模型載入後太大、太小、反向、上下顛倒或 anchor 不準，先調 `src/config/necklaces.js`；若 pivot 差距太大，應回建模工具修 origin 後重新匯出。
+- 若 GLB 包含脖子遮擋模型，應保持為獨立物件或 mesh，並讓名稱符合 `occluderParts.nameIncludes`。程式會讓該模型不寫入顏色但寫入 Depth Buffer，用來遮住位於脖子後方的項鍊段。
 
 ## UI 與互動
 
@@ -119,7 +130,7 @@ npm run preview
 - 目前只支援單人臉部追蹤。
 - 最適合正面或接近正面的臉。
 - 脖子位置是 2D landmark 推估，不是真實人體或頸部 3D 重建。
-- 沒有遮擋、碰撞、衣領互動或高精度貼合。
+- 支援 GLB 內建脖子模型的隱形深度遮擋，但仍沒有物理碰撞、衣領互動或高精度人體貼合。
 - iOS Safari 的相機權限、WebGL 與效能可能依裝置和系統版本不同。
 - `TRACKING_TUNING` 中有 `minVisibilityConfidence`、`missingFaceFadeStep`、`presentFaceFadeStep`，目前程式主要使用 smoothing opacity 來處理淡入淡出，這些欄位未被核心流程直接使用。
 
@@ -132,4 +143,5 @@ npm run preview
 - 優先保持目前的純前端架構，不要引入後端，除非需求明確要求。
 - 修改追蹤效果時，優先從 `src/config/tuning.js` 與 `src/config/necklaces.js` 調整，再考慮改核心演算法。
 - 新增項鍊款式時，將 GLB 放入 `public/models/`，再於 `src/config/necklaces.js` 新增一筆設定。
+- README 與主要維護文件優先使用繁體中文撰寫；必要技術名詞可保留英文原文，但說明內容盡量中文化。
 - 如果改動相機、Face Mesh、WebGL 或座標轉換，建議用 `npm run dev` 在瀏覽器實測相機、模型載入、追蹤與 debug overlay。

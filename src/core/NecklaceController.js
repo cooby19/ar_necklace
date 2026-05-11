@@ -1,6 +1,6 @@
 import { TRACKING_TUNING } from '../config/tuning.js';
 import { ScalarSmoother, VectorSmoother } from './Smoother.js';
-import { clamp, computeFaceMetrics } from '../utils/landmarks.js';
+import { clamp, computeFaceMetrics, lerp } from '../utils/landmarks.js';
 
 export class NecklaceController {
   constructor(scene) {
@@ -8,6 +8,7 @@ export class NecklaceController {
     this.positionSmoother = new VectorSmoother(TRACKING_TUNING.smoothing.position);
     this.scaleSmoother = new ScalarSmoother(TRACKING_TUNING.smoothing.scale, 1);
     this.rotationSmoother = new ScalarSmoother(TRACKING_TUNING.smoothing.rotation, 0);
+    this.yawSmoother = new ScalarSmoother(TRACKING_TUNING.smoothing.yaw, 0);
     this.opacitySmoother = new ScalarSmoother(TRACKING_TUNING.smoothing.opacity, 0);
     this.lastDebugData = null;
   }
@@ -24,14 +25,16 @@ export class NecklaceController {
     const worldFaceWidth = this.scene.normalizedLengthToWorldX(metrics.faceWidth);
     const targetScale = clamp(worldFaceWidth * TRACKING_TUNING.necklaceWidthToFaceWidth, 0.18, 2.4);
     const targetRotation = -metrics.roll;
+    const targetYaw = this.estimateYaw(metrics);
     const targetOpacity = shouldShowNecklace ? 1 : 0;
 
     const position = this.positionSmoother.next(worldPosition);
     const scale = this.scaleSmoother.next(targetScale);
     const rotationZ = this.rotationSmoother.next(targetRotation);
+    const rotationY = this.yawSmoother.next(targetYaw);
     const opacity = this.opacitySmoother.next(targetOpacity);
 
-    this.scene.updateTransform({ position, scale, rotationZ });
+    this.scene.updateTransform({ position, scale, rotationY, rotationZ });
     this.scene.setOpacity(opacity);
 
     this.lastDebugData = {
@@ -39,6 +42,7 @@ export class NecklaceController {
       neckPoint,
       worldPosition: position,
       scale,
+      rotationY,
       rotationZ,
       opacity,
     };
@@ -47,14 +51,30 @@ export class NecklaceController {
   }
 
   estimateNeckPoint(metrics) {
+    const sideAmount = Math.min(1, Math.abs(metrics.yawSignal) / 0.42);
+    const sideNeckX = lerp(metrics.chin.x, metrics.cheekCenter.x, TRACKING_TUNING.yawAnchorBlend);
+    const yawShift =
+      -metrics.yawSignal * TRACKING_TUNING.yawDirection * TRACKING_TUNING.yawPositionShift;
+    const x = lerp(metrics.chin.x, sideNeckX + yawShift, sideAmount);
+    const y =
+      metrics.chin.y +
+      metrics.faceHeight * TRACKING_TUNING.neckOffsetFromChin +
+      TRACKING_TUNING.necklaceVerticalLift +
+      sideAmount * TRACKING_TUNING.sideViewVerticalLift;
+
     return {
-      x: metrics.chin.x,
-      y:
-        metrics.chin.y +
-        metrics.faceHeight * TRACKING_TUNING.neckOffsetFromChin +
-        TRACKING_TUNING.necklaceVerticalLift,
+      x,
+      y,
       z: metrics.chin.z ?? 0,
     };
+  }
+
+  estimateYaw(metrics) {
+    return clamp(
+      metrics.yawSignal * TRACKING_TUNING.yawDirection * TRACKING_TUNING.yawStrength,
+      -TRACKING_TUNING.maxYawRadians,
+      TRACKING_TUNING.maxYawRadians,
+    );
   }
 
   fadeOut() {
@@ -67,6 +87,7 @@ export class NecklaceController {
     this.positionSmoother.reset();
     this.scaleSmoother.reset();
     this.rotationSmoother.reset();
+    this.yawSmoother.reset();
     this.opacitySmoother.reset();
     this.scene.setOpacity(0);
     this.lastDebugData = null;

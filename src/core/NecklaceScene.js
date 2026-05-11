@@ -44,6 +44,7 @@ export class NecklaceScene {
     await this.assertGlbFile(config.url);
     const gltf = await this.loader.loadAsync(config.url);
     const model = gltf.scene;
+    this.markOccluderParts(model);
     this.prepareModel(model);
     this.currentModel = model;
     this.necklaceRoot.add(model);
@@ -78,10 +79,12 @@ export class NecklaceScene {
   prepareModel(model) {
     const box = new THREE.Box3().setFromObject(model);
     const size = box.getSize(new THREE.Vector3());
-    const center = box.getCenter(new THREE.Vector3());
 
-    // Normalize the asset around origin so tracking transforms behave predictably.
-    model.position.sub(center);
+    if (!this.modelConfig?.preserveAuthorOrigin) {
+      const center = box.getCenter(new THREE.Vector3());
+      // Legacy assets may be authored away from origin, so center them unless the GLB origin is the anchor.
+      model.position.sub(center);
+    }
 
     const maxDimension = Math.max(size.x, size.y, size.z);
     if (maxDimension > 0) {
@@ -93,13 +96,60 @@ export class NecklaceScene {
       child.castShadow = false;
       child.frustumCulled = false;
 
+      if (child.userData.isDepthOccluder) {
+        this.prepareDepthOccluder(child);
+        return;
+      }
+
+      child.renderOrder = 1;
       const materials = Array.isArray(child.material) ? child.material : [child.material];
       materials.forEach((material) => {
         material.transparent = true;
+        material.depthTest = true;
         material.depthWrite = true;
         material.needsUpdate = true;
       });
     });
+  }
+
+  markOccluderParts(model) {
+    const occluderParts = this.modelConfig?.occluderParts;
+    if (!occluderParts?.nameIncludes?.length) return;
+
+    model.traverse((child) => {
+      if (child === model) return;
+      if (this.shouldMatchPart(child, occluderParts)) {
+        child.userData.isDepthOccluder = true;
+      }
+    });
+  }
+
+  shouldMatchPart(object, partConfig) {
+    const names = [
+      object.name,
+      object.isMesh ? object.geometry?.name : '',
+      object.isMesh && object.material
+        ? (Array.isArray(object.material) ? object.material : [object.material])
+            .map((material) => material.name)
+            .join(' ')
+        : '',
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+
+    return partConfig.nameIncludes.some((keyword) => names.includes(keyword.toLowerCase()));
+  }
+
+  prepareDepthOccluder(mesh) {
+    mesh.renderOrder = 0;
+    mesh.material = new THREE.MeshBasicMaterial({
+      colorWrite: false,
+      depthWrite: true,
+      depthTest: true,
+      transparent: false,
+    });
+    mesh.material.needsUpdate = true;
   }
 
   applyAssetTransform() {
@@ -121,6 +171,7 @@ export class NecklaceScene {
 
     this.necklaceRoot.traverse((child) => {
       if (!child.isMesh || !child.material) return;
+      if (child.userData.isDepthOccluder) return;
       const materials = Array.isArray(child.material) ? child.material : [child.material];
       materials.forEach((material) => {
         material.opacity = opacity;
@@ -129,10 +180,10 @@ export class NecklaceScene {
     });
   }
 
-  updateTransform({ position, scale, rotationZ }) {
+  updateTransform({ position, scale, rotationY, rotationZ }) {
     this.necklaceRoot.position.set(position.x, position.y, position.z);
     this.necklaceRoot.scale.setScalar(scale);
-    this.necklaceRoot.rotation.set(0, 0, rotationZ);
+    this.necklaceRoot.rotation.set(0, rotationY, rotationZ);
   }
 
   screenToWorld(normalizedPoint) {

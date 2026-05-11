@@ -3,6 +3,12 @@ export const NECKLACES = [
     id: 'default-necklace',
     label: 'Default necklace',
     url: '/models/necklace.glb',
+    preserveAuthorOrigin: true,
+    occluderParts: {
+      // Mesh/object/material names containing these words become invisible depth occluders.
+      // They do not draw color, but they still hide necklace parts behind the neck.
+      nameIncludes: ['neck', 'body_neck', 'neck_helper', '脖', '頸', '圓柱', 'cylinder'],
+    },
     transform: {
       // Applied after tracking scale. Use this if the asset is authored too large/small.
       baseScale: 1,
