@@ -33,7 +33,7 @@ npm run preview
 - `src/main.js`：應用程式入口，串接 UI、相機、Face Mesh、Three.js 場景、控制器與 debug overlay。
 - `src/styles.css`：全站樣式與響應式布局。桌面為預覽區加右側控制欄，窄螢幕改為上下布局。
 - `src/config/tuning.js`：臉部追蹤、項鍊位置、縮放、平滑與 debug 顯示的主要調參位置。
-- `src/config/necklaces.js`：項鍊款式清單與每個 GLB 的模型修正參數。
+- `src/config/necklaces.js`：項鍊款式清單、每個 GLB 的模型修正參數與顏色自選設定。
 - `src/utils/landmarks.js`：Face Mesh landmark index、距離、插值、clamp 與臉部量測邏輯。
 - `src/core/CameraStream.js`：封裝 `getUserMedia`、video 播放與停止。
 - `src/core/FaceTracker.js`：封裝 MediaPipe Face Mesh 初始化、每幀送入 video、結果回呼與錯誤回呼。
@@ -57,6 +57,25 @@ npm run preview
 8. 控制器使用臉寬推算項鍊 scale，使用左右臉側連線推算 roll，使用鼻尖相對臉中心偏移估算 yaw，並套用平滑。
 9. `NecklaceScene` 更新項鍊 group 的 position、scale、rotation 與材質 opacity。若款式設定 `preserveAuthorOrigin: true`，GLB 作者原點會保留為 AR anchor。
 10. 未偵測到臉或關閉顯示項鍊時，項鍊會平滑淡出。
+
+## 項鍊顏色自選
+
+顏色自選保持純前端實作，設定入口在 `src/config/necklaces.js` 的每個款式 `colorCustomization`。
+
+- `palette`：色票清單，目前至少包含金色、銀色、玫瑰金、黑鋼、珍珠白。
+- `defaultColor`：使用者切換到該款式後自動套用的預設色票 id。
+- `defaultTarget`：預設套色目標，通常使用 `all`，表示套用所有找到的可換色材質。
+- `targets`：可換色材質群組，每個群組用 `materialNameIncludes` 比對 GLB material name。
+
+目前約定的 GLB material name 關鍵字：
+
+- `Colorable_Metal`：金屬鍊身、扣件或主要金屬部分。
+- `Colorable_Pendant`：墜飾主體。
+- `Colorable_Gem`：寶石、水晶或可換色裝飾件。
+
+`NecklaceScene` 載入模型後會收集符合上述名稱的材質，並透過 `applyColor(target, color)` 改變 `material.color`。套色時只改顏色，不應覆蓋或移除原本的 `normalMap`、`roughnessMap`、`metalnessMap`、`aoMap`、`opacity` 等材質設定。
+
+如果 GLB 沒有找到任何可換色材質，控制欄會顯示溫和提示並停用色票，但相機、Face Mesh、追蹤、debug overlay 與模型試戴仍應正常運作。新增或替換模型時，若希望啟用換色，請在建模工具中替對應 material 命名加入上述 `Colorable_*` 關鍵字後重新匯出 GLB。
 
 ## Landmark 與追蹤假設
 
@@ -102,6 +121,7 @@ npm run preview
 模型修正主要調整 `src/config/necklaces.js`：
 
 - `preserveAuthorOrigin`：保留 GLB 作者原點作為穿戴 anchor，新模型建議開啟。
+- `colorCustomization`：色票、預設顏色與可換色材質名稱比對設定。
 - `baseScale`：模型自身大小修正。
 - `offsetX` / `offsetY` / `offsetZ`：模型 anchor 微調。
 - `rotationX` / `rotationY` / `rotationZ`：模型朝向修正，單位是 radians。
@@ -122,8 +142,14 @@ npm run preview
 - 預覽區包含相機 video、Three.js canvas 和 debug canvas，三者絕對定位重疊。
 - 相機 video 以 `transform: scaleX(-1)` 鏡像顯示。
 - Face Mesh 設定 `selfieMode: true`，使 landmarks 與鏡像後的使用者畫面匹配。
-- 控制欄提供開始相機、顯示項鍊、Debug 視覺化、項鍊款式選擇與錯誤顯示。
+- 控制欄提供開始相機、顯示項鍊、Debug 視覺化、項鍊款式選擇、項鍊顏色色票與錯誤顯示。
 - 狀態面板會顯示模型載入、相機、追蹤、未偵測到臉、錯誤等狀態。
+
+## GitHub Pages 部署
+
+- `npm run build` 會產出 `dist/`，正式部署到 GitHub Pages 時應使用 build 後的 `dist` 內容更新 `gh-pages` 分支。
+- 此專案在 GitHub Pages 子路徑執行時，靜態資產 URL 應透過 `import.meta.env.BASE_URL` 或相容方式組合，避免硬編碼根目錄造成模型或 MediaPipe 資產載入失敗。
+- 更新 `gh-pages` 前先確認 `npm run build` 成功，並盡量避免把 `node_modules/`、本機暫存檔或未建置來源檔放入部署分支。
 
 ## 已知限制
 
@@ -143,5 +169,6 @@ npm run preview
 - 優先保持目前的純前端架構，不要引入後端，除非需求明確要求。
 - 修改追蹤效果時，優先從 `src/config/tuning.js` 與 `src/config/necklaces.js` 調整，再考慮改核心演算法。
 - 新增項鍊款式時，將 GLB 放入 `public/models/`，再於 `src/config/necklaces.js` 新增一筆設定。
+- 新增可換色項鍊時，優先在 GLB material name 使用 `Colorable_Metal`、`Colorable_Pendant`、`Colorable_Gem` 等關鍵字，再於 `colorCustomization.targets` 補上對應設定。
 - README 與主要維護文件優先使用繁體中文撰寫；必要技術名詞可保留英文原文，但說明內容盡量中文化。
 - 如果改動相機、Face Mesh、WebGL 或座標轉換，建議用 `npm run dev` 在瀏覽器實測相機、模型載入、追蹤與 debug overlay。
