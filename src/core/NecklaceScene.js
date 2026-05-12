@@ -18,6 +18,7 @@ export class NecklaceScene {
     this.necklaceRoot = new THREE.Group();
     this.currentModel = null;
     this.modelConfig = null;
+    this.colorableMaterials = new Map();
     this.opacity = 0;
 
     this.scene.add(this.necklaceRoot);
@@ -40,6 +41,7 @@ export class NecklaceScene {
     this.modelConfig = config;
     this.necklaceRoot.clear();
     this.currentModel = null;
+    this.colorableMaterials.clear();
     this.opacity = 0;
 
     const glbBuffer = await this.fetchGlbFile(config.url);
@@ -47,6 +49,7 @@ export class NecklaceScene {
     const model = gltf.scene;
     this.markOccluderParts(model);
     this.prepareModel(model);
+    this.collectColorableMaterials(model);
     this.currentModel = model;
     this.necklaceRoot.add(model);
     this.applyAssetTransform();
@@ -174,6 +177,69 @@ export class NecklaceScene {
       transparent: false,
     });
     mesh.material.needsUpdate = true;
+  }
+
+  collectColorableMaterials(model) {
+    const targets = this.modelConfig?.colorCustomization?.targets ?? [];
+    if (!targets.length) return;
+
+    const matchedMaterialsByTarget = new Map();
+    const visited = new Set();
+
+    model.traverse((child) => {
+      if (!child.isMesh || !child.material || child.userData.isDepthOccluder) return;
+      const materials = Array.isArray(child.material) ? child.material : [child.material];
+
+      materials.forEach((material) => {
+        if (!material?.color?.isColor || visited.has(material.uuid)) return;
+        visited.add(material.uuid);
+
+        targets.forEach((target) => {
+          if (!this.materialMatchesTarget(material, target)) return;
+          const targetMaterials = matchedMaterialsByTarget.get(target.id) ?? [];
+          targetMaterials.push(material);
+          matchedMaterialsByTarget.set(target.id, targetMaterials);
+        });
+      });
+    });
+
+    matchedMaterialsByTarget.forEach((materials, targetId) => {
+      this.colorableMaterials.set(targetId, materials);
+    });
+  }
+
+  materialMatchesTarget(material, target) {
+    const materialName = (material.name ?? '').toLowerCase();
+    return target.materialNameIncludes?.some((keyword) => materialName.includes(keyword.toLowerCase()));
+  }
+
+  getColorableTargets() {
+    return [...this.colorableMaterials.keys()];
+  }
+
+  hasColorableMaterials() {
+    return this.colorableMaterials.size > 0;
+  }
+
+  applyColor(target, color) {
+    const materials = this.resolveColorableMaterials(target);
+    if (!materials.length) return false;
+
+    materials.forEach((material) => {
+      material.color.set(color);
+      material.needsUpdate = true;
+    });
+
+    return true;
+  }
+
+  resolveColorableMaterials(target) {
+    if (target === 'all') {
+      const materials = [...this.colorableMaterials.values()].flat();
+      return [...new Map(materials.map((material) => [material.uuid, material])).values()];
+    }
+
+    return this.colorableMaterials.get(target) ?? [];
   }
 
   applyAssetTransform() {

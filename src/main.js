@@ -18,6 +18,8 @@ const elements = {
   debugToggle: document.querySelector('#debugToggle'),
   necklaceCards: document.querySelector('#necklaceCards'),
   necklaceSelect: document.querySelector('#necklaceSelect'),
+  colorSwatches: document.querySelector('#colorSwatches'),
+  colorHint: document.querySelector('#colorHint'),
   verticalOffsetRange: document.querySelector('#verticalOffsetRange'),
   verticalOffsetValue: document.querySelector('#verticalOffsetValue'),
   scaleRange: document.querySelector('#scaleRange'),
@@ -52,6 +54,7 @@ const state = {
   lastLandmarks: null,
   lastDebugData: null,
   selectedNecklace: NECKLACES[0],
+  selectedColorId: NECKLACES[0]?.colorCustomization?.defaultColor ?? '',
   captureDataUrl: '',
   captureBlob: null,
   adjustments: {
@@ -82,6 +85,7 @@ init();
 
 function init() {
   populateNecklaceSelect();
+  populateColorSwatches();
   wireUi();
   updateTuningFromControls();
   loadSelectedNecklace();
@@ -126,6 +130,35 @@ function populateNecklaceSelect() {
   syncNecklaceCards();
 }
 
+function populateColorSwatches() {
+  elements.colorSwatches.innerHTML = '';
+  const palette = state.selectedNecklace.colorCustomization?.palette ?? [];
+
+  palette.forEach((colorOption) => {
+    const button = document.createElement('button');
+    button.className = 'color-swatch';
+    button.type = 'button';
+    button.dataset.colorId = colorOption.id;
+    button.setAttribute('role', 'radio');
+    button.setAttribute('aria-label', colorOption.label);
+    button.title = colorOption.label;
+
+    const chip = document.createElement('span');
+    chip.className = 'color-swatch__chip';
+    chip.style.setProperty('--swatch-color', colorOption.color);
+    chip.setAttribute('aria-hidden', 'true');
+
+    const label = document.createElement('span');
+    label.textContent = colorOption.label;
+
+    button.append(chip, label);
+    elements.colorSwatches.append(button);
+  });
+
+  syncColorSwatches();
+  updateColorUiAvailability();
+}
+
 function wireUi() {
   elements.startButton.addEventListener('click', startExperience);
   elements.captureButton.addEventListener('click', handleCapture);
@@ -150,6 +183,12 @@ function wireUi() {
     selectNecklace(elements.necklaceSelect.value);
   });
 
+  elements.colorSwatches.addEventListener('click', (event) => {
+    const swatch = event.target.closest('[data-color-id]');
+    if (!swatch || swatch.disabled) return;
+    selectColor(swatch.dataset.colorId);
+  });
+
   elements.verticalOffsetRange.addEventListener('input', updateTuningFromControls);
   elements.scaleRange.addEventListener('input', updateTuningFromControls);
   elements.rotationRange.addEventListener('input', updateTuningFromControls);
@@ -171,12 +210,17 @@ function selectNecklace(necklaceId) {
   const next = NECKLACES.find((necklace) => necklace.id === necklaceId);
   if (!next) return;
 
-  elements.necklaceSelect.value = next.id;
-  syncNecklaceCards();
-
-  if (next.id === state.selectedNecklace.id) return;
+  if (next.id === state.selectedNecklace.id) {
+    elements.necklaceSelect.value = next.id;
+    syncNecklaceCards();
+    return;
+  }
 
   state.selectedNecklace = next;
+  state.selectedColorId = next.colorCustomization?.defaultColor ?? '';
+  elements.necklaceSelect.value = next.id;
+  syncNecklaceCards();
+  populateColorSwatches();
   controller.reset();
   loadSelectedNecklace();
 }
@@ -188,6 +232,76 @@ function syncNecklaceCards() {
     card.classList.toggle('is-selected', isSelected);
     card.setAttribute('aria-checked', String(isSelected));
   });
+}
+
+function selectColor(colorId) {
+  const colorOption = getColorOption(colorId);
+  if (!colorOption) return;
+
+  state.selectedColorId = colorOption.id;
+  syncColorSwatches();
+  applySelectedColor();
+}
+
+function syncColorSwatches() {
+  const swatches = elements.colorSwatches.querySelectorAll('[data-color-id]');
+  swatches.forEach((swatch) => {
+    const isSelected = swatch.dataset.colorId === state.selectedColorId;
+    swatch.classList.toggle('is-selected', isSelected);
+    swatch.setAttribute('aria-checked', String(isSelected));
+  });
+}
+
+function updateColorUiAvailability() {
+  const hasPalette = Boolean(state.selectedNecklace.colorCustomization?.palette?.length);
+  const hasColorableMaterials = scene.hasColorableMaterials();
+  const isAvailable = hasPalette && hasColorableMaterials;
+  const swatches = elements.colorSwatches.querySelectorAll('[data-color-id]');
+
+  swatches.forEach((swatch) => {
+    swatch.disabled = !isAvailable;
+  });
+
+  if (!hasPalette) {
+    elements.colorHint.textContent = '這個款式尚未設定可選顏色。';
+    return;
+  }
+
+  if (!state.modelLoaded) {
+    elements.colorHint.textContent = '正在確認這個款式的可換色材質。';
+    return;
+  }
+
+  if (!hasColorableMaterials) {
+    elements.colorHint.textContent = '這個模型目前沒有找到可換色材質，仍可正常試戴。';
+    return;
+  }
+
+  const targetLabels = getMatchedColorTargetLabels();
+  elements.colorHint.textContent = targetLabels.length
+    ? `會套用到：${targetLabels.join('、')}。`
+    : '可套用到模型中的換色材質。';
+}
+
+function getMatchedColorTargetLabels() {
+  const targetIds = scene.getColorableTargets();
+  const targets = state.selectedNecklace.colorCustomization?.targets ?? [];
+  return targetIds
+    .map((targetId) => targets.find((target) => target.id === targetId)?.label)
+    .filter(Boolean);
+}
+
+function applySelectedColor() {
+  const colorOption = getColorOption(state.selectedColorId);
+  if (!colorOption) return false;
+
+  const target = state.selectedNecklace.colorCustomization?.defaultTarget ?? 'all';
+  return scene.applyColor(target, colorOption.color);
+}
+
+function getColorOption(colorId) {
+  const palette = state.selectedNecklace.colorCustomization?.palette ?? [];
+  return palette.find((colorOption) => colorOption.id === colorId);
 }
 
 function resetTuningControls() {
@@ -217,11 +331,14 @@ function updateTuningFromControls() {
 async function loadSelectedNecklace() {
   state.modelLoaded = false;
   clearError();
+  updateColorUiAvailability();
   setStatus('loading', '款式載入中', state.selectedNecklace.label);
 
   try {
     await scene.loadNecklace(state.selectedNecklace);
     state.modelLoaded = true;
+    applySelectedColor();
+    updateColorUiAvailability();
     setStatus('idle', '款式已就緒', '開啟相機後即可試戴');
   } catch (error) {
     const message =
@@ -229,6 +346,7 @@ async function loadSelectedNecklace() {
       ` 原始錯誤：${error.message ?? error}`;
     showError(message);
     setStatus('error', '模型載入失敗', '請先放置 necklace.glb');
+    updateColorUiAvailability();
   }
 }
 
