@@ -32,16 +32,18 @@ export class NecklaceController {
       return null;
     }
 
-    const neckPoint = this.estimateNeckPoint(metrics);
+    const yawSignal = this.estimateYawSignal(metrics);
+    const sideAmount = this.getSideAmount(yawSignal);
+    const neckPoint = this.estimateNeckPoint(metrics, yawSignal, sideAmount);
     const worldPosition = this.scene.screenToWorld(neckPoint);
-    const worldFaceWidth = this.scene.normalizedLengthToWorldX(metrics.faceWidth);
+    const worldFaceWidth = this.estimateFaceWidthForScale(metrics, sideAmount);
     const targetScale = clamp(
       worldFaceWidth * TRACKING_TUNING.necklaceWidthToFaceWidth * this.adjustments.scaleMultiplier,
       0.18,
       2.4,
     );
     const targetRotation = -metrics.roll + this.adjustments.rotationOffset;
-    const targetYaw = this.estimateYaw(metrics);
+    const targetYaw = this.estimateYaw(yawSignal);
     const targetOpacity = shouldShowNecklace ? 1 : 0;
 
     const position = this.positionSmoother.next(worldPosition);
@@ -55,6 +57,7 @@ export class NecklaceController {
 
     this.lastDebugData = {
       ...metrics,
+      yawSignal,
       neckPoint,
       worldPosition: position,
       scale,
@@ -66,11 +69,9 @@ export class NecklaceController {
     return this.lastDebugData;
   }
 
-  estimateNeckPoint(metrics) {
-    const sideAmount = Math.min(1, Math.abs(metrics.yawSignal) / 0.42);
+  estimateNeckPoint(metrics, yawSignal, sideAmount) {
     const sideNeckX = lerp(metrics.chin.x, metrics.cheekCenter.x, TRACKING_TUNING.yawAnchorBlend);
-    const yawShift =
-      -metrics.yawSignal * TRACKING_TUNING.yawDirection * TRACKING_TUNING.yawPositionShift;
+    const yawShift = -yawSignal * TRACKING_TUNING.yawDirection * TRACKING_TUNING.yawPositionShift;
     const x = lerp(metrics.chin.x, sideNeckX + yawShift, sideAmount);
     const y =
       metrics.chin.y +
@@ -85,9 +86,52 @@ export class NecklaceController {
     };
   }
 
-  estimateYaw(metrics) {
+  estimateFaceWidthForScale(metrics, sideAmount) {
+    const measuredWidth = this.scene.normalizedSegmentToWorldLength(
+      metrics.leftCheek,
+      metrics.rightCheek,
+    );
+    const faceHeight = this.scene.normalizedSegmentToWorldLength(metrics.forehead, metrics.chin);
+    const heightBasedWidth = faceHeight * TRACKING_TUNING.scaleWidthFromFaceHeight;
+
+    if (heightBasedWidth <= 0) return measuredWidth;
+
+    const cappedMeasuredWidth = clamp(
+      measuredWidth,
+      heightBasedWidth * TRACKING_TUNING.scaleWidthMinFromHeight,
+      heightBasedWidth * TRACKING_TUNING.scaleWidthMaxFromHeight,
+    );
+    const heightBlend = sideAmount * TRACKING_TUNING.sideScaleHeightBlend;
+    return lerp(cappedMeasuredWidth, heightBasedWidth, heightBlend);
+  }
+
+  estimateYawSignal(metrics) {
+    let depthYawSignal = metrics.cheekDepthYawSignal * TRACKING_TUNING.yawDepthStrength;
+    const noseYawSignal = metrics.noseYawSignal;
+
+    if (
+      Math.abs(noseYawSignal) > 0.04 &&
+      Math.abs(depthYawSignal) > 0.04 &&
+      Math.sign(noseYawSignal) !== Math.sign(depthYawSignal)
+    ) {
+      depthYawSignal *= -1;
+    }
+
     return clamp(
-      metrics.yawSignal * TRACKING_TUNING.yawDirection * TRACKING_TUNING.yawStrength,
+      noseYawSignal * TRACKING_TUNING.yawNoseWeight +
+        depthYawSignal * TRACKING_TUNING.yawDepthWeight,
+      -0.6,
+      0.6,
+    );
+  }
+
+  getSideAmount(yawSignal) {
+    return Math.min(1, Math.abs(yawSignal) / 0.42);
+  }
+
+  estimateYaw(yawSignal) {
+    return clamp(
+      yawSignal * TRACKING_TUNING.yawDirection * TRACKING_TUNING.yawStrength,
       -TRACKING_TUNING.maxYawRadians,
       TRACKING_TUNING.maxYawRadians,
     );

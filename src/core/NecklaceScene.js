@@ -223,6 +223,14 @@ export class NecklaceScene {
     return length * (width / height) * 2;
   }
 
+  normalizedSegmentToWorldLength(start, end) {
+    const { width, height } = this.getStageSize();
+    const aspect = width / height;
+    const dx = (end.x - start.x) * aspect * 2;
+    const dy = (end.y - start.y) * 2;
+    return Math.hypot(dx, dy);
+  }
+
   getStageSize() {
     const rect = this.stageElement.getBoundingClientRect();
     return {

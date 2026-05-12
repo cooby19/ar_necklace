@@ -38,6 +38,7 @@ export class DebugOverlay {
           `face width: ${debugData.faceWidth.toFixed(3)}`,
           `face height: ${debugData.faceHeight.toFixed(3)}`,
           `roll: ${(debugData.roll * 57.2958).toFixed(1)} deg`,
+          `yaw: ${(debugData.rotationY * 57.2958).toFixed(1)} deg`,
           `scale: ${debugData.scale.toFixed(3)}`,
           `opacity: ${debugData.opacity.toFixed(2)}`,
         ],
