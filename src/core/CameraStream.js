@@ -2,22 +2,28 @@ export class CameraStream {
   constructor(videoElement) {
     this.video = videoElement;
     this.stream = null;
+    this.requestedFacingMode = 'user';
+    this.resolvedFacingMode = 'user';
   }
 
-  async start() {
+  async start({ facingMode = 'user', strictFacingMode = false } = {}) {
     if (!navigator.mediaDevices?.getUserMedia) {
       throw new Error('此瀏覽器不支援 getUserMedia，請使用 Safari、Chrome 或 Edge 的新版瀏覽器。');
     }
 
+    this.stop();
+    this.requestedFacingMode = facingMode;
+
     this.stream = await navigator.mediaDevices.getUserMedia({
       audio: false,
       video: {
-        facingMode: 'user',
+        facingMode: strictFacingMode ? { exact: facingMode } : { ideal: facingMode },
         width: { ideal: 1280 },
         height: { ideal: 720 },
       },
     });
 
+    this.resolvedFacingMode = this.getActiveTrackFacingMode() ?? facingMode;
     this.video.srcObject = this.stream;
     await this.video.play();
     await this.waitForMetadata();
@@ -39,6 +45,14 @@ export class CameraStream {
       width: this.video.videoWidth || 1280,
       height: this.video.videoHeight || 720,
     };
+  }
+
+  getFacingMode() {
+    return this.getActiveTrackFacingMode() ?? this.resolvedFacingMode ?? this.requestedFacingMode;
+  }
+
+  getActiveTrackFacingMode() {
+    return this.stream?.getVideoTracks()?.[0]?.getSettings?.().facingMode;
   }
 
   stop() {

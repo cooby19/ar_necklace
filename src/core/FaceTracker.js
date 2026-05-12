@@ -42,6 +42,7 @@ export class FaceTracker {
     this.isRunning = false;
     this.frameHandle = null;
     this.isSendingFrame = false;
+    this.selfieMode = true;
   }
 
   async init() {
@@ -58,8 +59,8 @@ export class FaceTracker {
       refineLandmarks: true,
       minDetectionConfidence: 0.58,
       minTrackingConfidence: 0.58,
-      // Internally flips the camera input. This matches the CSS-mirrored video.
-      selfieMode: true,
+      // Internally flips the camera input when using the front-facing mirrored preview.
+      selfieMode: this.selfieMode,
     });
 
     this.faceMesh.onResults((results) => {
@@ -102,4 +103,11 @@ export class FaceTracker {
 
     this.frameHandle = requestAnimationFrame(this.tick);
   };
+
+  setSelfieMode(isSelfieMode) {
+    this.selfieMode = Boolean(isSelfieMode);
+    this.faceMesh?.setOptions({
+      selfieMode: this.selfieMode,
+    });
+  }
 }

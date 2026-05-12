@@ -14,6 +14,8 @@ const elements = {
   stagePlaceholder: document.querySelector('.stage-placeholder'),
   captureButton: document.querySelector('#captureButton'),
   startButton: document.querySelector('#startButton'),
+  switchCameraButton: document.querySelector('#switchCameraButton'),
+  stopCameraButton: document.querySelector('#stopCameraButton'),
   necklaceToggle: document.querySelector('#necklaceToggle'),
   debugToggle: document.querySelector('#debugToggle'),
   necklaceCards: document.querySelector('#necklaceCards'),
@@ -44,11 +46,18 @@ const TUNING_DEFAULTS = {
   rotation: 0,
 };
 
+const CAMERA_FACING_MODES = {
+  USER: 'user',
+  ENVIRONMENT: 'environment',
+};
+
 const SHARE_IMAGE_SIZE = 1080;
 const SHARE_FILE_NAME = 'soft-jewelry-try-on.png';
 
 const state = {
   cameraStarted: false,
+  cameraFacingMode: CAMERA_FACING_MODES.USER,
+  isSwitchingCamera: false,
   modelLoaded: false,
   hasFace: false,
   lastLandmarks: null,
@@ -88,6 +97,7 @@ function init() {
   populateColorSwatches();
   wireUi();
   updateTuningFromControls();
+  syncCameraUi();
   loadSelectedNecklace();
   animate();
 }
@@ -161,6 +171,8 @@ function populateColorSwatches() {
 
 function wireUi() {
   elements.startButton.addEventListener('click', startExperience);
+  elements.switchCameraButton.addEventListener('click', switchCamera);
+  elements.stopCameraButton.addEventListener('click', stopExperience);
   elements.captureButton.addEventListener('click', handleCapture);
 
   elements.debugToggle.addEventListener('change', () => {
@@ -353,27 +365,103 @@ async function loadSelectedNecklace() {
 async function startExperience() {
   clearError();
   elements.startButton.disabled = true;
+  elements.switchCameraButton.disabled = true;
+  elements.stopCameraButton.disabled = true;
   elements.startButton.textContent = '啟動中...';
 
   try {
-    await camera.start();
-    scene.resize();
-    debugOverlay.resize();
-    await faceTracker.start();
+    await startCameraForMode(state.cameraFacingMode);
     state.cameraStarted = true;
     elements.stage.classList.add('is-camera-on');
     elements.captureButton.disabled = false;
     setStatus('idle', '相機已啟動', '正在尋找臉部');
     elements.startButton.textContent = '相機運作中';
+    syncCameraUi();
   } catch (error) {
-    camera.stop();
+    stopCameraSession();
     showError(`無法啟動相機：${error.message ?? error}`);
     setStatus('error', '相機啟動失敗', '請確認瀏覽器權限與 HTTPS/localhost 環境');
-    elements.stage.classList.remove('is-camera-on');
-    elements.captureButton.disabled = true;
-    elements.startButton.disabled = false;
-    elements.startButton.textContent = '開始相機';
   }
+}
+
+function stopExperience() {
+  if (!state.cameraStarted && !state.isSwitchingCamera) return;
+
+  clearError();
+  stopCameraSession();
+  setStatus('idle', '相機已關閉', '鏡頭已停止，可重新開啟相機');
+}
+
+async function switchCamera() {
+  if (!state.cameraStarted || state.isSwitchingCamera) return;
+
+  const previousFacingMode = state.cameraFacingMode;
+  const nextFacingMode =
+    previousFacingMode === CAMERA_FACING_MODES.USER
+      ? CAMERA_FACING_MODES.ENVIRONMENT
+      : CAMERA_FACING_MODES.USER;
+
+  clearError();
+  state.isSwitchingCamera = true;
+  elements.captureButton.disabled = true;
+  syncCameraUi();
+  setStatus('idle', '正在切換鏡頭', getCameraSwitchingLabel(nextFacingMode));
+
+  try {
+    await startCameraForMode(nextFacingMode, { strictFacingMode: true });
+    setStatus('idle', '鏡頭已切換', getActiveCameraLabel());
+  } catch (error) {
+    const failedLabel = getCameraLabel(nextFacingMode);
+    showError(`無法切換到${failedLabel}：${error.message ?? error}`);
+    setStatus('error', '鏡頭切換失敗', `正在恢復${getCameraLabel(previousFacingMode)}`);
+
+    try {
+      await startCameraForMode(previousFacingMode);
+      setStatus('idle', '已恢復原鏡頭', getActiveCameraLabel());
+    } catch (restoreError) {
+      stopCameraSession();
+      showError(`鏡頭切換失敗，且無法恢復原鏡頭：${restoreError.message ?? restoreError}`);
+      setStatus('error', '相機已停止', '請重新啟動相機');
+    }
+  } finally {
+    state.isSwitchingCamera = false;
+    elements.captureButton.disabled = !state.cameraStarted;
+    syncCameraUi();
+  }
+}
+
+async function startCameraForMode(facingMode, { strictFacingMode = false } = {}) {
+  faceTracker.stop();
+  controller.fadeOut();
+  state.hasFace = false;
+  state.lastLandmarks = null;
+  state.lastDebugData = null;
+  faceTracker.setSelfieMode(isSelfieCamera(facingMode));
+
+  await camera.start({ facingMode, strictFacingMode });
+
+  state.cameraFacingMode = normalizeFacingMode(camera.getFacingMode(), facingMode);
+  faceTracker.setSelfieMode(isSelfieCamera(state.cameraFacingMode));
+  syncCameraUi();
+  scene.resize();
+  debugOverlay.resize();
+  await faceTracker.start();
+}
+
+function stopCameraSession() {
+  camera.stop();
+  faceTracker.stop();
+  controller.reset();
+  state.cameraStarted = false;
+  state.isSwitchingCamera = false;
+  state.hasFace = false;
+  state.lastLandmarks = null;
+  state.lastDebugData = null;
+  elements.stage.classList.remove('is-camera-on');
+  elements.captureButton.disabled = true;
+  elements.startButton.disabled = false;
+  elements.startButton.textContent = '開始相機';
+  syncCameraUi();
 }
 
 async function handleCapture() {
@@ -422,7 +510,9 @@ function createBrandedCapture() {
   sourceCanvas.height = sourceHeight;
 
   const sourceContext = sourceCanvas.getContext('2d');
-  drawMirroredCoverVideo(sourceContext, elements.video, sourceWidth, sourceHeight);
+  drawCoverVideo(sourceContext, elements.video, sourceWidth, sourceHeight, {
+    mirrored: isSelfieCamera(state.cameraFacingMode),
+  });
   sourceContext.drawImage(elements.threeCanvas, 0, 0, sourceWidth, sourceHeight);
 
   const outputCanvas = document.createElement('canvas');
@@ -439,7 +529,7 @@ function createBrandedCapture() {
   return outputCanvas;
 }
 
-function drawMirroredCoverVideo(context, video, width, height) {
+function drawCoverVideo(context, video, width, height, { mirrored = false } = {}) {
   const videoWidth = video.videoWidth || width;
   const videoHeight = video.videoHeight || height;
   const scale = Math.max(width / videoWidth, height / videoHeight);
@@ -448,11 +538,17 @@ function drawMirroredCoverVideo(context, video, width, height) {
   const drawX = (width - drawWidth) / 2;
   const drawY = (height - drawHeight) / 2;
 
-  context.save();
-  context.translate(width, 0);
-  context.scale(-1, 1);
+  if (mirrored) {
+    context.save();
+    context.translate(width, 0);
+    context.scale(-1, 1);
+  }
+
   context.drawImage(video, drawX, drawY, drawWidth, drawHeight);
-  context.restore();
+
+  if (mirrored) {
+    context.restore();
+  }
 }
 
 function drawCoverImage(context, image, x, y, width, height) {
@@ -629,6 +725,40 @@ function updateTrackingStatus() {
 function formatSignedNumber(value) {
   if (value > 0) return `+${value}`;
   return String(value);
+}
+
+function syncCameraUi() {
+  const isSelfie = isSelfieCamera(state.cameraFacingMode);
+  const nextLabel = isSelfie ? '切換後鏡頭' : '切換前鏡頭';
+  elements.stage.classList.toggle('is-selfie-camera', isSelfie);
+  elements.switchCameraButton.disabled = !state.cameraStarted || state.isSwitchingCamera;
+  elements.stopCameraButton.disabled = !state.cameraStarted || state.isSwitchingCamera;
+  elements.switchCameraButton.textContent = state.isSwitchingCamera ? '切換中...' : nextLabel;
+  elements.switchCameraButton.setAttribute('aria-label', nextLabel);
+}
+
+function normalizeFacingMode(actualFacingMode, fallbackFacingMode) {
+  if (actualFacingMode === CAMERA_FACING_MODES.USER || actualFacingMode === CAMERA_FACING_MODES.ENVIRONMENT) {
+    return actualFacingMode;
+  }
+
+  return fallbackFacingMode;
+}
+
+function isSelfieCamera(facingMode) {
+  return facingMode !== CAMERA_FACING_MODES.ENVIRONMENT;
+}
+
+function getCameraLabel(facingMode) {
+  return isSelfieCamera(facingMode) ? '前鏡頭' : '後鏡頭';
+}
+
+function getCameraSwitchingLabel(facingMode) {
+  return `準備使用${getCameraLabel(facingMode)}`;
+}
+
+function getActiveCameraLabel() {
+  return `目前使用${getCameraLabel(state.cameraFacingMode)}`;
 }
 
 function setStatus(kind, label, metrics) {

@@ -95,7 +95,7 @@ export class DebugOverlay {
     const width = this.canvas.width / (window.devicePixelRatio || 1);
     const height = this.canvas.height / (window.devicePixelRatio || 1);
     return {
-      // Face Mesh selfieMode already mirrors coordinates to match the user-facing camera.
+      // FaceTracker keeps Face Mesh coordinates aligned with the active camera preview.
       x: point.x * width,
       y: point.y * height,
     };

@@ -141,9 +141,13 @@ summary:focus-visible {
   z-index: 0;
   object-fit: cover;
   opacity: 0;
-  transform: scaleX(-1);
+  transform: none;
   background: #f4e8e7;
   transition: opacity 180ms ease;
+}
+
+.stage.is-selfie-camera .camera-video {
+  transform: scaleX(-1);
 }
 
 .stage.is-camera-on .camera-video {
@@ -446,6 +450,15 @@ summary:focus-visible {
   border-color: rgba(200, 169, 106, 0.62);
   background: var(--warm-white);
   color: var(--ink);
+}
+
+.secondary-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.camera-switch-button {
+  min-height: 42px;
 }
 
 .switch-row {
