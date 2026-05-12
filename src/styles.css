@@ -232,6 +232,9 @@ summary:focus-visible {
   backdrop-filter: blur(14px);
   box-shadow: 0 14px 34px rgba(95, 82, 82, 0.1);
   color: var(--ink);
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease;
 }
 
 .status-row {
@@ -964,6 +967,12 @@ summary:focus-visible {
     bottom: 12px;
     min-width: 0;
     max-width: none;
+  }
+
+  .stage.is-camera-on .status-panel.is-passive {
+    opacity: 0;
+    transform: translateY(8px);
+    pointer-events: none;
   }
 
   .necklace-card {

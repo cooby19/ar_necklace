@@ -35,6 +35,7 @@ const elements = {
   shareCaptureButton: document.querySelector('#shareCaptureButton'),
   closeShareButtons: document.querySelectorAll('[data-close-share]'),
   errorBox: document.querySelector('#errorBox'),
+  statusPanel: document.querySelector('.status-panel'),
   trackingDot: document.querySelector('#trackingDot'),
   trackingLabel: document.querySelector('#trackingLabel'),
   trackingMetrics: document.querySelector('#trackingMetrics'),
@@ -177,6 +178,7 @@ function wireUi() {
 
   elements.debugToggle.addEventListener('change', () => {
     debugOverlay.setEnabled(elements.debugToggle.checked);
+    updateTrackingStatus();
   });
 
   elements.necklaceToggle.addEventListener('change', () => {
@@ -762,6 +764,9 @@ function getActiveCameraLabel() {
 }
 
 function setStatus(kind, label, metrics) {
+  const isPassiveTracking = kind === 'tracking' && label === '正在試戴' && !elements.debugToggle.checked;
+  elements.statusPanel.dataset.status = kind;
+  elements.statusPanel.classList.toggle('is-passive', isPassiveTracking);
   elements.trackingDot.classList.toggle('is-tracking', kind === 'tracking');
   elements.trackingDot.classList.toggle('is-error', kind === 'error');
   elements.trackingLabel.textContent = label;
