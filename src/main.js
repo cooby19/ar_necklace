@@ -310,7 +310,7 @@ function applySelectedColor() {
   if (!colorOption) return false;
 
   const target = state.selectedNecklace.colorCustomization?.defaultTarget ?? 'all';
-  return scene.applyColor(target, colorOption.color);
+  return scene.applyColor(target, colorOption.color, colorOption.material);
 }
 
 function getColorOption(colorId) {

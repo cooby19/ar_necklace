@@ -11,7 +11,7 @@ export const NECKLACES = [
       nameIncludes: ['neck', 'body_neck', 'neck_helper', '脖', '頸', '圓柱', 'cylinder'],
     },
     colorCustomization: {
-      defaultColor: 'gold',
+      defaultColor: 'rose-quartz',
       defaultTarget: 'all',
       targets: [
         {
@@ -31,11 +31,54 @@ export const NECKLACES = [
         },
       ],
       palette: [
-        { id: 'gold', label: '金色', color: '#d4af37' },
-        { id: 'silver', label: '銀色', color: '#d8dde1' },
-        { id: 'rose-gold', label: '玫瑰金', color: '#c98f7a' },
-        { id: 'black-steel', label: '黑鋼', color: '#1f2226' },
-        { id: 'pearl-white', label: '珍珠白', color: '#f4efe6' },
+        {
+          id: 'rose-quartz',
+          label: '粉晶',
+          color: '#F6C6D3',
+          material: {
+            roughness: 0.34,
+            metalness: 0,
+            envMapIntensity: 1.7,
+            emissive: '#FBE4EC',
+            emissiveIntensity: 0.08,
+          },
+        },
+        {
+          id: 'moonstone',
+          label: '月光石',
+          color: '#AFC8FF',
+          material: {
+            roughness: 0.22,
+            metalness: 0,
+            envMapIntensity: 2.05,
+            emissive: '#F2F4F8',
+            emissiveIntensity: 0.1,
+          },
+        },
+        {
+          id: 'citrine',
+          label: '黃水晶',
+          color: '#E4B343',
+          material: {
+            roughness: 0.2,
+            metalness: 0,
+            envMapIntensity: 1.9,
+            emissive: '#F3D27A',
+            emissiveIntensity: 0.07,
+          },
+        },
+        {
+          id: 'amethyst',
+          label: '紫水晶',
+          color: '#8E5DB7',
+          material: {
+            roughness: 0.26,
+            metalness: 0,
+            envMapIntensity: 1.8,
+            emissive: '#C7A4E0',
+            emissiveIntensity: 0.08,
+          },
+        },
       ],
     },
     transform: {

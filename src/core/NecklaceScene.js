@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
 export class NecklaceScene {
@@ -16,25 +17,45 @@ export class NecklaceScene {
     });
     this.loader = new GLTFLoader();
     this.necklaceRoot = new THREE.Group();
+    this.pmremGenerator = new THREE.PMREMGenerator(this.renderer);
+    this.environmentMap = null;
     this.currentModel = null;
     this.modelConfig = null;
     this.colorableMaterials = new Map();
     this.opacity = 0;
 
     this.scene.add(this.necklaceRoot);
+    this.setupRenderer();
+    this.setupEnvironment();
     this.setupLights();
     this.resize();
 
     window.addEventListener('resize', this.resize);
   }
 
+  setupRenderer() {
+    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.12;
+  }
+
+  setupEnvironment() {
+    const roomEnvironment = new RoomEnvironment(this.renderer);
+    const environment = this.pmremGenerator.fromScene(roomEnvironment, 0.04);
+    this.environmentMap = environment.texture;
+    this.scene.environment = this.environmentMap;
+    roomEnvironment.dispose();
+  }
+
   setupLights() {
-    const ambient = new THREE.AmbientLight(0xffffff, 1.65);
-    const key = new THREE.DirectionalLight(0xffffff, 1.7);
+    const ambient = new THREE.AmbientLight(0xffffff, 1.35);
+    const key = new THREE.DirectionalLight(0xffffff, 2);
     key.position.set(0.2, 0.6, 1.6);
-    const fill = new THREE.DirectionalLight(0xf3d18b, 0.85);
+    const fill = new THREE.DirectionalLight(0xf3d18b, 0.75);
     fill.position.set(-1.2, -0.3, 0.8);
-    this.scene.add(ambient, key, fill);
+    const rim = new THREE.DirectionalLight(0xc9ddff, 0.9);
+    rim.position.set(1.4, 0.2, -1.1);
+    this.scene.add(ambient, key, fill, rim);
   }
 
   async loadNecklace(config) {
@@ -221,16 +242,41 @@ export class NecklaceScene {
     return this.colorableMaterials.size > 0;
   }
 
-  applyColor(target, color) {
+  applyColor(target, color, materialPreset = {}) {
     const materials = this.resolveColorableMaterials(target);
     if (!materials.length) return false;
 
     materials.forEach((material) => {
       material.color.set(color);
+      this.applyMaterialPreset(material, materialPreset);
       material.needsUpdate = true;
     });
 
     return true;
+  }
+
+  applyMaterialPreset(material, preset) {
+    if (!preset) return;
+
+    if (Number.isFinite(preset.roughness) && 'roughness' in material) {
+      material.roughness = preset.roughness;
+    }
+
+    if (Number.isFinite(preset.metalness) && 'metalness' in material) {
+      material.metalness = preset.metalness;
+    }
+
+    if (Number.isFinite(preset.envMapIntensity) && 'envMapIntensity' in material) {
+      material.envMapIntensity = preset.envMapIntensity;
+    }
+
+    if (preset.emissive && material.emissive?.isColor) {
+      material.emissive.set(preset.emissive);
+    }
+
+    if (Number.isFinite(preset.emissiveIntensity) && 'emissiveIntensity' in material) {
+      material.emissiveIntensity = preset.emissiveIntensity;
+    }
   }
 
   resolveColorableMaterials(target) {
@@ -326,6 +372,8 @@ export class NecklaceScene {
 
   dispose() {
     window.removeEventListener('resize', this.resize);
+    this.environmentMap?.dispose();
+    this.pmremGenerator.dispose();
     this.renderer.dispose();
   }
 }
