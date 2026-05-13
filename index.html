@@ -4,8 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>AR Necklace Try-On</title>
-    <script type="module" crossorigin src="./assets/index-CdDWnKNV.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-C6Rrjy0v.css">
+    <script type="module" crossorigin src="./assets/index-CMEEO41p.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-BzYr0skm.css">
   </head>
   <body>
     <main id="app" class="app-shell">
@@ -52,7 +52,57 @@
           <p>柔和、乾淨的線上飾品預覽。</p>
         </header>
 
-        <section class="control-section" aria-label="試戴控制">
+        <section class="control-section" aria-label="預覽模式">
+          <div class="section-heading">
+            <span>模式</span>
+            <span>Mode</span>
+          </div>
+
+          <div class="mode-tabs" role="group" aria-label="預覽模式">
+            <button class="mode-tab is-selected" type="button" data-mode="showcase" aria-pressed="true">
+              模型展示
+            </button>
+            <button class="mode-tab" type="button" data-mode="ar" aria-pressed="false">AR 試戴</button>
+          </div>
+        </section>
+
+        <section class="control-section" aria-labelledby="styleHeading">
+          <div class="section-heading">
+            <span id="styleHeading">款式</span>
+            <span>Collection</span>
+          </div>
+
+          <div id="necklaceCards" class="necklace-card-list" role="radiogroup" aria-label="項鍊款式"></div>
+          <select id="necklaceSelect" hidden></select>
+        </section>
+
+        <section class="control-section" aria-labelledby="colorHeading">
+          <div class="section-heading">
+            <span id="colorHeading">項鍊顏色</span>
+            <span>Color</span>
+          </div>
+
+          <div id="colorSwatches" class="color-swatch-list" role="radiogroup" aria-label="項鍊顏色"></div>
+          <p id="colorHint" class="color-hint" aria-live="polite">載入款式後可選擇顏色。</p>
+        </section>
+
+        <section class="control-section meaning-section" aria-labelledby="meaningHeading">
+          <div class="section-heading">
+            <span id="meaningHeading">色彩寓意</span>
+            <span>Meaning</span>
+          </div>
+
+          <div id="colorMeaning" class="color-meaning" aria-live="polite">
+            <div class="color-meaning__title">
+              <span id="meaningChip" class="color-meaning__chip" aria-hidden="true"></span>
+              <strong id="meaningTitle">粉晶</strong>
+            </div>
+            <p id="meaningSummary">柔軟、被照顧與安定的感覺</p>
+            <div id="meaningKeywords" class="meaning-keywords"></div>
+          </div>
+        </section>
+
+        <section class="control-section" aria-label="試戴控制" data-ar-section hidden>
           <div class="section-heading">
             <span>試戴</span>
             <span>Live preview</span>
@@ -80,27 +130,7 @@
           </label>
         </section>
 
-        <section class="control-section" aria-labelledby="styleHeading">
-          <div class="section-heading">
-            <span id="styleHeading">款式</span>
-            <span>Collection</span>
-          </div>
-
-          <div id="necklaceCards" class="necklace-card-list" role="radiogroup" aria-label="項鍊款式"></div>
-          <select id="necklaceSelect" hidden></select>
-        </section>
-
-        <section class="control-section" aria-labelledby="colorHeading">
-          <div class="section-heading">
-            <span id="colorHeading">項鍊顏色</span>
-            <span>Color</span>
-          </div>
-
-          <div id="colorSwatches" class="color-swatch-list" role="radiogroup" aria-label="項鍊顏色"></div>
-          <p id="colorHint" class="color-hint" aria-live="polite">載入款式後可選擇顏色。</p>
-        </section>
-
-        <section class="control-section" aria-labelledby="tuningHeading">
+        <section class="control-section" aria-labelledby="tuningHeading" data-ar-section hidden>
           <div class="section-heading">
             <span id="tuningHeading">微調</span>
             <span>Fit</span>
@@ -129,7 +159,7 @@
           <button id="resetTuningButton" class="secondary-button" type="button">重置微調</button>
         </section>
 
-        <details class="advanced-panel">
+        <details class="advanced-panel" data-ar-section hidden>
           <summary>進階</summary>
           <label class="switch-row">
             <span>
