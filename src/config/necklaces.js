@@ -35,6 +35,10 @@ export const NECKLACES = [
           id: 'rose-quartz',
           label: '粉晶',
           color: '#F6C6D3',
+          meaning: {
+            keywords: ['愛', '溫柔', '安全感', '療癒', '柔和'],
+            summary: '柔軟、被照顧與安定的感覺',
+          },
           material: {
             roughness: 0.34,
             metalness: 0,
@@ -47,6 +51,10 @@ export const NECKLACES = [
           id: 'moonstone',
           label: '月光石',
           color: '#AFC8FF',
+          meaning: {
+            keywords: ['月亮', '夢境', '靈性', '柔光', '安靜'],
+            summary: '像月光一樣安靜，帶一點夢境與靈性的柔光',
+          },
           material: {
             roughness: 0.22,
             metalness: 0,
@@ -59,6 +67,10 @@ export const NECKLACES = [
           id: 'citrine',
           label: '黃水晶',
           color: '#E4B343',
+          meaning: {
+            keywords: ['財富', '陽光', '自信', '溫暖', '開朗'],
+            summary: '明亮、積極，帶著陽光感與自信能量',
+          },
           material: {
             roughness: 0.2,
             metalness: 0,
@@ -71,6 +83,10 @@ export const NECKLACES = [
           id: 'amethyst',
           label: '紫水晶',
           color: '#8E5DB7',
+          meaning: {
+            keywords: ['高貴', '智慧', '神秘', '靜心'],
+            summary: '沉穩而帶神秘感，適合安定思緒與靜心',
+          },
           material: {
             roughness: 0.26,
             metalness: 0,

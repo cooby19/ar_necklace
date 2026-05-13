@@ -96,6 +96,10 @@ summary:focus-visible {
   opacity: 0;
 }
 
+.stage.is-showcase .necklace-outline {
+  opacity: 0;
+}
+
 .necklace-outline {
   position: relative;
   width: 190px;
@@ -157,6 +161,16 @@ summary:focus-visible {
 .overlay-canvas {
   z-index: 1;
   pointer-events: none;
+}
+
+.stage.is-showcase #threeCanvas {
+  cursor: grab;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.stage.is-dragging-showcase #threeCanvas {
+  cursor: grabbing;
 }
 
 .debug-canvas {
@@ -312,6 +326,10 @@ summary:focus-visible {
   opacity: 0.54;
 }
 
+.capture-button[hidden] {
+  display: none;
+}
+
 .capture-button.is-capturing {
   cursor: wait;
 }
@@ -377,6 +395,11 @@ summary:focus-visible {
   gap: 14px;
   padding: 18px 0;
   border-bottom: 1px solid var(--line);
+}
+
+.control-section[hidden],
+.advanced-panel[hidden] {
+  display: none;
 }
 
 .section-heading {
@@ -458,6 +481,41 @@ summary:focus-visible {
 .secondary-button:disabled {
   cursor: not-allowed;
   opacity: 0.58;
+}
+
+.mode-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 248, 246, 0.78);
+}
+
+.mode-tab {
+  min-height: 38px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+  transition:
+    background 140ms ease,
+    color 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.mode-tab:hover,
+.mode-tab.is-selected {
+  background: #ffffff;
+  color: var(--ink);
+}
+
+.mode-tab.is-selected {
+  box-shadow: 0 6px 14px rgba(95, 82, 82, 0.09);
 }
 
 .camera-switch-button {
@@ -689,6 +747,75 @@ summary:focus-visible {
   color: var(--muted);
   font-size: 12px;
   line-height: 1.45;
+}
+
+.meaning-section {
+  gap: 12px;
+}
+
+.color-meaning {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid rgba(234, 219, 221, 0.9);
+  border-radius: 8px;
+  background: rgba(255, 250, 247, 0.72);
+}
+
+.color-meaning[hidden] {
+  display: none;
+}
+
+.color-meaning__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.color-meaning__chip {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  border: 1px solid rgba(95, 82, 82, 0.14);
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at 30% 24%, rgba(255, 255, 255, 0.82), rgba(255, 255, 255, 0) 42%),
+    var(--meaning-color);
+  box-shadow: 0 3px 8px rgba(95, 82, 82, 0.1);
+}
+
+.color-meaning strong {
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.2;
+}
+
+.color-meaning p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.meaning-keywords {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.meaning-keywords span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 9px;
+  border: 1px solid rgba(222, 198, 201, 0.74);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.58);
+  color: var(--rose-deep);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
 }
 
 .tuning-list {

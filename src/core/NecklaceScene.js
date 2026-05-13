@@ -23,6 +23,14 @@ export class NecklaceScene {
     this.modelConfig = null;
     this.colorableMaterials = new Map();
     this.opacity = 0;
+    this.showcase = {
+      enabled: false,
+      isDragging: false,
+      rotationY: 0,
+      lastClientX: 0,
+      lastTime: 0,
+      autoRotateSpeed: 0.00018,
+    };
 
     this.scene.add(this.necklaceRoot);
     this.setupRenderer();
@@ -64,6 +72,7 @@ export class NecklaceScene {
     this.currentModel = null;
     this.colorableMaterials.clear();
     this.opacity = 0;
+    this.showcase.lastTime = 0;
 
     const glbBuffer = await this.fetchGlbFile(config.url);
     const gltf = await this.parseGlbFile(glbBuffer, config.url);
@@ -299,6 +308,63 @@ export class NecklaceScene {
 
   setVisible(isVisible) {
     this.necklaceRoot.visible = isVisible;
+  }
+
+  setShowcaseMode(isEnabled) {
+    this.showcase.enabled = isEnabled;
+    this.showcase.isDragging = false;
+    this.showcase.lastTime = 0;
+
+    if (!isEnabled) return;
+
+    this.setOpacity(1);
+    this.updateShowcaseTransform();
+  }
+
+  beginShowcaseDrag(clientX) {
+    if (!this.showcase.enabled) return;
+
+    this.showcase.isDragging = true;
+    this.showcase.lastClientX = clientX;
+  }
+
+  dragShowcase(clientX) {
+    if (!this.showcase.enabled || !this.showcase.isDragging) return;
+
+    const deltaX = clientX - this.showcase.lastClientX;
+    this.showcase.lastClientX = clientX;
+    this.showcase.rotationY += deltaX * 0.012;
+    this.updateShowcaseTransform();
+  }
+
+  endShowcaseDrag() {
+    this.showcase.isDragging = false;
+  }
+
+  updateShowcase(time = 0) {
+    if (!this.showcase.enabled || !this.currentModel) return;
+
+    if (!this.showcase.isDragging) {
+      const previousTime = this.showcase.lastTime || time;
+      const delta = Math.min(48, Math.max(0, time - previousTime));
+      this.showcase.rotationY += delta * this.showcase.autoRotateSpeed;
+    }
+
+    this.showcase.lastTime = time;
+    this.updateShowcaseTransform();
+  }
+
+  updateShowcaseTransform() {
+    if (!this.currentModel) return;
+
+    const { width, height } = this.getStageSize();
+    const aspect = width / height;
+    const displayScale = aspect >= 1 ? 1.08 : 0.88;
+
+    this.necklaceRoot.visible = true;
+    this.necklaceRoot.position.set(0, -0.04, 0);
+    this.necklaceRoot.scale.setScalar(displayScale);
+    this.necklaceRoot.rotation.set(-0.1, this.showcase.rotationY, 0);
   }
 
   setOpacity(opacity) {

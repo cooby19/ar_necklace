@@ -12,7 +12,10 @@ const elements = {
   threeCanvas: document.querySelector('#threeCanvas'),
   debugCanvas: document.querySelector('#debugCanvas'),
   stagePlaceholder: document.querySelector('.stage-placeholder'),
+  livePill: document.querySelector('.live-pill'),
   captureButton: document.querySelector('#captureButton'),
+  modeButtons: document.querySelectorAll('[data-mode]'),
+  arSections: document.querySelectorAll('[data-ar-section]'),
   startButton: document.querySelector('#startButton'),
   switchCameraButton: document.querySelector('#switchCameraButton'),
   stopCameraButton: document.querySelector('#stopCameraButton'),
@@ -22,6 +25,11 @@ const elements = {
   necklaceSelect: document.querySelector('#necklaceSelect'),
   colorSwatches: document.querySelector('#colorSwatches'),
   colorHint: document.querySelector('#colorHint'),
+  colorMeaning: document.querySelector('#colorMeaning'),
+  meaningChip: document.querySelector('#meaningChip'),
+  meaningTitle: document.querySelector('#meaningTitle'),
+  meaningSummary: document.querySelector('#meaningSummary'),
+  meaningKeywords: document.querySelector('#meaningKeywords'),
   verticalOffsetRange: document.querySelector('#verticalOffsetRange'),
   verticalOffsetValue: document.querySelector('#verticalOffsetValue'),
   scaleRange: document.querySelector('#scaleRange'),
@@ -52,10 +60,16 @@ const CAMERA_FACING_MODES = {
   ENVIRONMENT: 'environment',
 };
 
+const APP_MODES = {
+  SHOWCASE: 'showcase',
+  AR: 'ar',
+};
+
 const SHARE_IMAGE_SIZE = 1080;
 const SHARE_FILE_NAME = 'soft-jewelry-try-on.png';
 
 const state = {
+  mode: APP_MODES.SHOWCASE,
   cameraStarted: false,
   cameraFacingMode: CAMERA_FACING_MODES.USER,
   isSwitchingCamera: false,
@@ -98,6 +112,7 @@ function init() {
   populateColorSwatches();
   wireUi();
   updateTuningFromControls();
+  syncModeUi();
   syncCameraUi();
   loadSelectedNecklace();
   animate();
@@ -167,17 +182,28 @@ function populateColorSwatches() {
   });
 
   syncColorSwatches();
+  updateColorMeaning();
   updateColorUiAvailability();
 }
 
 function wireUi() {
+  elements.modeButtons.forEach((button) => {
+    button.addEventListener('click', () => selectMode(button.dataset.mode));
+  });
+
+  elements.threeCanvas.addEventListener('pointerdown', handleShowcasePointerDown);
+  elements.threeCanvas.addEventListener('pointermove', handleShowcasePointerMove);
+  elements.threeCanvas.addEventListener('pointerup', handleShowcasePointerUp);
+  elements.threeCanvas.addEventListener('pointercancel', handleShowcasePointerUp);
+  elements.threeCanvas.addEventListener('pointerleave', handleShowcasePointerUp);
+
   elements.startButton.addEventListener('click', startExperience);
   elements.switchCameraButton.addEventListener('click', switchCamera);
   elements.stopCameraButton.addEventListener('click', stopExperience);
   elements.captureButton.addEventListener('click', handleCapture);
 
   elements.debugToggle.addEventListener('change', () => {
-    debugOverlay.setEnabled(elements.debugToggle.checked);
+    debugOverlay.setEnabled(state.mode === APP_MODES.AR && elements.debugToggle.checked);
     updateTrackingStatus();
   });
 
@@ -254,6 +280,7 @@ function selectColor(colorId) {
 
   state.selectedColorId = colorOption.id;
   syncColorSwatches();
+  updateColorMeaning();
   applySelectedColor();
 }
 
@@ -263,6 +290,28 @@ function syncColorSwatches() {
     const isSelected = swatch.dataset.colorId === state.selectedColorId;
     swatch.classList.toggle('is-selected', isSelected);
     swatch.setAttribute('aria-checked', String(isSelected));
+  });
+}
+
+function updateColorMeaning() {
+  const colorOption = getColorOption(state.selectedColorId);
+  const meaning = colorOption?.meaning;
+
+  if (!colorOption || !meaning) {
+    elements.colorMeaning.hidden = true;
+    return;
+  }
+
+  elements.colorMeaning.hidden = false;
+  elements.meaningChip.style.setProperty('--meaning-color', colorOption.color);
+  elements.meaningTitle.textContent = colorOption.label;
+  elements.meaningSummary.textContent = meaning.summary ?? '';
+  elements.meaningKeywords.innerHTML = '';
+
+  meaning.keywords?.forEach((keyword) => {
+    const tag = document.createElement('span');
+    tag.textContent = keyword;
+    elements.meaningKeywords.append(tag);
   });
 }
 
@@ -353,7 +402,7 @@ async function loadSelectedNecklace() {
     state.modelLoaded = true;
     applySelectedColor();
     updateColorUiAvailability();
-    setStatus('idle', '款式已就緒', '開啟相機後即可試戴');
+    syncModeUi();
   } catch (error) {
     const message =
       `無法載入 ${state.selectedNecklace.url}。請確認 .glb 已放在 public/models/necklace.glb。` +
@@ -362,6 +411,84 @@ async function loadSelectedNecklace() {
     setStatus('error', '模型載入失敗', '請先放置 necklace.glb');
     updateColorUiAvailability();
   }
+}
+
+function selectMode(mode) {
+  if (!Object.values(APP_MODES).includes(mode) || state.mode === mode) return;
+
+  if (mode === APP_MODES.SHOWCASE && state.cameraStarted) {
+    stopCameraSession();
+  }
+
+  state.mode = mode;
+  state.lastLandmarks = null;
+  state.lastDebugData = null;
+  state.hasFace = false;
+
+  if (mode === APP_MODES.AR) {
+    scene.setShowcaseMode(false);
+    controller.reset();
+  }
+
+  syncModeUi();
+}
+
+function syncModeUi() {
+  const isShowcase = state.mode === APP_MODES.SHOWCASE;
+
+  elements.modeButtons.forEach((button) => {
+    const isSelected = button.dataset.mode === state.mode;
+    button.classList.toggle('is-selected', isSelected);
+    button.setAttribute('aria-pressed', String(isSelected));
+  });
+
+  elements.arSections.forEach((section) => {
+    section.hidden = isShowcase;
+  });
+
+  elements.stage.classList.toggle('is-showcase', isShowcase);
+  elements.stage.classList.toggle('is-ar-mode', !isShowcase);
+  elements.livePill.textContent = isShowcase ? '3D Model' : 'Live AR';
+  elements.captureButton.hidden = isShowcase;
+  debugOverlay.setEnabled(!isShowcase && elements.debugToggle.checked);
+
+  if (isShowcase) {
+    scene.setShowcaseMode(state.modelLoaded);
+    setStatus(
+      state.modelLoaded ? 'tracking' : 'loading',
+      state.modelLoaded ? '模型展示' : '模型載入中',
+      state.modelLoaded ? '拖曳旋轉模型，選擇喜歡的色彩' : state.selectedNecklace.label,
+    );
+    return;
+  }
+
+  scene.setShowcaseMode(false);
+
+  if (!state.cameraStarted && state.modelLoaded) {
+    setStatus('idle', 'AR 試戴', '開啟相機後即可即時試戴');
+  }
+}
+
+function handleShowcasePointerDown(event) {
+  if (state.mode !== APP_MODES.SHOWCASE || !state.modelLoaded) return;
+
+  elements.threeCanvas.setPointerCapture?.(event.pointerId);
+  elements.stage.classList.add('is-dragging-showcase');
+  scene.beginShowcaseDrag(event.clientX);
+}
+
+function handleShowcasePointerMove(event) {
+  if (state.mode !== APP_MODES.SHOWCASE || !state.modelLoaded) return;
+
+  scene.dragShowcase(event.clientX);
+}
+
+function handleShowcasePointerUp(event) {
+  if (state.mode !== APP_MODES.SHOWCASE) return;
+
+  elements.threeCanvas.releasePointerCapture?.(event.pointerId);
+  elements.stage.classList.remove('is-dragging-showcase');
+  scene.endShowcaseDrag();
 }
 
 async function startExperience() {
@@ -686,6 +813,8 @@ function closeShareSheet() {
 }
 
 function handleFaceResults(results) {
+  if (state.mode !== APP_MODES.AR) return;
+
   const landmarks = results.multiFaceLandmarks?.[0] ?? null;
   state.lastLandmarks = landmarks;
   state.hasFace = Boolean(landmarks);
@@ -785,6 +914,10 @@ function clearError() {
 }
 
 function animate() {
+  if (state.mode === APP_MODES.SHOWCASE && state.modelLoaded) {
+    scene.updateShowcase(performance.now());
+  }
+
   scene.render();
   debugOverlay.render(state.lastLandmarks, state.lastDebugData);
   requestAnimationFrame(animate);
