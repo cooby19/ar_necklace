@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
+const GEM_NAME_PATTERN = /(gem|gemstone|jewel|stone)/i;
+
 export class NecklaceScene {
   constructor({ canvas, stageElement, onError }) {
     this.canvas = canvas;
@@ -44,26 +46,30 @@ export class NecklaceScene {
   setupRenderer() {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.12;
+    this.renderer.toneMappingExposure = 1.08;
+    this.renderer.setClearColor(0x000000, 0);
   }
 
   setupEnvironment() {
     const roomEnvironment = new RoomEnvironment(this.renderer);
-    const environment = this.pmremGenerator.fromScene(roomEnvironment, 0.04);
+    const environment = this.pmremGenerator.fromScene(roomEnvironment, 0.02);
     this.environmentMap = environment.texture;
     this.scene.environment = this.environmentMap;
+    this.scene.environmentIntensity = 1.28;
     roomEnvironment.dispose();
   }
 
   setupLights() {
-    const ambient = new THREE.AmbientLight(0xffffff, 1.35);
-    const key = new THREE.DirectionalLight(0xffffff, 2);
-    key.position.set(0.2, 0.6, 1.6);
-    const fill = new THREE.DirectionalLight(0xf3d18b, 0.75);
-    fill.position.set(-1.2, -0.3, 0.8);
-    const rim = new THREE.DirectionalLight(0xc9ddff, 0.9);
-    rim.position.set(1.4, 0.2, -1.1);
-    this.scene.add(ambient, key, fill, rim);
+    const hemisphere = new THREE.HemisphereLight(0xffffff, 0x5d6680, 0.8);
+    const key = new THREE.DirectionalLight(0xffffff, 2.25);
+    key.position.set(0.25, 0.7, 1.8);
+    const warmFill = new THREE.DirectionalLight(0xffd7a3, 0.62);
+    warmFill.position.set(-1.2, -0.35, 0.85);
+    const coolRim = new THREE.DirectionalLight(0xbfd5ff, 1.05);
+    coolRim.position.set(1.45, 0.32, -1.15);
+    const sparkle = new THREE.PointLight(0xffffff, 0.85, 3.2);
+    sparkle.position.set(0.08, 0.26, 1.25);
+    this.scene.add(hemisphere, key, warmFill, coolRim, sparkle);
   }
 
   async loadNecklace(config) {
@@ -79,6 +85,7 @@ export class NecklaceScene {
     const model = gltf.scene;
     this.markOccluderParts(model);
     this.prepareModel(model);
+    this.prepareGemMaterials(model);
     this.collectColorableMaterials(model);
     this.currentModel = model;
     this.necklaceRoot.add(model);
@@ -167,6 +174,88 @@ export class NecklaceScene {
         material.needsUpdate = true;
       });
     });
+  }
+
+  prepareGemMaterials(model) {
+    const materialUseCounts = this.countMaterialUsage(model);
+
+    model.traverse((child) => {
+      if (!this.isGemMesh(child) || child.userData.isDepthOccluder) return;
+
+      const materials = Array.isArray(child.material) ? child.material : [child.material];
+      const tunedMaterials = materials.map((material) => {
+        if (!material) return material;
+
+        const gemMaterial = materialUseCounts.get(material.uuid) > 1 ? material.clone() : material;
+        this.applyGemMaterialTuning(gemMaterial);
+        return gemMaterial;
+      });
+
+      child.material = Array.isArray(child.material) ? tunedMaterials : tunedMaterials[0];
+      child.renderOrder = 2;
+    });
+  }
+
+  countMaterialUsage(model) {
+    const counts = new Map();
+
+    model.traverse((child) => {
+      if (!child.isMesh || !child.material) return;
+      const materials = Array.isArray(child.material) ? child.material : [child.material];
+      materials.forEach((material) => {
+        if (!material) return;
+        counts.set(material.uuid, (counts.get(material.uuid) ?? 0) + 1);
+      });
+    });
+
+    return counts;
+  }
+
+  isGemMesh(mesh) {
+    if (!mesh.isMesh || !mesh.material) return false;
+
+    const materialNames = (Array.isArray(mesh.material) ? mesh.material : [mesh.material])
+      .map((material) => material?.name)
+      .filter(Boolean)
+      .join(' ');
+    const names = [mesh.name, mesh.geometry?.name, materialNames].filter(Boolean).join(' ');
+    return GEM_NAME_PATTERN.test(names);
+  }
+
+  applyGemMaterialTuning(material) {
+    material.userData = {
+      ...material.userData,
+      isGemMaterial: true,
+    };
+
+    if ('envMapIntensity' in material) {
+      material.envMapIntensity = Math.max(material.envMapIntensity ?? 1, 2.4);
+    }
+
+    if ('roughness' in material) {
+      material.roughness = THREE.MathUtils.clamp(material.roughness ?? 0.16, 0.08, 0.24);
+    }
+
+    if (material.normalScale?.isVector2) {
+      if (!material.userData.gemBaseNormalScale) {
+        material.userData.gemBaseNormalScale = material.normalScale.clone();
+      }
+      material.normalScale.copy(material.userData.gemBaseNormalScale).multiplyScalar(1.35);
+    }
+
+    if ('reflectivity' in material) {
+      material.reflectivity = Math.max(material.reflectivity ?? 0.5, 0.72);
+    }
+
+    if ('ior' in material) {
+      material.ior = THREE.MathUtils.clamp(material.ior ?? 1.5, 1.5, 1.72);
+    }
+
+    if ('transmission' in material) {
+      material.transmission = Math.min(material.transmission ?? 0, 0.08);
+    }
+
+    material.needsUpdate = true;
   }
 
   markOccluderParts(model) {
@@ -285,6 +374,10 @@ export class NecklaceScene {
 
     if (Number.isFinite(preset.emissiveIntensity) && 'emissiveIntensity' in material) {
       material.emissiveIntensity = preset.emissiveIntensity;
+    }
+
+    if (material.userData?.isGemMaterial) {
+      this.applyGemMaterialTuning(material);
     }
   }
 
