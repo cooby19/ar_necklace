@@ -496,7 +496,7 @@ async function startExperience() {
   elements.startButton.disabled = true;
   elements.switchCameraButton.disabled = true;
   elements.stopCameraButton.disabled = true;
-  elements.startButton.textContent = '啟動中...';
+  setStartButtonLabel('啟動中...');
 
   try {
     await startCameraForMode(state.cameraFacingMode);
@@ -504,7 +504,7 @@ async function startExperience() {
     elements.stage.classList.add('is-camera-on');
     elements.captureButton.disabled = false;
     setStatus('idle', '相機已啟動', '正在尋找臉部');
-    elements.startButton.textContent = '相機運作中';
+    setStartButtonLabel('相機運作中');
     syncCameraUi();
   } catch (error) {
     stopCameraSession();
@@ -589,7 +589,7 @@ function stopCameraSession() {
   elements.stage.classList.remove('is-camera-on');
   elements.captureButton.disabled = true;
   elements.startButton.disabled = false;
-  elements.startButton.textContent = '開始相機';
+  setStartButtonLabel('開始相機');
   syncCameraUi();
 }
 
@@ -864,8 +864,17 @@ function syncCameraUi() {
   elements.stage.classList.toggle('is-selfie-camera', isSelfie);
   elements.switchCameraButton.disabled = !state.cameraStarted || state.isSwitchingCamera;
   elements.stopCameraButton.disabled = !state.cameraStarted || state.isSwitchingCamera;
-  elements.switchCameraButton.textContent = state.isSwitchingCamera ? '切換中...' : nextLabel;
-  elements.switchCameraButton.setAttribute('aria-label', nextLabel);
+  const switchLabel = state.isSwitchingCamera ? '鏡頭切換中' : nextLabel;
+  elements.switchCameraButton.setAttribute('aria-label', switchLabel);
+  elements.switchCameraButton.title = switchLabel;
+}
+
+function setStartButtonLabel(label) {
+  elements.startButton.replaceChildren();
+
+  const icon = document.createElement('span');
+  icon.setAttribute('aria-hidden', 'true');
+  elements.startButton.append(icon, document.createTextNode(label));
 }
 
 function normalizeFacingMode(actualFacingMode, fallbackFacingMode) {
