@@ -35,6 +35,7 @@ export class ModeController {
       video: this.ui.elements.video,
       onResults: (results) => this.handleFaceResults(results),
       onError: (error) => this.showError(`Face Mesh 偵測發生錯誤：${error.message ?? error}`),
+      onStatsUpdate: () => this.handleFaceTrackerStats(),
     });
   }
 
@@ -439,17 +440,33 @@ export class ModeController {
     this.updateTrackingStatus();
   }
 
+  handleFaceTrackerStats() {
+    const state = this.getState();
+    if (!state.cameraStarted || !state.debugEnabled) return;
+
+    this.updateTrackingStatus();
+  }
+
   updateTrackingStatus() {
     const state = this.getState();
     if (!state.cameraStarted) return;
+    const inferenceStats = this.formatInferenceStats();
 
     if (!state.hasFace) {
-      this.ui.setStatus('idle', '正在尋找臉部', '請將臉保持在畫面中央');
+      this.ui.setStatus(
+        'idle',
+        '正在尋找臉部',
+        state.debugEnabled ? `請將臉保持在畫面中央 · ${inferenceStats}` : '請將臉保持在畫面中央',
+      );
       return;
     }
 
     if (!state.lastDebugData) {
-      this.ui.setStatus('idle', '貼合準備中', '等待臉部資訊穩定');
+      this.ui.setStatus(
+        'idle',
+        '貼合準備中',
+        state.debugEnabled ? `等待臉部資訊穩定 · ${inferenceStats}` : '等待臉部資訊穩定',
+      );
       return;
     }
 
@@ -458,9 +475,15 @@ export class ModeController {
       'tracking',
       '正在試戴',
       state.debugEnabled
-        ? `neck x/y: ${data.neckPoint.x.toFixed(3)}, ${data.neckPoint.y.toFixed(3)} · scale ${data.scale.toFixed(2)} · yaw ${data.rotationY.toFixed(2)}`
+        ? `neck x/y: ${data.neckPoint.x.toFixed(3)}, ${data.neckPoint.y.toFixed(3)} · scale ${data.scale.toFixed(2)} · yaw ${data.rotationY.toFixed(2)} · ${inferenceStats}`
         : '貼合中，保持自然正面即可',
     );
+  }
+
+  formatInferenceStats() {
+    const stats = this.faceTracker.getStats();
+    const averageMs = stats.averageInferenceMs > 0 ? `${stats.averageInferenceMs.toFixed(0)}ms` : '--ms';
+    return `inference: ${stats.currentFps}fps · avg ${averageMs}`;
   }
 
   syncColorAvailability() {

@@ -29,6 +29,17 @@ export const TRACKING_TUNING = {
     yaw: 0.18,
     opacity: 0.2,
   },
+  inference: {
+    targetFps: 24,
+    minFps: 15,
+    maxFps: 30,
+    adaptiveEnabled: true,
+    slowFrameRatio: 1.25,
+    fastFrameRatio: 0.65,
+    adjustCooldownMs: 2500,
+    fpsStep: 6,
+    averageWindowSize: 12,
+  },
   debug: {
     landmarkSampleStep: 6,
     pointRadius: 3,
