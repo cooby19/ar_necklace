@@ -88,6 +88,17 @@ export class UiController {
       handlers.onNecklaceSelect?.(card.dataset.necklaceId);
     });
 
+    this.elements.necklaceCards.addEventListener('keydown', (event) => {
+      const card = event.target.closest('[data-necklace-id]');
+      if (!card) return;
+
+      handleRadioKeydown(event, {
+        currentItem: card,
+        items: [...this.elements.necklaceCards.querySelectorAll('[data-necklace-id]')],
+        onSelect: (nextCard) => handlers.onNecklaceSelect?.(nextCard.dataset.necklaceId),
+      });
+    });
+
     this.elements.necklaceSelect.addEventListener('change', () => {
       handlers.onNecklaceSelect?.(this.elements.necklaceSelect.value);
     });
@@ -96,6 +107,21 @@ export class UiController {
       const swatch = event.target.closest('[data-color-id]');
       if (!swatch || swatch.disabled) return;
       handlers.onColorSelect?.(swatch.dataset.colorId, swatch.dataset.colorTargetId);
+    });
+
+    this.elements.colorSwatches.addEventListener('keydown', (event) => {
+      const swatch = event.target.closest('[data-color-id]');
+      if (!swatch || swatch.disabled) return;
+
+      const group = swatch.closest('[role="radiogroup"]');
+      if (!group) return;
+
+      handleRadioKeydown(event, {
+        currentItem: swatch,
+        items: [...group.querySelectorAll('[data-color-id]')].filter((item) => !item.disabled),
+        onSelect: (nextSwatch) =>
+          handlers.onColorSelect?.(nextSwatch.dataset.colorId, nextSwatch.dataset.colorTargetId),
+      });
     });
 
     this.elements.verticalOffsetRange.addEventListener('input', () => handlers.onTuningInput?.());
@@ -132,6 +158,8 @@ export class UiController {
       card.type = 'button';
       card.dataset.necklaceId = necklace.id;
       card.setAttribute('role', 'radio');
+      card.setAttribute('aria-checked', 'false');
+      card.tabIndex = -1;
 
       const preview = document.createElement('span');
       preview.className = 'necklace-card__preview';
@@ -170,12 +198,13 @@ export class UiController {
 
       const heading = document.createElement('strong');
       heading.className = 'color-target-group__heading';
+      heading.id = `color-target-${target.id}-heading`;
       heading.textContent = target.label;
 
       const swatchGrid = document.createElement('div');
       swatchGrid.className = 'color-target-group__swatches';
       swatchGrid.setAttribute('role', 'radiogroup');
-      swatchGrid.setAttribute('aria-label', `${target.label}顏色`);
+      swatchGrid.setAttribute('aria-labelledby', heading.id);
 
       palette.forEach((colorOption) => {
         const button = document.createElement('button');
@@ -184,7 +213,9 @@ export class UiController {
         button.dataset.colorId = colorOption.id;
         button.dataset.colorTargetId = target.id;
         button.setAttribute('role', 'radio');
+        button.setAttribute('aria-checked', 'false');
         button.setAttribute('aria-label', `${target.label}：${colorOption.label}`);
+        button.tabIndex = -1;
         button.title = `${target.label}：${colorOption.label}`;
 
         const chip = document.createElement('span');
@@ -309,22 +340,42 @@ export class UiController {
   syncNecklaceSelection(necklaceId) {
     this.elements.necklaceSelect.value = necklaceId;
 
-    const cards = this.elements.necklaceCards.querySelectorAll('[data-necklace-id]');
-    cards.forEach((card) => {
+    const cards = [...this.elements.necklaceCards.querySelectorAll('[data-necklace-id]')];
+    const selectedIndex = Math.max(
+      0,
+      cards.findIndex((card) => card.dataset.necklaceId === necklaceId),
+    );
+
+    cards.forEach((card, index) => {
       const isSelected = card.dataset.necklaceId === necklaceId;
       card.classList.toggle('is-selected', isSelected);
       card.setAttribute('aria-checked', String(isSelected));
+      card.tabIndex = index === selectedIndex ? 0 : -1;
     });
   }
 
   syncColorSelection({ selectedColorIdsByTarget = {}, fallbackColorId = '' }) {
-    const swatches = this.elements.colorSwatches.querySelectorAll('[data-color-id]');
-    swatches.forEach((swatch) => {
-      const targetId = swatch.dataset.colorTargetId;
-      const selectedColorId = selectedColorIdsByTarget[targetId] ?? fallbackColorId;
-      const isSelected = swatch.dataset.colorId === selectedColorId;
-      swatch.classList.toggle('is-selected', isSelected);
-      swatch.setAttribute('aria-checked', String(isSelected));
+    const groups = this.elements.colorSwatches.querySelectorAll('[role="radiogroup"]');
+
+    groups.forEach((group) => {
+      const swatches = [...group.querySelectorAll('[data-color-id]')];
+      const selectedIndex = Math.max(
+        0,
+        swatches.findIndex((swatch) => {
+          const targetId = swatch.dataset.colorTargetId;
+          const selectedColorId = selectedColorIdsByTarget[targetId] ?? fallbackColorId;
+          return swatch.dataset.colorId === selectedColorId;
+        }),
+      );
+
+      swatches.forEach((swatch, index) => {
+        const targetId = swatch.dataset.colorTargetId;
+        const selectedColorId = selectedColorIdsByTarget[targetId] ?? fallbackColorId;
+        const isSelected = swatch.dataset.colorId === selectedColorId;
+        swatch.classList.toggle('is-selected', isSelected);
+        swatch.setAttribute('aria-checked', String(isSelected));
+        swatch.tabIndex = swatch.disabled ? -1 : index === selectedIndex ? 0 : -1;
+      });
     });
   }
 
@@ -358,6 +409,7 @@ export class UiController {
     swatches.forEach((swatch) => {
       swatch.disabled = !isAvailable;
     });
+    this.syncColorSwatchTabIndex(isAvailable);
 
     if (!hasPalette) {
       this.elements.colorHint.textContent = '這個款式尚未設定可選顏色。';
@@ -377,6 +429,22 @@ export class UiController {
     this.elements.colorHint.textContent = targetLabels.length
       ? `會套用到：${targetLabels.join('、')}。`
       : '可套用到模型中的換色材質。';
+  }
+
+  syncColorSwatchTabIndex(isAvailable) {
+    const groups = this.elements.colorSwatches.querySelectorAll('[role="radiogroup"]');
+
+    groups.forEach((group) => {
+      const swatches = [...group.querySelectorAll('[data-color-id]')];
+      const selectedIndex = Math.max(
+        0,
+        swatches.findIndex((swatch) => swatch.classList.contains('is-selected')),
+      );
+
+      swatches.forEach((swatch, index) => {
+        swatch.tabIndex = isAvailable && index === selectedIndex ? 0 : -1;
+      });
+    });
   }
 
   readTuningControls() {
@@ -508,4 +576,47 @@ function formatSignedNumber(value) {
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
+}
+
+function handleRadioKeydown(event, { currentItem, items, onSelect }) {
+  if (!items.length) return;
+
+  const currentIndex = items.indexOf(currentItem);
+  if (currentIndex < 0) return;
+
+  const movement = getRadioKeyMovement(event.key);
+  if (movement !== null) {
+    event.preventDefault();
+
+    const nextIndex = wrapIndex(currentIndex + movement, items.length);
+    selectRadioItem(items[nextIndex], onSelect);
+    return;
+  }
+
+  if (event.key === 'Home' || event.key === 'End') {
+    event.preventDefault();
+    selectRadioItem(event.key === 'Home' ? items[0] : items[items.length - 1], onSelect);
+    return;
+  }
+
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault();
+    selectRadioItem(currentItem, onSelect);
+  }
+}
+
+function getRadioKeyMovement(key) {
+  if (key === 'ArrowRight' || key === 'ArrowDown') return 1;
+  if (key === 'ArrowLeft' || key === 'ArrowUp') return -1;
+  return null;
+}
+
+function selectRadioItem(item, onSelect) {
+  item.focus({ preventScroll: true });
+  item.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  onSelect(item);
+}
+
+function wrapIndex(index, length) {
+  return (index + length) % length;
 }
