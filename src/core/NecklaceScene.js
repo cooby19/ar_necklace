@@ -15,6 +15,7 @@ export class NecklaceScene {
       canvas,
       alpha: true,
       antialias: true,
+      // TODO: Validate removing this after renderForCapture() on iOS Safari, Android Chrome, and desktop Chrome.
       preserveDrawingBuffer: true,
     });
     this.loader = new GLTFLoader();
@@ -527,6 +528,10 @@ export class NecklaceScene {
 
   render() {
     this.renderer.render(this.scene, this.camera);
+  }
+
+  renderForCapture() {
+    this.render();
   }
 
   dispose() {

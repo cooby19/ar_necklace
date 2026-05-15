@@ -44,6 +44,7 @@ export class FaceTracker {
     this.faceMesh = null;
     this.isRunning = false;
     this.frameHandle = null;
+    this.schedulerType = 'raf';
     this.isSendingFrame = false;
     this.selfieMode = true;
     this.inferenceConfig = normalizeInferenceConfig(TRACKING_TUNING.inference);
@@ -59,6 +60,7 @@ export class FaceTracker {
       lastInferenceMs: 0,
       skippedFrameCount: 0,
       inferenceCount: 0,
+      schedulerType: this.schedulerType,
     };
   }
 
@@ -94,31 +96,68 @@ export class FaceTracker {
 
     if (this.isRunning) return;
 
+    this.schedulerType = this.supportsVideoFrameCallback() ? 'video-frame' : 'raf';
     this.resetRuntimeStats();
     this.isRunning = true;
-    this.tick();
+    this.scheduleNextFrame();
   }
 
   stop() {
     this.isRunning = false;
-    if (this.frameHandle) {
-      cancelAnimationFrame(this.frameHandle);
-      this.frameHandle = null;
-    }
+    this.cancelScheduledFrame();
   }
 
-  tick = async () => {
+  scheduleNextFrame() {
     if (!this.isRunning) return;
 
-    const now = performance.now();
+    if (this.schedulerType === 'video-frame') {
+      this.frameHandle = this.video.requestVideoFrameCallback(this.tickVideoFrame);
+      return;
+    }
+
+    this.frameHandle = requestAnimationFrame(this.tickAnimationFrame);
+  }
+
+  cancelScheduledFrame() {
+    if (this.frameHandle === null) return;
+
+    if (this.schedulerType === 'video-frame' && this.video.cancelVideoFrameCallback) {
+      this.video.cancelVideoFrameCallback(this.frameHandle);
+    } else {
+      cancelAnimationFrame(this.frameHandle);
+    }
+
+    this.frameHandle = null;
+  }
+
+  supportsVideoFrameCallback() {
+    return (
+      typeof this.video.requestVideoFrameCallback === 'function' &&
+      typeof this.video.cancelVideoFrameCallback === 'function'
+    );
+  }
+
+  tickVideoFrame = async (now) => {
+    this.frameHandle = null;
+    await this.processFrameCandidate(now);
+    this.scheduleNextFrame();
+  };
+
+  tickAnimationFrame = async (now) => {
+    this.frameHandle = null;
+    await this.processFrameCandidate(now);
+    this.scheduleNextFrame();
+  };
+
+  async processFrameCandidate(now) {
+    if (!this.isRunning) return;
+
     if (this.canSendFrame(now)) {
       await this.sendFrame(now);
     } else if (this.video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
       this.stats.skippedFrameCount += 1;
     }
-
-    this.frameHandle = requestAnimationFrame(this.tick);
-  };
+  }
 
   canSendFrame(now) {
     if (this.isSendingFrame) return false;
@@ -161,6 +200,7 @@ export class FaceTracker {
       averageInferenceMs,
       lastInferenceMs: inferenceMs,
       inferenceCount: this.stats.inferenceCount + 1,
+      schedulerType: this.schedulerType,
     };
 
     this.adjustAdaptiveFps(averageInferenceMs, completedAt);
@@ -215,6 +255,7 @@ export class FaceTracker {
       lastInferenceMs: 0,
       skippedFrameCount: 0,
       inferenceCount: 0,
+      schedulerType: this.schedulerType,
     };
     this.emitStats();
   }

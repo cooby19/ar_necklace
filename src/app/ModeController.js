@@ -247,7 +247,7 @@ export class ModeController {
     this.ui.setCaptureBusy(true);
 
     try {
-      this.scene.render();
+      this.scene.renderForCapture();
       const capture = await this.captureService.createCapture({
         mirrored: isSelfieCamera(state.cameraFacingMode),
       });
@@ -483,7 +483,8 @@ export class ModeController {
   formatInferenceStats() {
     const stats = this.faceTracker.getStats();
     const averageMs = stats.averageInferenceMs > 0 ? `${stats.averageInferenceMs.toFixed(0)}ms` : '--ms';
-    return `inference: ${stats.currentFps}fps · avg ${averageMs}`;
+    const schedulerLabel = stats.schedulerType === 'video-frame' ? 'rVFC' : 'RAF';
+    return `inference: ${stats.currentFps}fps · avg ${averageMs} · ${schedulerLabel}`;
   }
 
   syncColorAvailability() {
