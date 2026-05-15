@@ -4,8 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>AR Necklace Try-On</title>
-    <script type="module" crossorigin src="./assets/index-D8npohhi.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-D_dqmoCw.css">
+    <script type="module" crossorigin src="./assets/index-BUz1hDA1.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-BNzqbMAX.css">
   </head>
   <body>
     <main id="app" class="app-shell">
@@ -17,6 +17,42 @@
           <video id="cameraVideo" class="camera-video" autoplay playsinline muted></video>
           <canvas id="threeCanvas" class="overlay-canvas"></canvas>
           <canvas id="debugCanvas" class="overlay-canvas debug-canvas"></canvas>
+          <aside id="developerPanel" class="developer-panel" aria-label="開發模式面板" hidden>
+            <div class="developer-panel__header">
+              <span>開發模式</span>
+              <span>Live tuning</span>
+            </div>
+            <dl class="developer-panel__metrics">
+              <div>
+                <dt>FPS</dt>
+                <dd id="debugFps">--</dd>
+              </div>
+              <div>
+                <dt>推論</dt>
+                <dd id="debugInferenceMs">-- ms</dd>
+              </div>
+              <div>
+                <dt>臉寬</dt>
+                <dd id="debugFaceWidth">--</dd>
+              </div>
+              <div>
+                <dt>Yaw</dt>
+                <dd id="debugYaw">-- deg</dd>
+              </div>
+              <div>
+                <dt>Scale</dt>
+                <dd id="debugScale">--</dd>
+              </div>
+              <div>
+                <dt>模型</dt>
+                <dd id="debugModelUrl">--</dd>
+              </div>
+              <div>
+                <dt>材質命中</dt>
+                <dd id="debugMaterialHits">0</dd>
+              </div>
+            </dl>
+          </aside>
 
           <div class="stage-topbar">
             <div class="stage-brand">
@@ -255,7 +291,7 @@
 
       <div id="shareSheet" class="share-sheet" hidden>
         <button class="share-sheet__backdrop" type="button" aria-label="關閉分享預覽" data-close-share></button>
-        <section class="share-card" role="dialog" aria-modal="true" aria-labelledby="shareTitle">
+        <section class="share-card" role="dialog" aria-modal="true" aria-labelledby="shareTitle" tabindex="-1">
           <header class="share-card__header">
             <div>
               <p class="eyebrow">Soft Jewelry Studio</p>
