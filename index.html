@@ -4,8 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>AR Necklace Try-On</title>
-    <script type="module" crossorigin src="./assets/index-w25g2VXn.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-Cl-OWEJQ.css">
+    <script type="module" crossorigin src="./assets/index-D8npohhi.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-D_dqmoCw.css">
   </head>
   <body>
     <main id="app" class="app-shell">
@@ -32,23 +32,7 @@
             </div>
           </div>
 
-          <div class="camera-toolrail" data-ar-section hidden aria-label="相機功能">
-            <button
-              id="switchCameraButton"
-              class="camera-tool-button camera-switch-button"
-              type="button"
-              aria-label="切換後鏡頭"
-              title="切換鏡頭"
-              disabled
-            >
-              <svg aria-hidden="true" viewBox="0 0 24 24">
-                <path d="M7 7h7.5a4.5 4.5 0 0 1 4 6.5" />
-                <path d="m10 4-3 3 3 3" />
-                <path d="M17 17H9.5a4.5 4.5 0 0 1-4-6.5" />
-                <path d="m14 20 3-3-3-3" />
-              </svg>
-            </button>
-
+          <div class="camera-toolrail" data-ar-section hidden aria-label="預覽輔助功能">
             <label class="camera-toggle-button" title="顯示項鍊">
               <input id="necklaceToggle" type="checkbox" checked />
               <span aria-hidden="true">
@@ -73,19 +57,6 @@
               </span>
               <span class="sr-only">Debug 視覺化</span>
             </label>
-
-            <button
-              id="stopCameraButton"
-              class="camera-tool-button"
-              type="button"
-              aria-label="關閉鏡頭"
-              title="關閉鏡頭"
-              disabled
-            >
-              <svg aria-hidden="true" viewBox="0 0 24 24">
-                <path d="m6 6 12 12M18 6 6 18" />
-              </svg>
-            </button>
           </div>
 
           <div class="status-panel" aria-live="polite">
@@ -97,10 +68,41 @@
           </div>
 
           <div class="stage-actionbar" data-ar-section hidden>
-            <button id="startButton" class="start-camera-button" type="button">
-              <span aria-hidden="true"></span>
-              開始相機
-            </button>
+            <div class="camera-control-toolbar" role="group" aria-label="相機操作">
+              <button id="startButton" class="start-camera-button" type="button">
+                <span aria-hidden="true"></span>
+                開始相機
+              </button>
+
+              <button
+                id="switchCameraButton"
+                class="camera-control-button camera-switch-button"
+                type="button"
+                aria-label="切換後鏡頭"
+                title="切換鏡頭"
+                disabled
+              >
+                <svg aria-hidden="true" viewBox="0 0 24 24">
+                  <path d="M7 7h7.5a4.5 4.5 0 0 1 4 6.5" />
+                  <path d="m10 4-3 3 3 3" />
+                  <path d="M17 17H9.5a4.5 4.5 0 0 1-4-6.5" />
+                  <path d="m14 20 3-3-3-3" />
+                </svg>
+              </button>
+
+              <button
+                id="stopCameraButton"
+                class="camera-control-button"
+                type="button"
+                aria-label="關閉鏡頭"
+                title="關閉鏡頭"
+                disabled
+              >
+                <svg aria-hidden="true" viewBox="0 0 24 24">
+                  <path d="m6 6 12 12M18 6 6 18" />
+                </svg>
+              </button>
+            </div>
 
             <button
               id="captureButton"
