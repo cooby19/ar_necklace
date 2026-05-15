@@ -216,6 +216,83 @@ summary:focus-visible,
   opacity: 1;
 }
 
+.developer-panel {
+  position: absolute;
+  z-index: 4;
+  right: max(74px, calc(env(safe-area-inset-right) + 74px));
+  top: max(62px, calc(env(safe-area-inset-top) + 62px));
+  display: grid;
+  gap: 10px;
+  width: min(280px, calc(100vw - 112px));
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 8px;
+  background: rgba(24, 24, 24, 0.5);
+  color: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.16);
+  backdrop-filter: blur(16px);
+  pointer-events: none;
+}
+
+.developer-panel[hidden] {
+  display: none;
+}
+
+.developer-panel__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.developer-panel__header span:first-child {
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.developer-panel__header span:last-child {
+  color: rgba(255, 255, 255, 0.56);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.developer-panel__metrics {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+
+.developer-panel__metrics div {
+  display: grid;
+  grid-template-columns: 86px minmax(0, 1fr);
+  align-items: baseline;
+  gap: 10px;
+  min-height: 22px;
+}
+
+.developer-panel__metrics dt,
+.developer-panel__metrics dd {
+  min-width: 0;
+  margin: 0;
+}
+
+.developer-panel__metrics dt {
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.developer-panel__metrics dd {
+  overflow: hidden;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  font-weight: 800;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .stage-topbar {
   position: absolute;
   top: max(14px, env(safe-area-inset-top));
@@ -1673,6 +1750,12 @@ summary:focus-visible,
     gap: 8px;
   }
 
+  .developer-panel {
+    right: 64px;
+    top: 58px;
+    width: min(258px, calc(100vw - 132px));
+  }
+
   .camera-toggle-button > span {
     width: 42px;
     height: 42px;
@@ -1731,6 +1814,18 @@ summary:focus-visible,
     opacity: 0;
     transform: translateY(8px);
     pointer-events: none;
+  }
+
+  .developer-panel {
+    left: 12px;
+    right: 64px;
+    top: 108px;
+    width: auto;
+    padding: 10px;
+  }
+
+  .developer-panel__metrics div {
+    grid-template-columns: 72px minmax(0, 1fr);
   }
 
   .necklace-card {

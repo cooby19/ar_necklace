@@ -414,6 +414,11 @@ export class NecklaceScene {
     return this.colorableMaterials.size > 0;
   }
 
+  getColorableMaterialCount() {
+    const materials = [...this.colorableMaterials.values()].flat();
+    return new Set(materials.map((material) => material.uuid)).size;
+  }
+
   applyColor(target, color) {
     const materials = this.resolveColorableMaterials(target);
     if (!materials.length) return false;

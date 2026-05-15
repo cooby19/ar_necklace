@@ -24,6 +24,11 @@ export class ModeController {
     this.necklaceLoadSequence = 0;
     this.calibrationDrag = null;
     this.calibrationPromptedIds = new Set();
+    this.renderStats = {
+      fps: 0,
+      frameCount: 0,
+      lastSampleAt: performance.now(),
+    };
 
     this.camera = new CameraStream(this.ui.elements.video);
     this.scene = new NecklaceScene({
@@ -418,6 +423,7 @@ export class ModeController {
   handleDebugToggle(isEnabled) {
     this.appState.set({ debugEnabled: isEnabled }, 'debug-toggle');
     this.debugOverlay.setEnabled(this.appState.get('mode') === APP_MODES.AR && isEnabled);
+    this.updateDeveloperPanel();
     this.updateTrackingStatus();
   }
 
@@ -569,6 +575,7 @@ export class ModeController {
         'face-results',
       );
       this.updateTrackingStatus();
+      this.updateDeveloperPanel();
       return;
     }
 
@@ -583,6 +590,7 @@ export class ModeController {
       'face-results',
     );
     this.updateTrackingStatus();
+    this.updateDeveloperPanel();
   }
 
   markCalibrationReady() {
@@ -600,6 +608,20 @@ export class ModeController {
     if (!state.cameraStarted || !state.debugEnabled) return;
 
     this.updateTrackingStatus();
+    this.updateDeveloperPanel();
+  }
+
+  updateDeveloperPanel() {
+    const state = this.getState();
+    this.ui.updateDeveloperPanel({
+      debugData: state.lastDebugData,
+      stats: {
+        ...this.faceTracker.getStats(),
+        renderFps: this.renderStats.fps,
+      },
+      modelUrl: state.selectedNecklace?.url,
+      materialHitCount: this.scene.getColorableMaterialCount(),
+    });
   }
 
   updateTrackingStatus() {
@@ -748,16 +770,29 @@ export class ModeController {
   }
 
   animate = () => {
+    const now = performance.now();
     const state = this.getState();
+    this.updateRenderFps(now);
 
     if (state.mode === APP_MODES.SHOWCASE && state.modelLoaded) {
-      this.scene.updateShowcase(performance.now());
+      this.scene.updateShowcase(now);
     }
 
     this.scene.render();
     this.debugOverlay.render(state.lastLandmarks, state.lastDebugData);
+    if (state.debugEnabled) this.updateDeveloperPanel();
     requestAnimationFrame(this.animate);
   };
+
+  updateRenderFps(now) {
+    this.renderStats.frameCount += 1;
+    const elapsed = now - this.renderStats.lastSampleAt;
+    if (elapsed < 500) return;
+
+    this.renderStats.fps = Math.round((this.renderStats.frameCount * 1000) / elapsed);
+    this.renderStats.frameCount = 0;
+    this.renderStats.lastSampleAt = now;
+  }
 }
 
 function getColorOption(necklace, colorId) {

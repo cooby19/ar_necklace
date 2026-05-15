@@ -1,5 +1,14 @@
 import { APP_MODES, isSelfieCamera } from './AppState.js';
 
+const FOCUSABLE_SELECTOR = [
+  'a[href]',
+  'button:not([disabled])',
+  'input:not([disabled])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  '[tabindex]:not([tabindex="-1"])',
+].join(',');
+
 export class UiController {
   constructor({ necklaces }) {
     this.necklaces = necklaces;
@@ -9,7 +18,17 @@ export class UiController {
       video: document.querySelector('#cameraVideo'),
       threeCanvas: document.querySelector('#threeCanvas'),
       debugCanvas: document.querySelector('#debugCanvas'),
+      developerPanel: document.querySelector('#developerPanel'),
+      debugFps: document.querySelector('#debugFps'),
+      debugInferenceMs: document.querySelector('#debugInferenceMs'),
+      debugFaceWidth: document.querySelector('#debugFaceWidth'),
+      debugYaw: document.querySelector('#debugYaw'),
+      debugScale: document.querySelector('#debugScale'),
+      debugModelUrl: document.querySelector('#debugModelUrl'),
+      debugMaterialHits: document.querySelector('#debugMaterialHits'),
       livePill: document.querySelector('.live-pill'),
+      experienceColumn: document.querySelector('.experience-column'),
+      controls: document.querySelector('.controls'),
       captureButton: document.querySelector('#captureButton'),
       bottomSheetToggle: document.querySelector('#bottomSheetToggle'),
       modeButtons: document.querySelectorAll('[data-mode]'),
@@ -40,6 +59,7 @@ export class UiController {
       saveCalibrationButton: document.querySelector('#saveCalibrationButton'),
       resetTuningButton: document.querySelector('#resetTuningButton'),
       shareSheet: document.querySelector('#shareSheet'),
+      shareCard: document.querySelector('.share-card'),
       shareImage: document.querySelector('#shareImage'),
       downloadCaptureButton: document.querySelector('#downloadCaptureButton'),
       shareCaptureButton: document.querySelector('#shareCaptureButton'),
@@ -137,9 +157,22 @@ export class UiController {
     });
 
     document.addEventListener('keydown', (event) => {
-      if (event.key === 'Escape' && !this.elements.shareSheet.hidden) {
+      if (this.elements.shareSheet.hidden) return;
+
+      if (event.key === 'Escape') {
+        event.preventDefault();
         handlers.onCloseShareSheet?.();
+        return;
       }
+
+      if (event.key === 'Tab') {
+        this.trapShareSheetFocus(event);
+      }
+    });
+
+    document.addEventListener('focusin', (event) => {
+      if (this.elements.shareSheet.hidden || this.elements.shareCard.contains(event.target)) return;
+      this.focusFirstShareSheetControl();
     });
   }
 
@@ -267,6 +300,10 @@ export class UiController {
 
     if (shouldSync(['debugEnabled'])) {
       this.elements.debugToggle.checked = state.debugEnabled;
+    }
+
+    if (shouldSync(['mode', 'debugEnabled'])) {
+      this.setDeveloperPanelVisible(state.mode === APP_MODES.AR && state.debugEnabled);
     }
   }
 
@@ -537,11 +574,97 @@ export class UiController {
   }
 
   openShareSheet() {
+    this.shareFocusReturnElement = this.elements.captureButton;
     this.elements.shareSheet.hidden = false;
+    this.focusFirstShareSheetControl({ immediate: true });
+    this.setShareBackgroundInert(true);
   }
 
   closeShareSheet() {
     this.elements.shareSheet.hidden = true;
+    this.setShareBackgroundInert(false);
+    this.restoreShareSheetFocus();
+  }
+
+  setShareBackgroundInert(isInert) {
+    [this.elements.experienceColumn, this.elements.controls].forEach((element) => {
+      if (!element) return;
+      element.inert = isInert;
+      element.toggleAttribute('aria-hidden', isInert);
+      setBackgroundFocusableState(element, isInert);
+    });
+  }
+
+  trapShareSheetFocus(event) {
+    const focusableElements = this.getShareSheetFocusableElements();
+    if (!focusableElements.length) {
+      event.preventDefault();
+      this.elements.shareCard.focus({ preventScroll: true });
+      return;
+    }
+
+    const firstElement = focusableElements[0];
+    const lastElement = focusableElements[focusableElements.length - 1];
+
+    if (event.shiftKey && document.activeElement === firstElement) {
+      event.preventDefault();
+      lastElement.focus({ preventScroll: true });
+      return;
+    }
+
+    if (!event.shiftKey && document.activeElement === lastElement) {
+      event.preventDefault();
+      firstElement.focus({ preventScroll: true });
+    }
+  }
+
+  focusFirstShareSheetControl({ immediate = false } = {}) {
+    const focusTarget = () => {
+      const closeButton = this.elements.shareCard.querySelector('[data-close-share]');
+      const firstElement = closeButton ?? this.getShareSheetFocusableElements()[0] ?? this.elements.shareCard;
+      firstElement.focus({ preventScroll: true });
+    };
+
+    if (immediate) {
+      focusTarget();
+      return;
+    }
+
+    requestAnimationFrame(focusTarget);
+  }
+
+  restoreShareSheetFocus() {
+    requestAnimationFrame(() => {
+      const fallbackElement = this.elements.captureButton;
+      const target = this.shareFocusReturnElement ?? fallbackElement;
+      if (target?.hidden || target?.disabled) return;
+      target.focus({ preventScroll: true });
+      this.shareFocusReturnElement = null;
+    });
+  }
+
+  getShareSheetFocusableElements() {
+    return [...this.elements.shareCard.querySelectorAll(FOCUSABLE_SELECTOR)].filter(
+      (element) => !element.disabled && element.tabIndex !== -1 && isElementVisible(element),
+    );
+  }
+
+  setDeveloperPanelVisible(isVisible) {
+    this.elements.developerPanel.hidden = !isVisible;
+  }
+
+  updateDeveloperPanel({ debugData, stats, modelUrl, materialHitCount }) {
+    this.elements.debugFps.textContent = stats?.renderFps ? `${stats.renderFps}` : '--';
+    this.elements.debugInferenceMs.textContent =
+      stats?.lastInferenceMs > 0 ? `${stats.lastInferenceMs.toFixed(1)} ms` : '-- ms';
+    this.elements.debugFaceWidth.textContent = Number.isFinite(debugData?.faceWidth)
+      ? debugData.faceWidth.toFixed(3)
+      : '--';
+    this.elements.debugYaw.textContent = debugData ? `${(debugData.rotationY * 57.2958).toFixed(1)} deg` : '-- deg';
+    this.elements.debugScale.textContent = Number.isFinite(debugData?.scale) ? debugData.scale.toFixed(3) : '--';
+    this.elements.debugModelUrl.textContent = modelUrl || '--';
+    this.elements.debugModelUrl.title = modelUrl || '';
+    this.elements.debugMaterialHits.textContent = String(materialHitCount ?? 0);
   }
 
   isDebugEnabled() {
@@ -619,4 +742,30 @@ function selectRadioItem(item, onSelect) {
 
 function wrapIndex(index, length) {
   return (index + length) % length;
+}
+
+function isElementVisible(element) {
+  return Boolean(element.offsetWidth || element.offsetHeight || element.getClientRects().length);
+}
+
+function setBackgroundFocusableState(root, isInert) {
+  root.querySelectorAll(`${FOCUSABLE_SELECTOR}, [data-share-previous-tabindex]`).forEach((element) => {
+    if (isInert) {
+      if (!element.hasAttribute('data-share-previous-tabindex')) {
+        element.setAttribute('data-share-previous-tabindex', element.getAttribute('tabindex') ?? '');
+      }
+      element.tabIndex = -1;
+      return;
+    }
+
+    if (!element.hasAttribute('data-share-previous-tabindex')) return;
+
+    const previousTabIndex = element.getAttribute('data-share-previous-tabindex');
+    if (previousTabIndex) {
+      element.setAttribute('tabindex', previousTabIndex);
+    } else {
+      element.removeAttribute('tabindex');
+    }
+    element.removeAttribute('data-share-previous-tabindex');
+  });
 }

@@ -23,7 +23,6 @@ export class DebugOverlay {
     this.clear();
 
     if (!landmarks?.length) {
-      this.drawText(['No face detected'], 16, 22);
       return;
     }
 
@@ -34,18 +33,6 @@ export class DebugOverlay {
       this.drawPoint(debugData.neckPoint, '#64d491', 8);
       this.drawLine(debugData.leftCheek, debugData.rightCheek, 'rgba(255, 218, 123, 0.85)', 2);
       this.drawLine(debugData.chin, debugData.neckPoint, 'rgba(100, 212, 145, 0.85)', 2);
-      this.drawText(
-        [
-          `face width: ${debugData.faceWidth.toFixed(3)}`,
-          `face height: ${debugData.faceHeight.toFixed(3)}`,
-          `roll: ${(debugData.roll * 57.2958).toFixed(1)} deg`,
-          `yaw: ${(debugData.rotationY * 57.2958).toFixed(1)} deg`,
-          `scale: ${debugData.scale.toFixed(3)}`,
-          `opacity: ${debugData.opacity.toFixed(2)}`,
-        ],
-        16,
-        22,
-      );
     }
   }
 
@@ -74,22 +61,6 @@ export class DebugOverlay {
     this.ctx.strokeStyle = color;
     this.ctx.lineWidth = width;
     this.ctx.stroke();
-  }
-
-  drawText(lines, x, y) {
-    const lineHeight = 18;
-    const width = Math.max(...lines.map((line) => this.ctx.measureText(line).width), 110) + 20;
-    const height = lines.length * lineHeight + 14;
-
-    this.ctx.save();
-    this.ctx.font = '12px ui-monospace, SFMono-Regular, Menlo, monospace';
-    this.ctx.fillStyle = 'rgba(8, 12, 16, 0.76)';
-    this.ctx.fillRect(x - 8, y - 14, width, height);
-    this.ctx.fillStyle = '#f6f4ed';
-    lines.forEach((line, index) => {
-      this.ctx.fillText(line, x, y + index * lineHeight);
-    });
-    this.ctx.restore();
   }
 
   toCanvas(point) {
