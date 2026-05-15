@@ -16,9 +16,18 @@
           <canvas id="threeCanvas" class="overlay-canvas"></canvas>
           <canvas id="debugCanvas" class="overlay-canvas debug-canvas"></canvas>
 
-          <div class="stage-topbar" aria-hidden="true">
-            <span class="studio-mark">Soft Jewelry Studio</span>
-            <span class="live-pill">Live AR</span>
+          <div class="stage-topbar">
+            <div class="stage-brand">
+              <span class="studio-mark">Soft Jewelry Studio</span>
+              <span class="live-pill">3D Model</span>
+            </div>
+
+            <div class="mode-tabs stage-mode-tabs" role="group" aria-label="預覽模式">
+              <button class="mode-tab is-selected" type="button" data-mode="showcase" aria-pressed="true">
+                模型展示
+              </button>
+              <button class="mode-tab" type="button" data-mode="ar" aria-pressed="false">AR 試戴</button>
+            </div>
           </div>
 
           <div class="camera-toolrail" data-ar-section hidden aria-label="相機功能">
@@ -50,7 +59,7 @@
               <span class="sr-only">顯示項鍊</span>
             </label>
 
-            <label class="camera-toggle-button" title="Debug 視覺化">
+            <label class="camera-toggle-button debug-tool-toggle" title="Debug 視覺化">
               <input id="debugToggle" type="checkbox" />
               <span aria-hidden="true">
                 <svg viewBox="0 0 24 24">
@@ -107,65 +116,41 @@
           </div>
         </section>
 
-        <section class="product-panel" aria-label="模型與商品資訊">
-          <div class="product-panel__section product-panel__section--styles">
-            <div class="section-heading">
-              <span id="styleHeading">模型展示</span>
-              <span>Collection</span>
-            </div>
-
-            <div id="necklaceCards" class="necklace-card-list" role="radiogroup" aria-label="項鍊款式"></div>
-            <select id="necklaceSelect" hidden></select>
-          </div>
-
-          <div class="product-panel__section">
-            <div class="section-heading">
-              <span id="colorHeading">選擇顏色</span>
-              <span>Color</span>
-            </div>
-
-            <div id="colorSwatches" class="color-swatch-list" role="radiogroup" aria-label="項鍊顏色"></div>
-            <p id="colorHint" class="color-hint" aria-live="polite">載入款式後可選擇顏色。</p>
-          </div>
-
-          <div class="product-panel__section">
-            <div class="section-heading">
-              <span id="meaningHeading">色彩寓意</span>
-              <span>Meaning</span>
-            </div>
-
-            <div id="colorMeaning" class="color-meaning" aria-live="polite">
-              <div class="color-meaning__title">
-                <span id="meaningChip" class="color-meaning__chip" aria-hidden="true"></span>
-                <strong id="meaningTitle">粉晶</strong>
-              </div>
-              <p id="meaningSummary">柔軟、被照顧與安定的感覺</p>
-              <div id="meaningKeywords" class="meaning-keywords"></div>
-            </div>
-          </div>
-        </section>
       </div>
 
       <aside class="controls" aria-label="AR controls">
+        <button
+          id="bottomSheetToggle"
+          class="bottom-sheet-head"
+          type="button"
+          aria-expanded="true"
+          aria-label="收起試戴選項"
+        >
+          <span class="bottom-sheet-handle" aria-hidden="true"></span>
+          <strong>試戴選項</strong>
+          <svg class="bottom-sheet-icon" aria-hidden="true" viewBox="0 0 24 24">
+            <path d="M8 7h11" />
+            <path d="M8 12h11" />
+            <path d="M8 17h11" />
+            <circle cx="5" cy="7" r="1" />
+            <circle cx="5" cy="12" r="1" />
+            <circle cx="5" cy="17" r="1" />
+          </svg>
+          <span class="bottom-sheet-chevron" aria-hidden="true"></span>
+        </button>
+
         <header class="brand-block">
           <p class="eyebrow">Soft Jewelry Studio</p>
           <h1>項鍊試戴</h1>
           <p>柔和、乾淨的線上飾品預覽。</p>
         </header>
 
-        <section class="control-section" aria-label="預覽模式">
-          <div class="section-heading">
-            <span>模式</span>
-            <span>Mode</span>
-          </div>
-
-          <div class="mode-tabs" role="group" aria-label="預覽模式">
-            <button class="mode-tab is-selected" type="button" data-mode="showcase" aria-pressed="true">
-              模型展示
-            </button>
-            <button class="mode-tab" type="button" data-mode="ar" aria-pressed="false">AR 試戴</button>
-          </div>
-        </section>
+        <nav class="bottom-sheet-tabs" aria-label="試戴選項">
+          <button class="bottom-sheet-tab is-selected" type="button" data-panel-tab="styles" aria-pressed="true">款式</button>
+          <button class="bottom-sheet-tab" type="button" data-panel-tab="color" aria-pressed="false">顏色</button>
+          <button class="bottom-sheet-tab" type="button" data-panel-tab="fit" data-ar-section hidden aria-pressed="false">微調</button>
+          <button class="bottom-sheet-tab" type="button" data-panel-tab="meaning" aria-pressed="false">寓意</button>
+        </nav>
 
         <section class="control-section sidebar-status-section" aria-label="試戴控制" data-ar-section hidden>
           <div class="section-heading">
@@ -173,14 +158,40 @@
             <span>Live preview</span>
           </div>
 
-          <p class="sidebar-note">相機、翻轉、關閉與 Debug 已整合到預覽畫面右側。這裡保留貼合微調與進階設定。</p>
+          <p class="sidebar-note">相機與拍照控制保留在預覽畫面，細節設定可從下方分組展開。</p>
         </section>
 
-        <section class="control-section" aria-labelledby="tuningHeading" data-ar-section hidden>
-          <div class="section-heading">
-            <span id="tuningHeading">微調</span>
-            <span>Fit</span>
-          </div>
+        <details class="control-section control-panel" data-control-panel="styles" open>
+          <summary>
+            <span class="section-heading">
+              <span id="styleHeading">款式</span>
+              <span>Collection</span>
+            </span>
+          </summary>
+
+          <div id="necklaceCards" class="necklace-card-list" role="radiogroup" aria-label="項鍊款式"></div>
+          <select id="necklaceSelect" hidden></select>
+        </details>
+
+        <details class="control-section control-panel" data-control-panel="color" open>
+          <summary>
+            <span class="section-heading">
+              <span id="colorHeading">顏色</span>
+              <span>Color</span>
+            </span>
+          </summary>
+
+          <div id="colorSwatches" class="color-swatch-list" role="radiogroup" aria-label="項鍊顏色"></div>
+          <p id="colorHint" class="color-hint" aria-live="polite">載入款式後可選擇顏色。</p>
+        </details>
+
+        <details class="control-section control-panel" data-control-panel="fit" data-ar-section hidden>
+          <summary>
+            <span class="section-heading">
+              <span id="tuningHeading">微調</span>
+              <span>Fit</span>
+            </span>
+          </summary>
 
           <div class="tuning-list">
             <label class="range-row" for="verticalOffsetRange">
@@ -203,7 +214,25 @@
           </div>
 
           <button id="resetTuningButton" class="secondary-button" type="button">重置微調</button>
-        </section>
+        </details>
+
+        <details class="control-section control-panel" data-control-panel="meaning">
+          <summary>
+            <span class="section-heading">
+              <span id="meaningHeading">寓意</span>
+              <span>Meaning</span>
+            </span>
+          </summary>
+
+          <div id="colorMeaning" class="color-meaning" aria-live="polite">
+            <div class="color-meaning__title">
+              <span id="meaningChip" class="color-meaning__chip" aria-hidden="true"></span>
+              <strong id="meaningTitle">粉晶</strong>
+            </div>
+            <p id="meaningSummary">柔軟、被照顧與安定的感覺</p>
+            <div id="meaningKeywords" class="meaning-keywords"></div>
+          </div>
+        </details>
 
         <details class="advanced-panel" data-ar-section hidden>
           <summary>進階</summary>

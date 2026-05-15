@@ -7,6 +7,7 @@ import { NecklaceController } from './core/NecklaceController.js';
 import { NecklaceScene } from './core/NecklaceScene.js';
 
 const elements = {
+  app: document.querySelector('#app'),
   stage: document.querySelector('.stage'),
   video: document.querySelector('#cameraVideo'),
   threeCanvas: document.querySelector('#threeCanvas'),
@@ -14,7 +15,10 @@ const elements = {
   stagePlaceholder: document.querySelector('.stage-placeholder'),
   livePill: document.querySelector('.live-pill'),
   captureButton: document.querySelector('#captureButton'),
+  bottomSheetToggle: document.querySelector('#bottomSheetToggle'),
   modeButtons: document.querySelectorAll('[data-mode]'),
+  panelTabs: document.querySelectorAll('[data-panel-tab]'),
+  controlPanels: document.querySelectorAll('[data-control-panel]'),
   arSections: document.querySelectorAll('[data-ar-section]'),
   startButton: document.querySelector('#startButton'),
   switchCameraButton: document.querySelector('#switchCameraButton'),
@@ -79,6 +83,8 @@ const state = {
   lastDebugData: null,
   selectedNecklace: NECKLACES[0],
   selectedColorId: NECKLACES[0]?.colorCustomization?.defaultColor ?? '',
+  activePanel: 'styles',
+  controlsCollapsed: true,
   captureDataUrl: '',
   captureBlob: null,
   adjustments: {
@@ -190,6 +196,12 @@ function wireUi() {
   elements.modeButtons.forEach((button) => {
     button.addEventListener('click', () => selectMode(button.dataset.mode));
   });
+
+  elements.panelTabs.forEach((button) => {
+    button.addEventListener('click', () => selectControlPanel(button.dataset.panelTab));
+  });
+
+  elements.bottomSheetToggle.addEventListener('click', toggleBottomSheet);
 
   elements.threeCanvas.addEventListener('pointerdown', handleShowcasePointerDown);
   elements.threeCanvas.addEventListener('pointermove', handleShowcasePointerMove);
@@ -428,6 +440,8 @@ function selectMode(mode) {
   if (mode === APP_MODES.AR) {
     scene.setShowcaseMode(false);
     controller.reset();
+  } else if (state.activePanel === 'fit') {
+    selectControlPanel('styles');
   }
 
   syncModeUi();
@@ -435,6 +449,10 @@ function selectMode(mode) {
 
 function syncModeUi() {
   const isShowcase = state.mode === APP_MODES.SHOWCASE;
+
+  elements.app.classList.toggle('is-showcase-mode', isShowcase);
+  elements.app.classList.toggle('is-ar-mode', !isShowcase);
+  elements.app.classList.toggle('is-controls-collapsed', state.controlsCollapsed);
 
   elements.modeButtons.forEach((button) => {
     const isSelected = button.dataset.mode === state.mode;
@@ -451,6 +469,8 @@ function syncModeUi() {
   elements.livePill.textContent = isShowcase ? '3D Model' : 'Live AR';
   elements.captureButton.hidden = isShowcase;
   debugOverlay.setEnabled(!isShowcase && elements.debugToggle.checked);
+  syncBottomSheetUi();
+  syncPanelUi();
 
   if (isShowcase) {
     scene.setShowcaseMode(state.modelLoaded);
@@ -467,6 +487,49 @@ function syncModeUi() {
   if (!state.cameraStarted && state.modelLoaded) {
     setStatus('idle', 'AR 試戴', '開啟相機後即可即時試戴');
   }
+}
+
+function toggleBottomSheet() {
+  state.controlsCollapsed = !state.controlsCollapsed;
+  syncBottomSheetUi();
+}
+
+function selectControlPanel(panelName) {
+  const panel = Array.from(elements.controlPanels).find((item) => item.dataset.controlPanel === panelName);
+  if (!panel || panel.hidden) return;
+
+  state.activePanel = panelName;
+  syncPanelUi();
+}
+
+function syncPanelUi() {
+  const activePanel =
+    state.activePanel === 'fit' && state.mode === APP_MODES.SHOWCASE ? 'styles' : state.activePanel;
+
+  state.activePanel = activePanel;
+
+  elements.panelTabs.forEach((button) => {
+    const isSelected = button.dataset.panelTab === activePanel;
+    button.classList.toggle('is-selected', isSelected);
+    button.setAttribute('aria-pressed', String(isSelected));
+  });
+
+  elements.controlPanels.forEach((panel) => {
+    const isSelected = panel.dataset.controlPanel === activePanel;
+    panel.classList.toggle('is-active', isSelected);
+    if (isSelected) {
+      panel.open = true;
+    }
+  });
+}
+
+function syncBottomSheetUi() {
+  elements.app.classList.toggle('is-controls-collapsed', state.controlsCollapsed);
+  elements.bottomSheetToggle.setAttribute('aria-expanded', String(!state.controlsCollapsed));
+  elements.bottomSheetToggle.setAttribute(
+    'aria-label',
+    state.controlsCollapsed ? '展開試戴選項' : '收起試戴選項',
+  );
 }
 
 function handleShowcasePointerDown(event) {
