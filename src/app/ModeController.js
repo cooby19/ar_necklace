@@ -1,0 +1,522 @@
+import {
+  APP_MODES,
+  CAMERA_FACING_MODES,
+  TUNING_DEFAULTS,
+  getCameraLabel,
+  getCameraSwitchingLabel,
+  isSelfieCamera,
+  normalizeFacingMode,
+} from './AppState.js';
+import { CameraStream } from '../core/CameraStream.js';
+import { DebugOverlay } from '../core/DebugOverlay.js';
+import { FaceTracker } from '../core/FaceTracker.js';
+import { NecklaceController } from '../core/NecklaceController.js';
+import { NecklaceScene } from '../core/NecklaceScene.js';
+
+export class ModeController {
+  constructor({ appState, uiController, captureService, necklaces }) {
+    this.appState = appState;
+    this.ui = uiController;
+    this.captureService = captureService;
+    this.necklaces = necklaces;
+
+    this.camera = new CameraStream(this.ui.elements.video);
+    this.scene = new NecklaceScene({
+      canvas: this.ui.elements.threeCanvas,
+      stageElement: this.ui.elements.stage,
+      onError: (message) => this.showError(message),
+    });
+    this.controller = new NecklaceController(this.scene);
+    this.debugOverlay = new DebugOverlay({
+      canvas: this.ui.elements.debugCanvas,
+      stageElement: this.ui.elements.stage,
+    });
+    this.faceTracker = new FaceTracker({
+      video: this.ui.elements.video,
+      onResults: (results) => this.handleFaceResults(results),
+      onError: (error) => this.showError(`Face Mesh 偵測發生錯誤：${error.message ?? error}`),
+    });
+  }
+
+  init() {
+    const state = this.getState();
+    this.ui.populateNecklaceSelect(state.selectedNecklace.id);
+    this.ui.populateColorSwatches(state.selectedNecklace, state.selectedColorId);
+    this.ui.syncFromState(state);
+    this.updateTuningFromControls();
+    this.syncColorAvailability();
+    this.syncModeEffects();
+    this.loadSelectedNecklace();
+    this.animate();
+  }
+
+  selectMode(mode) {
+    const state = this.getState();
+    if (!Object.values(APP_MODES).includes(mode) || state.mode === mode) return;
+
+    if (mode === APP_MODES.SHOWCASE && state.cameraStarted) {
+      this.stopCameraSession();
+    }
+
+    const patch = {
+      mode,
+      lastLandmarks: null,
+      lastDebugData: null,
+      hasFace: false,
+    };
+
+    if (mode !== APP_MODES.AR && state.activePanel === 'fit') {
+      patch.activePanel = 'styles';
+    }
+
+    this.appState.set(patch, 'mode-select');
+
+    if (mode === APP_MODES.AR) {
+      this.scene.setShowcaseMode(false);
+      this.controller.reset();
+    }
+
+    this.syncModeEffects();
+  }
+
+  selectControlPanel(panelName) {
+    if (!this.ui.canSelectControlPanel(panelName)) return;
+    this.appState.set({ activePanel: panelName }, 'panel-select');
+  }
+
+  toggleBottomSheet() {
+    this.appState.update((state) => ({ controlsCollapsed: !state.controlsCollapsed }), 'bottom-sheet-toggle');
+  }
+
+  handleShowcasePointerDown(event) {
+    const state = this.getState();
+    if (state.mode !== APP_MODES.SHOWCASE || !state.modelLoaded) return;
+
+    this.ui.elements.threeCanvas.setPointerCapture?.(event.pointerId);
+    this.ui.setShowcaseDragging(true);
+    this.scene.beginShowcaseDrag(event.clientX);
+  }
+
+  handleShowcasePointerMove(event) {
+    const state = this.getState();
+    if (state.mode !== APP_MODES.SHOWCASE || !state.modelLoaded) return;
+
+    this.scene.dragShowcase(event.clientX);
+  }
+
+  handleShowcasePointerUp(event) {
+    const state = this.getState();
+    if (state.mode !== APP_MODES.SHOWCASE) return;
+
+    this.ui.elements.threeCanvas.releasePointerCapture?.(event.pointerId);
+    this.ui.setShowcaseDragging(false);
+    this.scene.endShowcaseDrag();
+  }
+
+  async startExperience() {
+    this.ui.clearError();
+    this.ui.elements.startButton.disabled = true;
+    this.ui.elements.switchCameraButton.disabled = true;
+    this.ui.elements.stopCameraButton.disabled = true;
+    this.ui.setStartButtonLabel('啟動中...');
+
+    try {
+      await this.startCameraForMode(this.appState.get('cameraFacingMode'));
+      this.appState.set({ cameraStarted: true }, 'camera-start');
+      this.ui.setCameraOn(true);
+      this.ui.setCaptureDisabled(false);
+      this.ui.setStatus('idle', '相機已啟動', '正在尋找臉部');
+      this.ui.setStartButtonLabel('相機運作中');
+    } catch (error) {
+      this.stopCameraSession();
+      this.showError(`無法啟動相機：${error.message ?? error}`);
+      this.ui.setStatus('error', '相機啟動失敗', '請確認瀏覽器權限與 HTTPS/localhost 環境');
+    }
+  }
+
+  stopExperience() {
+    const state = this.getState();
+    if (!state.cameraStarted && !state.isSwitchingCamera) return;
+
+    this.ui.clearError();
+    this.stopCameraSession();
+    this.ui.setStatus('idle', '相機已關閉', '鏡頭已停止，可重新開啟相機');
+  }
+
+  async switchCamera() {
+    const state = this.getState();
+    if (!state.cameraStarted || state.isSwitchingCamera) return;
+
+    const previousFacingMode = state.cameraFacingMode;
+    const nextFacingMode =
+      previousFacingMode === CAMERA_FACING_MODES.USER
+        ? CAMERA_FACING_MODES.ENVIRONMENT
+        : CAMERA_FACING_MODES.USER;
+
+    this.ui.clearError();
+    this.appState.set({ isSwitchingCamera: true }, 'camera-switch-start');
+    this.ui.setCaptureDisabled(true);
+    this.ui.setStatus('idle', '正在切換鏡頭', getCameraSwitchingLabel(nextFacingMode));
+
+    try {
+      await this.startCameraForMode(nextFacingMode, { strictFacingMode: true });
+      this.ui.setStatus('idle', '鏡頭已切換', this.getActiveCameraLabel());
+    } catch (error) {
+      const failedLabel = getCameraLabel(nextFacingMode);
+      this.showError(`無法切換到${failedLabel}：${error.message ?? error}`);
+      this.ui.setStatus('error', '鏡頭切換失敗', `正在恢復${getCameraLabel(previousFacingMode)}`);
+
+      try {
+        await this.startCameraForMode(previousFacingMode);
+        this.ui.setStatus('idle', '已恢復原鏡頭', this.getActiveCameraLabel());
+      } catch (restoreError) {
+        this.stopCameraSession();
+        this.showError(`鏡頭切換失敗，且無法恢復原鏡頭：${restoreError.message ?? restoreError}`);
+        this.ui.setStatus('error', '相機已停止', '請重新啟動相機');
+      }
+    } finally {
+      this.appState.set({ isSwitchingCamera: false }, 'camera-switch-end');
+      this.ui.setCaptureDisabled(!this.appState.get('cameraStarted'));
+    }
+  }
+
+  async startCameraForMode(facingMode, { strictFacingMode = false } = {}) {
+    this.faceTracker.stop();
+    this.controller.fadeOut();
+    this.appState.set(
+      {
+        hasFace: false,
+        lastLandmarks: null,
+        lastDebugData: null,
+      },
+      'camera-session-reset',
+    );
+    this.faceTracker.setSelfieMode(isSelfieCamera(facingMode));
+
+    await this.camera.start({ facingMode, strictFacingMode });
+
+    const cameraFacingMode = normalizeFacingMode(this.camera.getFacingMode(), facingMode);
+    this.appState.set({ cameraFacingMode }, 'camera-facing-mode');
+    this.faceTracker.setSelfieMode(isSelfieCamera(cameraFacingMode));
+    this.scene.resize();
+    this.debugOverlay.resize();
+    await this.faceTracker.start();
+  }
+
+  stopCameraSession() {
+    this.camera.stop();
+    this.faceTracker.stop();
+    this.controller.reset();
+    this.appState.set(
+      {
+        cameraStarted: false,
+        isSwitchingCamera: false,
+        hasFace: false,
+        lastLandmarks: null,
+        lastDebugData: null,
+      },
+      'camera-stop',
+    );
+    this.ui.setCameraOn(false);
+    this.ui.setCaptureDisabled(true);
+    this.ui.elements.startButton.disabled = false;
+    this.ui.setStartButtonLabel('開始相機');
+  }
+
+  async handleCapture() {
+    this.ui.clearError();
+    const state = this.getState();
+
+    if (!state.cameraStarted || !this.ui.hasCurrentVideoFrame()) {
+      this.ui.setStatus('idle', '尚未開啟相機', '請先啟動相機再拍照');
+      return;
+    }
+
+    if (!state.hasFace) {
+      this.ui.setStatus('idle', '尚未偵測到臉', '請將臉保持在畫面中央後再拍照');
+      return;
+    }
+
+    if (!state.necklaceVisible) {
+      this.ui.setStatus('idle', '項鍊目前隱藏', '請先開啟項鍊預覽再拍照');
+      return;
+    }
+
+    this.ui.setCaptureDisabled(true);
+    this.ui.setCaptureBusy(true);
+
+    try {
+      this.scene.render();
+      const capture = await this.captureService.createCapture({
+        mirrored: isSelfieCamera(state.cameraFacingMode),
+      });
+      this.appState.set(
+        {
+          captureDataUrl: capture.dataUrl,
+          captureBlob: capture.blob,
+        },
+        'capture-create',
+      );
+      this.ui.setShareImage(capture.dataUrl);
+      this.ui.openShareSheet();
+      this.ui.setStatus('tracking', '美圖已產出', '可下載或分享給朋友');
+    } catch (error) {
+      this.showError(`無法產生美圖：${error.message ?? error}`);
+    } finally {
+      this.ui.setCaptureDisabled(!this.appState.get('cameraStarted'));
+      this.ui.setCaptureBusy(false);
+    }
+  }
+
+  downloadCapture() {
+    const dataUrl = this.appState.get('captureDataUrl');
+    if (!dataUrl) return;
+
+    this.captureService.download(dataUrl);
+    this.ui.setStatus('idle', '圖片已下載', '可以上傳 Instagram 或傳給朋友');
+  }
+
+  async shareCapture() {
+    const state = this.getState();
+    if (!state.captureBlob) return;
+
+    try {
+      const result = await this.captureService.share(state.captureBlob);
+
+      if (result.status === 'shared') {
+        this.ui.setStatus('idle', '分享面板已開啟', '選擇 Instagram、訊息或好友');
+        return;
+      }
+
+      if (result.status === 'unsupported') {
+        this.downloadCapture();
+        this.ui.setStatus('idle', '此瀏覽器不支援直接分享', '已改為下載圖片');
+      }
+    } catch (error) {
+      this.showError(`分享失敗：${error.message ?? error}`);
+    }
+  }
+
+  closeShareSheet() {
+    this.ui.closeShareSheet();
+  }
+
+  selectNecklace(necklaceId) {
+    const next = this.necklaces.find((necklace) => necklace.id === necklaceId);
+    if (!next) return;
+
+    const state = this.getState();
+    if (next.id === state.selectedNecklace.id) {
+      this.ui.syncNecklaceSelection(next.id);
+      return;
+    }
+
+    this.appState.set(
+      {
+        selectedNecklace: next,
+        selectedColorId: next.colorCustomization?.defaultColor ?? '',
+      },
+      'necklace-select',
+    );
+    this.controller.reset();
+    this.loadSelectedNecklace();
+  }
+
+  selectColor(colorId) {
+    const state = this.getState();
+    const colorOption = getColorOption(state.selectedNecklace, colorId);
+    if (!colorOption) return;
+
+    this.appState.set({ selectedColorId: colorOption.id }, 'color-select');
+    this.applySelectedColor();
+  }
+
+  handleDebugToggle(isEnabled) {
+    this.appState.set({ debugEnabled: isEnabled }, 'debug-toggle');
+    this.debugOverlay.setEnabled(this.appState.get('mode') === APP_MODES.AR && isEnabled);
+    this.updateTrackingStatus();
+  }
+
+  handleNecklaceToggle(isVisible) {
+    this.appState.set({ necklaceVisible: isVisible }, 'necklace-toggle');
+
+    if (!isVisible) {
+      this.controller.fadeOut();
+    }
+  }
+
+  resetTuningControls() {
+    const tuning = this.ui.resetTuningControls(TUNING_DEFAULTS);
+    this.applyTuning(tuning.adjustments);
+  }
+
+  updateTuningFromControls() {
+    const tuning = this.ui.readTuningControls();
+    this.applyTuning(tuning.adjustments);
+  }
+
+  applyTuning(adjustments) {
+    this.appState.set({ adjustments }, 'tuning-change');
+    this.controller.setAdjustments(adjustments);
+  }
+
+  async loadSelectedNecklace() {
+    const selectedNecklace = this.appState.get('selectedNecklace');
+    this.appState.set({ modelLoaded: false }, 'model-load-start');
+    this.ui.clearError();
+    this.syncColorAvailability();
+    this.ui.setStatus('loading', '款式載入中', selectedNecklace.label);
+
+    try {
+      await this.scene.loadNecklace(selectedNecklace);
+      this.appState.set({ modelLoaded: true }, 'model-load-success');
+      this.applySelectedColor();
+      this.syncColorAvailability();
+      this.syncModeEffects();
+    } catch (error) {
+      const message =
+        `無法載入 ${selectedNecklace.url}。請確認 .glb 已放在 public/models/necklace.glb。` +
+        ` 原始錯誤：${error.message ?? error}`;
+      this.showError(message);
+      this.ui.setStatus('error', '模型載入失敗', '請先放置 necklace.glb');
+      this.syncColorAvailability();
+    }
+  }
+
+  syncModeEffects() {
+    const state = this.getState();
+    const isShowcase = state.mode === APP_MODES.SHOWCASE;
+
+    this.debugOverlay.setEnabled(!isShowcase && state.debugEnabled);
+
+    if (isShowcase) {
+      this.scene.setShowcaseMode(state.modelLoaded);
+      this.ui.setStatus(
+        state.modelLoaded ? 'tracking' : 'loading',
+        state.modelLoaded ? '模型展示' : '模型載入中',
+        state.modelLoaded ? '拖曳旋轉模型，選擇喜歡的色彩' : state.selectedNecklace.label,
+      );
+      return;
+    }
+
+    this.scene.setShowcaseMode(false);
+
+    if (!state.cameraStarted && state.modelLoaded) {
+      this.ui.setStatus('idle', 'AR 試戴', '開啟相機後即可即時試戴');
+    }
+  }
+
+  handleFaceResults(results) {
+    const state = this.getState();
+    if (state.mode !== APP_MODES.AR) return;
+
+    const landmarks = results.multiFaceLandmarks?.[0] ?? null;
+    const hasFace = Boolean(landmarks);
+
+    if (!state.modelLoaded || !landmarks) {
+      this.controller.fadeOut();
+      this.appState.set(
+        {
+          lastLandmarks: landmarks,
+          hasFace,
+          lastDebugData: null,
+        },
+        'face-results',
+      );
+      this.updateTrackingStatus();
+      return;
+    }
+
+    const lastDebugData = this.controller.updateFromLandmarks(landmarks, state.necklaceVisible);
+    this.appState.set(
+      {
+        lastLandmarks: landmarks,
+        hasFace,
+        lastDebugData,
+      },
+      'face-results',
+    );
+    this.updateTrackingStatus();
+  }
+
+  updateTrackingStatus() {
+    const state = this.getState();
+    if (!state.cameraStarted) return;
+
+    if (!state.hasFace) {
+      this.ui.setStatus('idle', '正在尋找臉部', '請將臉保持在畫面中央');
+      return;
+    }
+
+    if (!state.lastDebugData) {
+      this.ui.setStatus('idle', '貼合準備中', '等待臉部資訊穩定');
+      return;
+    }
+
+    const data = state.lastDebugData;
+    this.ui.setStatus(
+      'tracking',
+      '正在試戴',
+      state.debugEnabled
+        ? `neck x/y: ${data.neckPoint.x.toFixed(3)}, ${data.neckPoint.y.toFixed(3)} · scale ${data.scale.toFixed(2)} · yaw ${data.rotationY.toFixed(2)}`
+        : '貼合中，保持自然正面即可',
+    );
+  }
+
+  syncColorAvailability() {
+    const state = this.getState();
+    this.ui.updateColorUiAvailability({
+      necklace: state.selectedNecklace,
+      modelLoaded: state.modelLoaded,
+      hasColorableMaterials: this.scene.hasColorableMaterials(),
+      targetLabels: this.getMatchedColorTargetLabels(),
+    });
+  }
+
+  getMatchedColorTargetLabels() {
+    const state = this.getState();
+    const targetIds = this.scene.getColorableTargets();
+    const targets = state.selectedNecklace.colorCustomization?.targets ?? [];
+    return targetIds
+      .map((targetId) => targets.find((target) => target.id === targetId)?.label)
+      .filter(Boolean);
+  }
+
+  applySelectedColor() {
+    const state = this.getState();
+    const colorOption = getColorOption(state.selectedNecklace, state.selectedColorId);
+    if (!colorOption) return false;
+
+    const target = state.selectedNecklace.colorCustomization?.defaultTarget ?? 'all';
+    return this.scene.applyColor(target, colorOption.color, colorOption.material);
+  }
+
+  getActiveCameraLabel() {
+    return `目前使用${getCameraLabel(this.appState.get('cameraFacingMode'))}`;
+  }
+
+  showError(message) {
+    this.ui.showError(message);
+  }
+
+  getState() {
+    return this.appState.getSnapshot();
+  }
+
+  animate = () => {
+    const state = this.getState();
+
+    if (state.mode === APP_MODES.SHOWCASE && state.modelLoaded) {
+      this.scene.updateShowcase(performance.now());
+    }
+
+    this.scene.render();
+    this.debugOverlay.render(state.lastLandmarks, state.lastDebugData);
+    requestAnimationFrame(this.animate);
+  };
+}
+
+function getColorOption(necklace, colorId) {
+  const palette = necklace.colorCustomization?.palette ?? [];
+  return palette.find((colorOption) => colorOption.id === colorId);
+}
