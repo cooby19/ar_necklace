@@ -414,45 +414,16 @@ export class NecklaceScene {
     return this.colorableMaterials.size > 0;
   }
 
-  applyColor(target, color, materialPreset = {}) {
+  applyColor(target, color) {
     const materials = this.resolveColorableMaterials(target);
     if (!materials.length) return false;
 
     materials.forEach((material) => {
       material.color.set(color);
-      this.applyMaterialPreset(material, materialPreset);
       material.needsUpdate = true;
     });
 
     return true;
-  }
-
-  applyMaterialPreset(material, preset) {
-    if (!preset) return;
-
-    if (Number.isFinite(preset.roughness) && 'roughness' in material) {
-      material.roughness = preset.roughness;
-    }
-
-    if (Number.isFinite(preset.metalness) && 'metalness' in material) {
-      material.metalness = preset.metalness;
-    }
-
-    if (Number.isFinite(preset.envMapIntensity) && 'envMapIntensity' in material) {
-      material.envMapIntensity = preset.envMapIntensity;
-    }
-
-    if (preset.emissive && material.emissive?.isColor) {
-      material.emissive.set(preset.emissive);
-    }
-
-    if (Number.isFinite(preset.emissiveIntensity) && 'emissiveIntensity' in material) {
-      material.emissiveIntensity = preset.emissiveIntensity;
-    }
-
-    if (material.userData?.isGemMaterial) {
-      this.applyGemMaterialTuning(material);
-    }
   }
 
   resolveColorableMaterials(target) {

@@ -2,6 +2,7 @@ import {
   APP_MODES,
   CAMERA_FACING_MODES,
   TUNING_DEFAULTS,
+  createDefaultColorSelection,
   getCameraLabel,
   getCameraSwitchingLabel,
   isSelfieCamera,
@@ -43,7 +44,12 @@ export class ModeController {
   init() {
     const state = this.getState();
     this.ui.populateNecklaceSelect(state.selectedNecklace.id);
-    this.ui.populateColorSwatches(state.selectedNecklace, state.selectedColorId);
+    this.ui.populateColorSwatches({
+      necklace: state.selectedNecklace,
+      selectedColorIdsByTarget: state.selectedColorIdsByTarget,
+      fallbackColorId: state.selectedColorId,
+      targetIds: [],
+    });
     this.ui.syncFromState(state);
     this.updateTuningFromControls();
     this.syncColorAvailability();
@@ -317,6 +323,7 @@ export class ModeController {
       {
         selectedNecklace: next,
         selectedColorId: next.colorCustomization?.defaultColor ?? '',
+        selectedColorIdsByTarget: createDefaultColorSelection(next),
       },
       'necklace-select',
     );
@@ -324,13 +331,19 @@ export class ModeController {
     this.loadSelectedNecklace();
   }
 
-  selectColor(colorId) {
+  selectColor(colorId, targetId) {
     const state = this.getState();
     const colorOption = getColorOption(state.selectedNecklace, colorId);
-    if (!colorOption) return;
+    const resolvedTargetId = this.resolveColorSelectionTarget(targetId);
+    if (!colorOption || !resolvedTargetId) return;
 
-    this.appState.set({ selectedColorId: colorOption.id }, 'color-select');
-    this.applySelectedColor();
+    const selectedColorIdsByTarget = {
+      ...state.selectedColorIdsByTarget,
+      [resolvedTargetId]: colorOption.id,
+    };
+
+    this.appState.set({ selectedColorId: colorOption.id, selectedColorIdsByTarget }, 'color-select');
+    this.applySelectedColors([resolvedTargetId]);
   }
 
   handleDebugToggle(isEnabled) {
@@ -375,7 +388,8 @@ export class ModeController {
       if (!this.isLatestNecklaceLoad(loadId)) return;
 
       this.appState.set({ modelLoaded: true }, 'model-load-success');
-      this.applySelectedColor();
+      this.ensureColorSelectionForMatchedTargets();
+      this.applySelectedColors();
       this.syncColorAvailability();
       this.syncModeEffects();
     } catch (error) {
@@ -499,6 +513,14 @@ export class ModeController {
 
   syncColorAvailability() {
     const state = this.getState();
+    const targetIds = state.modelLoaded ? this.scene.getColorableTargets() : [];
+
+    this.ui.populateColorSwatches({
+      necklace: state.selectedNecklace,
+      selectedColorIdsByTarget: state.selectedColorIdsByTarget,
+      fallbackColorId: state.selectedColorId,
+      targetIds,
+    });
     this.ui.updateColorUiAvailability({
       necklace: state.selectedNecklace,
       modelLoaded: state.modelLoaded,
@@ -516,13 +538,59 @@ export class ModeController {
       .filter(Boolean);
   }
 
-  applySelectedColor() {
+  ensureColorSelectionForMatchedTargets() {
     const state = this.getState();
-    const colorOption = getColorOption(state.selectedNecklace, state.selectedColorId);
-    if (!colorOption) return false;
+    const defaultColorId = state.selectedNecklace.colorCustomization?.defaultColor ?? '';
+    if (!defaultColorId) return;
 
-    const target = state.selectedNecklace.colorCustomization?.defaultTarget ?? 'all';
-    return this.scene.applyColor(target, colorOption.color, colorOption.material);
+    const targetIds = this.scene.getColorableTargets();
+    const selectedColorIdsByTarget = { ...state.selectedColorIdsByTarget };
+    let didChange = false;
+
+    targetIds.forEach((targetId) => {
+      if (selectedColorIdsByTarget[targetId]) return;
+      selectedColorIdsByTarget[targetId] = defaultColorId;
+      didChange = true;
+    });
+
+    if (didChange) {
+      this.appState.set({ selectedColorIdsByTarget }, 'color-target-defaults');
+    }
+  }
+
+  applySelectedColors(targetIds = this.scene.getColorableTargets()) {
+    const state = this.getState();
+    let didApply = false;
+
+    targetIds.forEach((targetId) => {
+      const colorId = this.getSelectedColorIdForTarget(state, targetId);
+      const colorOption = getColorOption(state.selectedNecklace, colorId);
+      if (!colorOption) return;
+
+      didApply = this.scene.applyColor(targetId, colorOption.color) || didApply;
+    });
+
+    return didApply;
+  }
+
+  getSelectedColorIdForTarget(state, targetId) {
+    return (
+      state.selectedColorIdsByTarget?.[targetId] ??
+      state.selectedColorId ??
+      state.selectedNecklace.colorCustomization?.defaultColor ??
+      ''
+    );
+  }
+
+  resolveColorSelectionTarget(targetId) {
+    const activeTargetIds = this.scene.getColorableTargets();
+    if (targetId && activeTargetIds.includes(targetId)) return targetId;
+    if (activeTargetIds.length === 1) return activeTargetIds[0];
+
+    const state = this.getState();
+    const defaultTarget = state.selectedNecklace.colorCustomization?.defaultTarget ?? 'all';
+    if (defaultTarget !== 'all' && activeTargetIds.includes(defaultTarget)) return defaultTarget;
+    return activeTargetIds[0] ?? '';
   }
 
   getActiveCameraLabel() {

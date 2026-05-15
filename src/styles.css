@@ -943,6 +943,27 @@ summary:focus-visible {
 
 .color-swatch-list {
   display: grid;
+  gap: 12px;
+}
+
+.color-swatch-list[hidden] {
+  display: none;
+}
+
+.color-target-group {
+  display: grid;
+  gap: 8px;
+}
+
+.color-target-group__heading {
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1.25;
+}
+
+.color-target-group__swatches {
+  display: grid;
   grid-template-columns: repeat(auto-fit, minmax(64px, 1fr));
   gap: 8px;
 }

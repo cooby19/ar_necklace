@@ -37,7 +37,7 @@ uiController.bind({
   onDebugToggle: (isEnabled) => modeController.handleDebugToggle(isEnabled),
   onNecklaceToggle: (isVisible) => modeController.handleNecklaceToggle(isVisible),
   onNecklaceSelect: (necklaceId) => modeController.selectNecklace(necklaceId),
-  onColorSelect: (colorId) => modeController.selectColor(colorId),
+  onColorSelect: (colorId, targetId) => modeController.selectColor(colorId, targetId),
   onTuningInput: () => modeController.updateTuningFromControls(),
   onResetTuning: () => modeController.resetTuningControls(),
   onDownloadCapture: () => modeController.downloadCapture(),

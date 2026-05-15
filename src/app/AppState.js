@@ -29,6 +29,7 @@ export class AppState {
       lastDebugData: null,
       selectedNecklace: defaultNecklace,
       selectedColorId: defaultNecklace?.colorCustomization?.defaultColor ?? '',
+      selectedColorIdsByTarget: createDefaultColorSelection(defaultNecklace),
       necklaceVisible: true,
       debugEnabled: false,
       activePanel: 'styles',
@@ -52,6 +53,7 @@ export class AppState {
   getSnapshot() {
     return {
       ...this.state,
+      selectedColorIdsByTarget: { ...this.state.selectedColorIdsByTarget },
       adjustments: { ...this.state.adjustments },
     };
   }
@@ -63,6 +65,9 @@ export class AppState {
     this.state = {
       ...this.state,
       ...patch,
+      selectedColorIdsByTarget: patch.selectedColorIdsByTarget
+        ? { ...patch.selectedColorIdsByTarget }
+        : previous.selectedColorIdsByTarget,
       adjustments: patch.adjustments
         ? { ...previous.adjustments, ...patch.adjustments }
         : previous.adjustments,
@@ -112,4 +117,21 @@ export function getCameraLabel(facingMode) {
 
 export function getCameraSwitchingLabel(facingMode) {
   return `準備使用${getCameraLabel(facingMode)}`;
+}
+
+export function createDefaultColorSelection(necklace) {
+  const colorCustomization = necklace?.colorCustomization;
+  const defaultColor = colorCustomization?.defaultColor ?? '';
+  if (!defaultColor) return {};
+
+  const defaultTarget = colorCustomization?.defaultTarget ?? 'all';
+  const targetIds = colorCustomization?.targets?.map((target) => target.id).filter(Boolean) ?? [];
+
+  if (defaultTarget === 'all') {
+    return Object.fromEntries(targetIds.map((targetId) => [targetId, defaultColor]));
+  }
+
+  return {
+    [defaultTarget]: defaultColor,
+  };
 }

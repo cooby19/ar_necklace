@@ -93,7 +93,7 @@ export class UiController {
     this.elements.colorSwatches.addEventListener('click', (event) => {
       const swatch = event.target.closest('[data-color-id]');
       if (!swatch || swatch.disabled) return;
-      handlers.onColorSelect?.(swatch.dataset.colorId);
+      handlers.onColorSelect?.(swatch.dataset.colorId, swatch.dataset.colorTargetId);
     });
 
     this.elements.verticalOffsetRange.addEventListener('input', () => handlers.onTuningInput?.());
@@ -151,33 +151,57 @@ export class UiController {
     this.syncNecklaceSelection(selectedNecklaceId);
   }
 
-  populateColorSwatches(necklace, selectedColorId) {
+  populateColorSwatches({ necklace, selectedColorIdsByTarget = {}, fallbackColorId = '', targetIds = [] }) {
     this.elements.colorSwatches.innerHTML = '';
     const palette = necklace.colorCustomization?.palette ?? [];
+    const targets = necklace.colorCustomization?.targets ?? [];
+    const targetConfigs = targetIds
+      .map((targetId) => targets.find((target) => target.id === targetId))
+      .filter(Boolean);
 
-    palette.forEach((colorOption) => {
-      const button = document.createElement('button');
-      button.className = 'color-swatch';
-      button.type = 'button';
-      button.dataset.colorId = colorOption.id;
-      button.setAttribute('role', 'radio');
-      button.setAttribute('aria-label', colorOption.label);
-      button.title = colorOption.label;
+    this.elements.colorSwatches.toggleAttribute('hidden', !palette.length || !targetConfigs.length);
 
-      const chip = document.createElement('span');
-      chip.className = 'color-swatch__chip';
-      chip.style.setProperty('--swatch-color', colorOption.color);
-      chip.setAttribute('aria-hidden', 'true');
+    targetConfigs.forEach((target) => {
+      const group = document.createElement('section');
+      group.className = 'color-target-group';
 
-      const label = document.createElement('span');
-      label.textContent = colorOption.label;
+      const heading = document.createElement('strong');
+      heading.className = 'color-target-group__heading';
+      heading.textContent = target.label;
 
-      button.append(chip, label);
-      this.elements.colorSwatches.append(button);
+      const swatchGrid = document.createElement('div');
+      swatchGrid.className = 'color-target-group__swatches';
+      swatchGrid.setAttribute('role', 'radiogroup');
+      swatchGrid.setAttribute('aria-label', `${target.label}顏色`);
+
+      palette.forEach((colorOption) => {
+        const button = document.createElement('button');
+        button.className = 'color-swatch';
+        button.type = 'button';
+        button.dataset.colorId = colorOption.id;
+        button.dataset.colorTargetId = target.id;
+        button.setAttribute('role', 'radio');
+        button.setAttribute('aria-label', `${target.label}：${colorOption.label}`);
+        button.title = `${target.label}：${colorOption.label}`;
+
+        const chip = document.createElement('span');
+        chip.className = 'color-swatch__chip';
+        chip.style.setProperty('--swatch-color', colorOption.color);
+        chip.setAttribute('aria-hidden', 'true');
+
+        const label = document.createElement('span');
+        label.textContent = colorOption.label;
+
+        button.append(chip, label);
+        swatchGrid.append(button);
+      });
+
+      group.append(heading, swatchGrid);
+      this.elements.colorSwatches.append(group);
     });
 
-    this.syncColorSelection(selectedColorId);
-    this.updateColorMeaning(necklace, selectedColorId);
+    this.syncColorSelection({ selectedColorIdsByTarget, fallbackColorId });
+    this.updateColorMeaning(necklace, fallbackColorId);
   }
 
   syncFromState(state, meta = {}) {
@@ -194,9 +218,12 @@ export class UiController {
 
     if (shouldSync(['selectedNecklace'])) {
       this.syncNecklaceSelection(state.selectedNecklace.id);
-      this.populateColorSwatches(state.selectedNecklace, state.selectedColorId);
-    } else if (shouldSync(['selectedColorId'])) {
-      this.syncColorSelection(state.selectedColorId);
+      this.updateColorMeaning(state.selectedNecklace, state.selectedColorId);
+    } else if (shouldSync(['selectedColorId', 'selectedColorIdsByTarget'])) {
+      this.syncColorSelection({
+        selectedColorIdsByTarget: state.selectedColorIdsByTarget,
+        fallbackColorId: state.selectedColorId,
+      });
       this.updateColorMeaning(state.selectedNecklace, state.selectedColorId);
     }
 
@@ -287,10 +314,12 @@ export class UiController {
     });
   }
 
-  syncColorSelection(colorId) {
+  syncColorSelection({ selectedColorIdsByTarget = {}, fallbackColorId = '' }) {
     const swatches = this.elements.colorSwatches.querySelectorAll('[data-color-id]');
     swatches.forEach((swatch) => {
-      const isSelected = swatch.dataset.colorId === colorId;
+      const targetId = swatch.dataset.colorTargetId;
+      const selectedColorId = selectedColorIdsByTarget[targetId] ?? fallbackColorId;
+      const isSelected = swatch.dataset.colorId === selectedColorId;
       swatch.classList.toggle('is-selected', isSelected);
       swatch.setAttribute('aria-checked', String(isSelected));
     });
