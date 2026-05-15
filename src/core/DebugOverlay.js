@@ -1,4 +1,5 @@
 import { TRACKING_TUNING } from '../config/tuning.js';
+import { observeStageSize } from '../utils/stageResize.js';
 
 export class DebugOverlay {
   constructor({ canvas, stageElement }) {
@@ -6,8 +7,8 @@ export class DebugOverlay {
     this.ctx = canvas.getContext('2d');
     this.stageElement = stageElement;
     this.isEnabled = false;
-    this.resize();
-    window.addEventListener('resize', this.resize);
+    this.dpr = 1;
+    this.stopObservingStageSize = observeStageSize(this.stageElement, this.resize);
   }
 
   setEnabled(isEnabled) {
@@ -92,8 +93,8 @@ export class DebugOverlay {
   }
 
   toCanvas(point) {
-    const width = this.canvas.width / (window.devicePixelRatio || 1);
-    const height = this.canvas.height / (window.devicePixelRatio || 1);
+    const width = this.canvas.width / this.dpr;
+    const height = this.canvas.height / this.dpr;
     return {
       // FaceTracker keeps Face Mesh coordinates aligned with the active camera preview.
       x: point.x * width,
@@ -109,8 +110,9 @@ export class DebugOverlay {
     const targetWidth = Math.round(width * dpr);
     const targetHeight = Math.round(height * dpr);
 
-    if (this.canvas.width === targetWidth && this.canvas.height === targetHeight) return;
+    if (this.canvas.width === targetWidth && this.canvas.height === targetHeight && this.dpr === dpr) return;
 
+    this.dpr = dpr;
     this.canvas.width = targetWidth;
     this.canvas.height = targetHeight;
     this.canvas.style.width = `${width}px`;
@@ -119,12 +121,12 @@ export class DebugOverlay {
   };
 
   clear() {
-    const width = this.canvas.width / (window.devicePixelRatio || 1);
-    const height = this.canvas.height / (window.devicePixelRatio || 1);
+    const width = this.canvas.width / this.dpr;
+    const height = this.canvas.height / this.dpr;
     this.ctx.clearRect(0, 0, width, height);
   }
 
   dispose() {
-    window.removeEventListener('resize', this.resize);
+    this.stopObservingStageSize?.();
   }
 }

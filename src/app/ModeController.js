@@ -19,6 +19,7 @@ export class ModeController {
     this.ui = uiController;
     this.captureService = captureService;
     this.necklaces = necklaces;
+    this.necklaceLoadSequence = 0;
 
     this.camera = new CameraStream(this.ui.elements.video);
     this.scene = new NecklaceScene({
@@ -362,6 +363,7 @@ export class ModeController {
   }
 
   async loadSelectedNecklace() {
+    const loadId = ++this.necklaceLoadSequence;
     const selectedNecklace = this.appState.get('selectedNecklace');
     this.appState.set({ modelLoaded: false }, 'model-load-start');
     this.ui.clearError();
@@ -370,11 +372,15 @@ export class ModeController {
 
     try {
       await this.scene.loadNecklace(selectedNecklace);
+      if (!this.isLatestNecklaceLoad(loadId)) return;
+
       this.appState.set({ modelLoaded: true }, 'model-load-success');
       this.applySelectedColor();
       this.syncColorAvailability();
       this.syncModeEffects();
     } catch (error) {
+      if (!this.isLatestNecklaceLoad(loadId) || error?.name === 'AbortError') return;
+
       const message =
         `無法載入 ${selectedNecklace.url}。請確認 .glb 已放在 public/models/necklace.glb。` +
         ` 原始錯誤：${error.message ?? error}`;
@@ -382,6 +388,10 @@ export class ModeController {
       this.ui.setStatus('error', '模型載入失敗', '請先放置 necklace.glb');
       this.syncColorAvailability();
     }
+  }
+
+  isLatestNecklaceLoad(loadId) {
+    return this.necklaceLoadSequence === loadId;
   }
 
   syncModeEffects() {

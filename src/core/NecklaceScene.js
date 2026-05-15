@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { observeStageSize } from '../utils/stageResize.js';
 
 const GEM_NAME_PATTERN = /(gem|gemstone|jewel|stone)/i;
 
@@ -25,6 +26,9 @@ export class NecklaceScene {
     this.currentModel = null;
     this.modelConfig = null;
     this.colorableMaterials = new Map();
+    this.glbBufferCache = new Map();
+    this.activeModelLoad = null;
+    this.modelLoadSequence = 0;
     this.opacity = 0;
     this.showcase = {
       enabled: false,
@@ -39,9 +43,7 @@ export class NecklaceScene {
     this.setupRenderer();
     this.setupEnvironment();
     this.setupLights();
-    this.resize();
-
-    window.addEventListener('resize', this.resize);
+    this.stopObservingStageSize = observeStageSize(this.stageElement, this.resize);
   }
 
   setupRenderer() {
@@ -74,40 +76,86 @@ export class NecklaceScene {
   }
 
   async loadNecklace(config) {
-    this.modelConfig = config;
-    this.necklaceRoot.clear();
-    this.currentModel = null;
-    this.colorableMaterials.clear();
-    this.opacity = 0;
-    this.showcase.lastTime = 0;
+    const loadId = this.beginModelLoad(config);
+    try {
+      this.modelConfig = config;
+      this.necklaceRoot.clear();
+      this.currentModel = null;
+      this.colorableMaterials.clear();
+      this.opacity = 0;
+      this.showcase.lastTime = 0;
 
-    const loadStartedAt = performance.now();
-    const glbBuffer = await this.fetchGlbFile(config.url);
-    const fetchCompletedAt = performance.now();
-    const gltf = await this.parseGlbFile(glbBuffer, config.url);
-    const parseCompletedAt = performance.now();
-    const model = gltf.scene;
-    this.markOccluderParts(model);
-    this.prepareModel(model);
-    this.prepareGemMaterials(model);
-    this.collectColorableMaterials(model);
-    const prepareCompletedAt = performance.now();
-    this.currentModel = model;
-    this.necklaceRoot.add(model);
-    this.applyAssetTransform();
-    this.setVisible(false);
-    this.logLoadTimings(config, {
-      fetchMs: fetchCompletedAt - loadStartedAt,
-      parseMs: parseCompletedAt - fetchCompletedAt,
-      prepareMs: prepareCompletedAt - parseCompletedAt,
-      totalMs: prepareCompletedAt - loadStartedAt,
-    });
-    return model;
+      const loadStartedAt = performance.now();
+      const glbBuffer = await this.fetchGlbFile(config.url, this.activeModelLoad.signal);
+      this.assertModelLoadCurrent(loadId);
+      const fetchCompletedAt = performance.now();
+      const gltf = await this.parseGlbFile(glbBuffer.slice(0), config.url);
+      this.assertModelLoadCurrent(loadId);
+      const parseCompletedAt = performance.now();
+      const model = gltf.scene;
+      this.markOccluderParts(model);
+      this.prepareModel(model);
+      this.prepareGemMaterials(model);
+      this.collectColorableMaterials(model);
+      const prepareCompletedAt = performance.now();
+      this.currentModel = model;
+      this.necklaceRoot.add(model);
+      this.applyAssetTransform();
+      this.setVisible(false);
+      this.finishModelLoad(loadId);
+      this.logLoadTimings(config, {
+        fetchMs: fetchCompletedAt - loadStartedAt,
+        parseMs: parseCompletedAt - fetchCompletedAt,
+        prepareMs: prepareCompletedAt - parseCompletedAt,
+        totalMs: prepareCompletedAt - loadStartedAt,
+      });
+      return model;
+    } catch (error) {
+      this.finishModelLoad(loadId);
+      throw error;
+    }
   }
 
-  async fetchGlbFile(url) {
+  beginModelLoad(config) {
+    this.abortActiveModelLoad();
+
+    const id = ++this.modelLoadSequence;
+    const abortController = new AbortController();
+    this.activeModelLoad = {
+      id,
+      url: config.url,
+      controller: abortController,
+      signal: abortController.signal,
+    };
+
+    return id;
+  }
+
+  abortActiveModelLoad() {
+    if (!this.activeModelLoad || this.activeModelLoad.signal.aborted) return;
+    this.activeModelLoad.controller.abort();
+  }
+
+  assertModelLoadCurrent(loadId) {
+    if (this.activeModelLoad?.id === loadId && !this.activeModelLoad.signal.aborted) return;
+
+    const error = new Error('模型載入已被新的款式選擇取代');
+    error.name = 'AbortError';
+    throw error;
+  }
+
+  finishModelLoad(loadId) {
+    if (this.activeModelLoad?.id === loadId) {
+      this.activeModelLoad = null;
+    }
+  }
+
+  async fetchGlbFile(url, signal) {
+    const cachedBuffer = this.glbBufferCache.get(url);
+    if (cachedBuffer) return cachedBuffer;
+
     const cacheMode = import.meta.env.DEV ? 'no-store' : 'default';
-    const response = await fetch(url, { cache: cacheMode });
+    const response = await fetch(url, { cache: cacheMode, signal });
 
     if (!response.ok) {
       throw new Error(`模型檔無法讀取，HTTP ${response.status}`);
@@ -115,6 +163,7 @@ export class NecklaceScene {
 
     const buffer = await response.arrayBuffer();
     this.assertGlbFile(buffer, url, response.headers.get('content-type') ?? '');
+    this.glbBufferCache.set(url, buffer);
     return buffer;
   }
 
@@ -559,7 +608,8 @@ export class NecklaceScene {
   }
 
   dispose() {
-    window.removeEventListener('resize', this.resize);
+    this.abortActiveModelLoad();
+    this.stopObservingStageSize?.();
     this.environmentMap?.dispose();
     this.pmremGenerator.dispose();
     this.renderer.dispose();
