@@ -81,22 +81,33 @@ export class NecklaceScene {
     this.opacity = 0;
     this.showcase.lastTime = 0;
 
+    const loadStartedAt = performance.now();
     const glbBuffer = await this.fetchGlbFile(config.url);
+    const fetchCompletedAt = performance.now();
     const gltf = await this.parseGlbFile(glbBuffer, config.url);
+    const parseCompletedAt = performance.now();
     const model = gltf.scene;
     this.markOccluderParts(model);
     this.prepareModel(model);
     this.prepareGemMaterials(model);
     this.collectColorableMaterials(model);
+    const prepareCompletedAt = performance.now();
     this.currentModel = model;
     this.necklaceRoot.add(model);
     this.applyAssetTransform();
     this.setVisible(false);
+    this.logLoadTimings(config, {
+      fetchMs: fetchCompletedAt - loadStartedAt,
+      parseMs: parseCompletedAt - fetchCompletedAt,
+      prepareMs: prepareCompletedAt - parseCompletedAt,
+      totalMs: prepareCompletedAt - loadStartedAt,
+    });
     return model;
   }
 
   async fetchGlbFile(url) {
-    const response = await fetch(url, { cache: 'no-store' });
+    const cacheMode = import.meta.env.DEV ? 'no-store' : 'default';
+    const response = await fetch(url, { cache: cacheMode });
 
     if (!response.ok) {
       throw new Error(`模型檔無法讀取，HTTP ${response.status}`);
@@ -105,6 +116,19 @@ export class NecklaceScene {
     const buffer = await response.arrayBuffer();
     this.assertGlbFile(buffer, url, response.headers.get('content-type') ?? '');
     return buffer;
+  }
+
+  logLoadTimings(config, timings) {
+    if (!import.meta.env.DEV) return;
+
+    console.debug('[NecklaceScene] GLB load timing', {
+      id: config.id,
+      url: config.url,
+      fetchMs: Math.round(timings.fetchMs),
+      parseMs: Math.round(timings.parseMs),
+      prepareMs: Math.round(timings.prepareMs),
+      totalMs: Math.round(timings.totalMs),
+    });
   }
 
   assertGlbFile(buffer, url, contentType) {
