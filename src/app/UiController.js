@@ -198,6 +198,22 @@ export class UiController {
       preview.className = 'necklace-card__preview';
       preview.setAttribute('aria-hidden', 'true');
 
+      if (necklace.thumbnailUrl) {
+        preview.classList.add('has-thumbnail');
+
+        const thumbnail = document.createElement('img');
+        thumbnail.className = 'necklace-card__thumbnail';
+        thumbnail.src = necklace.thumbnailUrl;
+        thumbnail.alt = '';
+        thumbnail.loading = 'lazy';
+        thumbnail.decoding = 'async';
+        thumbnail.addEventListener('error', () => {
+          preview.classList.remove('has-thumbnail');
+          thumbnail.remove();
+        });
+        preview.append(thumbnail);
+      }
+
       const content = document.createElement('span');
       content.className = 'necklace-card__content';
 
