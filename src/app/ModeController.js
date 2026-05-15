@@ -1,7 +1,6 @@
 import {
   APP_MODES,
   CAMERA_FACING_MODES,
-  TUNING_DEFAULTS,
   createDefaultColorSelection,
   getCameraLabel,
   getCameraSwitchingLabel,
@@ -11,8 +10,10 @@ import {
 import { CameraStream } from '../core/CameraStream.js';
 import { DebugOverlay } from '../core/DebugOverlay.js';
 import { FaceTracker } from '../core/FaceTracker.js';
+import { FaceQualityAdvisor } from '../core/FaceQualityAdvisor.js';
 import { NecklaceController } from '../core/NecklaceController.js';
 import { NecklaceScene } from '../core/NecklaceScene.js';
+import { WearCalibration } from '../core/WearCalibration.js';
 
 export class ModeController {
   constructor({ appState, uiController, captureService, necklaces }) {
@@ -21,6 +22,8 @@ export class ModeController {
     this.captureService = captureService;
     this.necklaces = necklaces;
     this.necklaceLoadSequence = 0;
+    this.calibrationDrag = null;
+    this.calibrationPromptedIds = new Set();
 
     this.camera = new CameraStream(this.ui.elements.video);
     this.scene = new NecklaceScene({
@@ -29,6 +32,10 @@ export class ModeController {
       onError: (message) => this.showError(message),
     });
     this.controller = new NecklaceController(this.scene);
+    this.wearCalibration = new WearCalibration();
+    this.faceQualityAdvisor = new FaceQualityAdvisor({
+      video: this.ui.elements.video,
+    });
     this.debugOverlay = new DebugOverlay({
       canvas: this.ui.elements.debugCanvas,
       stageElement: this.ui.elements.stage,
@@ -51,7 +58,7 @@ export class ModeController {
       targetIds: [],
     });
     this.ui.syncFromState(state);
-    this.updateTuningFromControls();
+    this.applyCalibrationForSelectedNecklace();
     this.syncColorAvailability();
     this.syncModeEffects();
     this.loadSelectedNecklace();
@@ -98,6 +105,11 @@ export class ModeController {
 
   handleShowcasePointerDown(event) {
     const state = this.getState();
+    if (state.mode === APP_MODES.AR) {
+      this.handleCalibrationPointerDown(event);
+      return;
+    }
+
     if (state.mode !== APP_MODES.SHOWCASE || !state.modelLoaded) return;
 
     this.ui.elements.threeCanvas.setPointerCapture?.(event.pointerId);
@@ -107,6 +119,11 @@ export class ModeController {
 
   handleShowcasePointerMove(event) {
     const state = this.getState();
+    if (state.mode === APP_MODES.AR) {
+      this.handleCalibrationPointerMove(event);
+      return;
+    }
+
     if (state.mode !== APP_MODES.SHOWCASE || !state.modelLoaded) return;
 
     this.scene.dragShowcase(event.clientX);
@@ -114,11 +131,60 @@ export class ModeController {
 
   handleShowcasePointerUp(event) {
     const state = this.getState();
+    if (state.mode === APP_MODES.AR) {
+      this.handleCalibrationPointerUp(event);
+      return;
+    }
+
     if (state.mode !== APP_MODES.SHOWCASE) return;
 
     this.ui.elements.threeCanvas.releasePointerCapture?.(event.pointerId);
     this.ui.setShowcaseDragging(false);
     this.scene.endShowcaseDrag();
+  }
+
+  handleCalibrationPointerDown(event) {
+    const state = this.getState();
+    if (!state.cameraStarted || !state.modelLoaded || !state.hasFace || !state.necklaceVisible) return;
+
+    this.ui.elements.threeCanvas.setPointerCapture?.(event.pointerId);
+    this.calibrationDrag = {
+      pointerId: event.pointerId,
+      lastClientX: event.clientX,
+      lastClientY: event.clientY,
+    };
+    this.ui.setCalibrationDragging(true);
+    event.preventDefault();
+  }
+
+  handleCalibrationPointerMove(event) {
+    if (!this.calibrationDrag || this.calibrationDrag.pointerId !== event.pointerId) return;
+
+    const rect = this.ui.elements.stage.getBoundingClientRect();
+    const deltaX = rect.width > 0 ? (event.clientX - this.calibrationDrag.lastClientX) / rect.width : 0;
+    const deltaY = rect.height > 0 ? (event.clientY - this.calibrationDrag.lastClientY) / rect.height : 0;
+    this.calibrationDrag.lastClientX = event.clientX;
+    this.calibrationDrag.lastClientY = event.clientY;
+
+    const state = this.getState();
+    this.applyTuning(
+      {
+        horizontalOffset: (state.adjustments.horizontalOffset ?? 0) + deltaX,
+        verticalOffset: (state.adjustments.verticalOffset ?? 0) + deltaY,
+      },
+      'calibration-drag',
+    );
+    this.ui.syncTuningControlsFromAdjustments(this.appState.get('adjustments'));
+    this.updateCalibrationHint({ dirty: true });
+    event.preventDefault();
+  }
+
+  handleCalibrationPointerUp(event) {
+    if (!this.calibrationDrag || this.calibrationDrag.pointerId !== event.pointerId) return;
+
+    this.ui.elements.threeCanvas.releasePointerCapture?.(event.pointerId);
+    this.calibrationDrag = null;
+    this.ui.setCalibrationDragging(false);
   }
 
   async startExperience() {
@@ -215,6 +281,8 @@ export class ModeController {
     this.camera.stop();
     this.faceTracker.stop();
     this.controller.reset();
+    this.calibrationDrag = null;
+    this.ui.setCalibrationDragging(false);
     this.appState.set(
       {
         cameraStarted: false,
@@ -328,6 +396,7 @@ export class ModeController {
       'necklace-select',
     );
     this.controller.reset();
+    this.applyCalibrationForSelectedNecklace();
     this.loadSelectedNecklace();
   }
 
@@ -360,19 +429,70 @@ export class ModeController {
     }
   }
 
-  resetTuningControls() {
-    const tuning = this.ui.resetTuningControls(TUNING_DEFAULTS);
-    this.applyTuning(tuning.adjustments);
-  }
-
   updateTuningFromControls() {
     const tuning = this.ui.readTuningControls();
-    this.applyTuning(tuning.adjustments);
+    this.applyTuning(tuning.adjustments, 'calibration-input');
+    this.updateCalibrationHint({ dirty: true });
   }
 
-  applyTuning(adjustments) {
-    this.appState.set({ adjustments }, 'tuning-change');
-    this.controller.setAdjustments(adjustments);
+  saveCalibration() {
+    const state = this.getState();
+    const didSave = this.wearCalibration.save(state.selectedNecklace.id, state.adjustments);
+
+    if (!didSave) {
+      this.ui.setCalibrationHint('localStorage 目前不可用，校準會暫時套用但不會保存。');
+      return;
+    }
+
+    this.ui.setCalibrationHint('已儲存此款式校準，下次開啟會自動套用。', { isSaved: true });
+  }
+
+  resetCalibration() {
+    const state = this.getState();
+    const defaults = this.wearCalibration.reset(state.selectedNecklace.id);
+    this.ui.syncTuningControlsFromAdjustments(defaults);
+    this.applyTuning(defaults, 'calibration-reset');
+    this.ui.setCalibrationHint('已重設此款式校準，可重新拖曳或調整大小。');
+  }
+
+  applyCalibrationForSelectedNecklace() {
+    const state = this.getState();
+    const calibration = this.wearCalibration.get(state.selectedNecklace.id);
+    this.ui.syncTuningControlsFromAdjustments(calibration);
+    this.applyTuning(calibration, 'calibration-load');
+    this.updateCalibrationHint();
+  }
+
+  updateCalibrationHint({ dirty = false } = {}) {
+    const state = this.getState();
+
+    if (!this.wearCalibration.isAvailable) {
+      this.ui.setCalibrationHint('localStorage 目前不可用，校準會暫時套用但不會保存。', { isDirty: dirty });
+      return;
+    }
+
+    if (dirty) {
+      this.ui.setCalibrationHint('已套用到預覽，記得按「儲存校準」保留此款式設定。', { isDirty: true });
+      return;
+    }
+
+    if (this.wearCalibration.has(state.selectedNecklace.id)) {
+      this.ui.setCalibrationHint('已套用此款式上次儲存的佩戴校準。', { isSaved: true });
+      return;
+    }
+
+    this.ui.setCalibrationHint('偵測到臉後可拖曳項鍊微調，完成後儲存此款式校準。');
+  }
+
+  applyTuning(adjustments, eventName = 'tuning-change') {
+    const currentAdjustments = this.appState.get('adjustments') ?? {};
+    const normalizedAdjustments = this.wearCalibration.normalize({
+      ...currentAdjustments,
+      ...adjustments,
+    });
+
+    this.appState.set({ adjustments: normalizedAdjustments }, eventName);
+    this.controller.setAdjustments(normalizedAdjustments);
   }
 
   async loadSelectedNecklace() {
@@ -453,6 +573,7 @@ export class ModeController {
     }
 
     const lastDebugData = this.controller.updateFromLandmarks(landmarks, state.necklaceVisible);
+    this.markCalibrationReady();
     this.appState.set(
       {
         lastLandmarks: landmarks,
@@ -462,6 +583,16 @@ export class ModeController {
       'face-results',
     );
     this.updateTrackingStatus();
+  }
+
+  markCalibrationReady() {
+    const necklaceId = this.appState.get('selectedNecklace').id;
+    if (this.calibrationPromptedIds.has(necklaceId)) return;
+
+    this.calibrationPromptedIds.add(necklaceId);
+    if (!this.wearCalibration.has(necklaceId)) {
+      this.ui.setCalibrationHint('已偵測到臉，可以直接拖曳項鍊，或用滑桿調整上下與大小。');
+    }
   }
 
   handleFaceTrackerStats() {
@@ -475,33 +606,44 @@ export class ModeController {
     const state = this.getState();
     if (!state.cameraStarted) return;
     const inferenceStats = this.formatInferenceStats();
+    const advice = this.faceQualityAdvisor.getAdvice({
+      landmarks: state.lastLandmarks,
+      debugData: state.lastDebugData,
+    });
+    const message = this.formatAdviceMessage(advice, inferenceStats, state);
 
     if (!state.hasFace) {
-      this.ui.setStatus(
-        'idle',
-        '正在尋找臉部',
-        state.debugEnabled ? `請將臉保持在畫面中央 · ${inferenceStats}` : '請將臉保持在畫面中央',
-      );
+      this.ui.setStatus(advice.kind, advice.label, message);
       return;
     }
 
     if (!state.lastDebugData) {
-      this.ui.setStatus(
-        'idle',
-        '貼合準備中',
-        state.debugEnabled ? `等待臉部資訊穩定 · ${inferenceStats}` : '等待臉部資訊穩定',
-      );
+      this.ui.setStatus(advice.kind, advice.label, message);
       return;
     }
 
     const data = state.lastDebugData;
     this.ui.setStatus(
-      'tracking',
-      '正在試戴',
+      advice.kind,
+      advice.label,
       state.debugEnabled
         ? `neck x/y: ${data.neckPoint.x.toFixed(3)}, ${data.neckPoint.y.toFixed(3)} · scale ${data.scale.toFixed(2)} · yaw ${data.rotationY.toFixed(2)} · ${inferenceStats}`
-        : '貼合中，保持自然正面即可',
+        : message,
     );
+  }
+
+  formatAdviceMessage(advice, inferenceStats, state) {
+    let message = advice.message;
+
+    if (
+      advice.id === 'ok' &&
+      state.lastDebugData &&
+      !this.wearCalibration.has(state.selectedNecklace.id)
+    ) {
+      message = '可拖曳項鍊微調，完成後按「儲存校準」';
+    }
+
+    return state.debugEnabled ? `${message} · ${inferenceStats}` : message;
   }
 
   formatInferenceStats() {

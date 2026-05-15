@@ -11,6 +11,7 @@ export class NecklaceController {
     this.yawSmoother = new ScalarSmoother(TRACKING_TUNING.smoothing.yaw, 0);
     this.opacitySmoother = new ScalarSmoother(TRACKING_TUNING.smoothing.opacity, 0);
     this.adjustments = {
+      horizontalOffset: 0,
       verticalOffset: 0,
       scaleMultiplier: 1,
       rotationOffset: 0,
@@ -80,7 +81,7 @@ export class NecklaceController {
       sideAmount * TRACKING_TUNING.sideViewVerticalLift;
 
     return {
-      x,
+      x: x + this.adjustments.horizontalOffset,
       y: y + this.adjustments.verticalOffset,
       z: metrics.chin.z ?? 0,
     };

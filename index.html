@@ -148,7 +148,7 @@
         <nav class="bottom-sheet-tabs" aria-label="試戴選項">
           <button class="bottom-sheet-tab is-selected" type="button" data-panel-tab="styles" aria-pressed="true">款式</button>
           <button class="bottom-sheet-tab" type="button" data-panel-tab="color" aria-pressed="false">顏色</button>
-          <button class="bottom-sheet-tab" type="button" data-panel-tab="fit" data-ar-section hidden aria-pressed="false">微調</button>
+          <button class="bottom-sheet-tab" type="button" data-panel-tab="fit" data-ar-section hidden aria-pressed="false">校準</button>
           <button class="bottom-sheet-tab" type="button" data-panel-tab="meaning" aria-pressed="false">寓意</button>
         </nav>
 
@@ -188,17 +188,21 @@
         <details class="control-section control-panel" data-control-panel="fit" data-ar-section hidden>
           <summary>
             <span class="section-heading">
-              <span id="tuningHeading">微調</span>
+              <span id="tuningHeading">佩戴校準</span>
               <span>Fit</span>
             </span>
           </summary>
+
+          <p id="calibrationHint" class="calibration-note" aria-live="polite">
+            偵測到臉後可拖曳項鍊微調，完成後儲存此款式校準。
+          </p>
 
           <div class="tuning-list">
             <label class="range-row" for="verticalOffsetRange">
               <span>上下位置</span>
               <output id="verticalOffsetValue" for="verticalOffsetRange">0</output>
             </label>
-            <input id="verticalOffsetRange" class="range-control" type="range" min="-60" max="60" step="1" value="0" />
+            <input id="verticalOffsetRange" class="range-control" type="range" min="-200" max="200" step="1" value="0" />
 
             <label class="range-row" for="scaleRange">
               <span>大小</span>
@@ -213,7 +217,10 @@
             <input id="rotationRange" class="range-control" type="range" min="-15" max="15" step="1" value="0" />
           </div>
 
-          <button id="resetTuningButton" class="secondary-button" type="button">重置微調</button>
+          <div class="calibration-actions">
+            <button id="saveCalibrationButton" class="primary-button" type="button">儲存校準</button>
+            <button id="resetTuningButton" class="secondary-button" type="button">重設校準</button>
+          </div>
         </details>
 
         <details class="control-section control-panel" data-control-panel="meaning">

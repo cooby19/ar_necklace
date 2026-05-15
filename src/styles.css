@@ -192,7 +192,17 @@ summary:focus-visible {
   touch-action: none;
 }
 
+.stage.is-ar-mode.is-camera-on #threeCanvas {
+  cursor: grab;
+  pointer-events: auto;
+  touch-action: none;
+}
+
 .stage.is-dragging-showcase #threeCanvas {
+  cursor: grabbing;
+}
+
+.stage.is-dragging-calibration #threeCanvas {
   cursor: grabbing;
 }
 
@@ -1112,6 +1122,35 @@ summary:focus-visible {
 .tuning-list {
   display: grid;
   gap: 8px;
+}
+
+.calibration-note {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border: 1px solid rgba(200, 169, 106, 0.28);
+  border-radius: 8px;
+  background: rgba(251, 248, 245, 0.72);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.55;
+}
+
+.calibration-note.is-dirty {
+  border-color: rgba(217, 163, 170, 0.58);
+  color: var(--rose-deep);
+}
+
+.calibration-note.is-saved {
+  border-color: rgba(124, 155, 114, 0.42);
+  color: #617a59;
+}
+
+.calibration-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+  margin-top: 4px;
 }
 
 .range-row {

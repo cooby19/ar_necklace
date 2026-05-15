@@ -37,6 +37,7 @@ export class AppState {
       captureDataUrl: '',
       captureBlob: null,
       adjustments: {
+        horizontalOffset: 0,
         verticalOffset: 0,
         scaleMultiplier: 1,
         rotationOffset: 0,

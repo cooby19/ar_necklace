@@ -36,6 +36,8 @@ export class UiController {
       scaleValue: document.querySelector('#scaleValue'),
       rotationRange: document.querySelector('#rotationRange'),
       rotationValue: document.querySelector('#rotationValue'),
+      calibrationHint: document.querySelector('#calibrationHint'),
+      saveCalibrationButton: document.querySelector('#saveCalibrationButton'),
       resetTuningButton: document.querySelector('#resetTuningButton'),
       shareSheet: document.querySelector('#shareSheet'),
       shareImage: document.querySelector('#shareImage'),
@@ -99,7 +101,8 @@ export class UiController {
     this.elements.verticalOffsetRange.addEventListener('input', () => handlers.onTuningInput?.());
     this.elements.scaleRange.addEventListener('input', () => handlers.onTuningInput?.());
     this.elements.rotationRange.addEventListener('input', () => handlers.onTuningInput?.());
-    this.elements.resetTuningButton.addEventListener('click', () => handlers.onResetTuning?.());
+    this.elements.saveCalibrationButton.addEventListener('click', () => handlers.onSaveCalibration?.());
+    this.elements.resetTuningButton.addEventListener('click', () => handlers.onResetCalibration?.());
     this.elements.downloadCaptureButton.addEventListener('click', () => handlers.onDownloadCapture?.());
     this.elements.shareCaptureButton.addEventListener('click', () => handlers.onShareCapture?.());
 
@@ -406,6 +409,27 @@ export class UiController {
     return this.readTuningControls();
   }
 
+  syncTuningControlsFromAdjustments(adjustments = {}) {
+    const verticalOffset = Math.round((adjustments.verticalOffset ?? 0) * 1000);
+    const scale = Math.round((adjustments.scaleMultiplier ?? 1) * 100);
+    const rotation = Math.round(((adjustments.rotationOffset ?? 0) * 180) / Math.PI);
+
+    this.elements.verticalOffsetRange.value = String(clamp(verticalOffset, -200, 200));
+    this.elements.scaleRange.value = String(clamp(scale, 80, 120));
+    this.elements.rotationRange.value = String(clamp(rotation, -15, 15));
+    return this.readTuningControls();
+  }
+
+  setCalibrationHint(message, { isDirty = false, isSaved = false } = {}) {
+    this.elements.calibrationHint.textContent = message;
+    this.elements.calibrationHint.classList.toggle('is-dirty', isDirty);
+    this.elements.calibrationHint.classList.toggle('is-saved', isSaved);
+  }
+
+  setCalibrationDragging(isDragging) {
+    this.elements.stage.classList.toggle('is-dragging-calibration', isDragging);
+  }
+
   setStatus(kind, label, metrics) {
     const isPassiveTracking = kind === 'tracking' && label === '正在試戴' && !this.elements.debugToggle.checked;
     this.elements.statusPanel.dataset.status = kind;
@@ -480,4 +504,8 @@ function getColorOption(necklace, colorId) {
 function formatSignedNumber(value) {
   if (value > 0) return `+${value}`;
   return String(value);
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
 }
