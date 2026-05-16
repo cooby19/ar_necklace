@@ -19,6 +19,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { observeStageSize } from '../utils/stageResize.js';
 
 const GEM_NAME_PATTERN = /(gem|gemstone|jewel|stone)/i;
+const MAX_GLB_BUFFER_CACHE_ENTRIES = 5;
 const MATERIAL_TEXTURE_KEYS = [
   'alphaMap',
   'anisotropyMap',
@@ -283,7 +284,7 @@ export class NecklaceScene {
   }
 
   async fetchGlbFile(url, signal) {
-    const cachedBuffer = this.glbBufferCache.get(url);
+    const cachedBuffer = this.getCachedGlbBuffer(url);
     if (cachedBuffer) return cachedBuffer;
 
     const cacheMode = import.meta.env.DEV ? 'no-store' : 'default';
@@ -295,8 +296,30 @@ export class NecklaceScene {
 
     const buffer = await response.arrayBuffer();
     this.assertGlbFile(buffer, url, response.headers.get('content-type') ?? '');
+    this.setCachedGlbBuffer(url, buffer);
+    return buffer;
+  }
+
+  getCachedGlbBuffer(url) {
+    const buffer = this.glbBufferCache.get(url);
+    if (!buffer) return null;
+
+    this.glbBufferCache.delete(url);
     this.glbBufferCache.set(url, buffer);
     return buffer;
+  }
+
+  setCachedGlbBuffer(url, buffer) {
+    this.glbBufferCache.delete(url);
+    this.glbBufferCache.set(url, buffer);
+    this.trimGlbBufferCache();
+  }
+
+  trimGlbBufferCache() {
+    while (this.glbBufferCache.size > MAX_GLB_BUFFER_CACHE_ENTRIES) {
+      const oldestUrl = this.glbBufferCache.keys().next().value;
+      this.glbBufferCache.delete(oldestUrl);
+    }
   }
 
   logLoadTimings(config, timings) {
@@ -721,13 +744,22 @@ export class NecklaceScene {
 
   dispose() {
     this.abortActiveModelLoad();
+    this.activeModelLoad = null;
     this.stopObservingStageSize?.();
+    this.stopObservingStageSize = null;
     this.disposeCurrentModel();
     this.necklaceRoot.clear();
     this.currentModel = null;
     this.colorableMaterials.clear();
+    this.glbBufferCache.clear();
+    if (this.scene) {
+      this.scene.environment = null;
+    }
     this.environmentMap?.dispose();
-    this.pmremGenerator.dispose();
-    this.renderer.dispose();
+    this.environmentMap = null;
+    this.pmremGenerator?.dispose();
+    this.pmremGenerator = null;
+    this.renderer?.dispose();
+    this.renderer = null;
   }
 }
