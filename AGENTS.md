@@ -51,7 +51,8 @@ npm run preview
 - `src/core/CameraStream.js`：封裝 `getUserMedia`、video 播放與停止。
 - `src/core/FaceTracker.js`：封裝 MediaPipe Face Mesh 初始化、每幀送入 video、結果回呼與錯誤回呼。
 - `src/core/NecklaceController.js`：把 landmarks 轉成項鍊位置、比例、旋轉與透明度。
-- `src/core/NecklaceScene.js`：Three.js 場景、GLB 載入、模型正規化、隱形深度遮擋、透明度、座標轉換與渲染。
+- `src/core/NecklaceScene.js`：Three.js 場景、GLB 載入、模型正規化、隱形深度遮擋、透明度、座標轉換、渲染、GLB buffer cache 與 WebGL 模型資源釋放。
+- `src/core/NecklaceScene.test.js`：以 fake Object3D/material/texture 測 GLB cache LRU、dispose teardown、共享資源去重釋放與 depth occluder 原材質釋放，不啟動真實 WebGL。
 - `src/core/Smoother.js`：標量與向量的線性平滑器。
 - `src/core/DebugOverlay.js`：在 2D canvas 上畫 landmarks、下巴、脖子估算點、臉寬線與 debug 文字。
 - `src/types/domain.ts`：共享 domain types，包含 AppState snapshot、MediaPipe/landmark、tracking/debug、config schema、render stats、capture/share 與 workflow status 資料形狀。
@@ -183,13 +184,24 @@ showcase -> arIdle -> cameraStarting -> noFace <-> tracking -> capturing -> shar
 ## 模型資產注意事項
 
 - 預設模型必須是有效 GLB，且檔案標頭應為 `glTF`。
-- `NecklaceScene.assertGlbFile()` 會用 `Range: bytes=0-15` 先檢查模型 URL，若路徑回 HTML 或檔案不是 GLB 會報錯。
+- `NecklaceScene.assertGlbFile()` 會在 fetch GLB 後檢查模型檔標頭與長度，若路徑回 HTML 或檔案不是有效 GLB 會報錯。
 - 若 `preserveAuthorOrigin` 為 `false`，載入模型後會用 bounding box 將模型中心移到 origin；若為 `true`，保留 GLB 作者原點，只做尺寸正規化。
 - 建議 GLB pivot 放在項鍊上緣中心或佩戴 anchor 附近。
 - 若 GLB 是「脖子 + 項鍊」穿戴組合，整組 origin 應放在脖子正面、項鍊實際掛點，並設定 `preserveAuthorOrigin: true`。
 - 建議模型正面面向相機，X 軸置中，寬度接近 1 個 Three.js 單位。
 - 若模型載入後太大、太小、反向、上下顛倒或 anchor 不準，先調 `src/config/necklaces.js`；若 pivot 差距太大，應回建模工具修 origin 後重新匯出。
 - 若 GLB 包含脖子遮擋模型，應保持為獨立物件或 mesh，並讓名稱符合 `occluderParts.nameIncludes`。程式會讓該模型不寫入顏色但寫入 Depth Buffer，用來遮住位於脖子後方的項鍊段。
+
+## WebGL 資源生命週期
+
+- `NecklaceScene` 擁有 Three.js 模型資源生命週期；`ModelCatalogService` 只負責款式選擇與套色流程，不應碰 geometry/material/texture disposal 細節。
+- `loadNecklace(config)` 切換模型時，必須先釋放舊 `currentModel` 底下的 geometry、material、texture，再清空 `necklaceRoot` 與重設 `currentModel`、`colorableMaterials`、opacity/showcase 狀態。
+- disposal helper 需遞迴 traverse Object3D，並用 `Set` 對共享 geometry/material/texture 去重，避免同一資源被重複 dispose。
+- material texture 清理不能只處理 `map`；需涵蓋 normal/roughness/metalness/ao/emissive/alpha/bump/displacement/env/light/specular 等常見 texture 欄位，或維持安全泛用掃描。
+- 不要在模型切換時釋放 scene-level `environmentMap`；它只應在 `NecklaceScene.dispose()` teardown 時釋放。
+- depth occluder 會用新的 `MeshBasicMaterial` 替換原材質。替換前的原材質必須保留在 `mesh.userData.originalOccluderMaterials`，讓模型 dispose 時連同原材質、其 texture 與新的 occluder material 一起釋放。
+- `glbBufferCache` 是 CPU 端 ArrayBuffer cache，目前最多保留 5 個最近使用的 GLB buffer。cache hit 需 refresh LRU 順序；新增後超過上限要移除最久未使用項目。
+- `NecklaceScene.dispose()` 應可安全重複呼叫，並負責 abort active load、停止 resize observer、釋放目前模型、清空 `necklaceRoot` / `colorableMaterials` / `glbBufferCache`、解除 scene environment，再釋放 `environmentMap`、`PMREMGenerator` 與 `WebGLRenderer`。
 
 ## UI 與互動
 
@@ -212,7 +224,7 @@ showcase -> arIdle -> cameraStarting -> noFace <-> tracking -> capturing -> shar
 - 使用 Vitest，測試命令為 `npm test`。
 - 使用 TypeScript 做漸進式型別檢查，命令為 `npm run typecheck`。
 - 優先測純邏輯與低 DOM 依賴，避免在單元測試中啟動真實 camera、MediaPipe 或 WebGL。
-- 目前測試重點包含 `AppState` session transition 與 stale data cleanup、`ModelCatalogService` default color/target resolution/matched target labels、`CalibrationService` normalize/load/save/reset hint 與 localStorage 可用性、`ShareWorkflow` capture blocker 判斷。
+- 目前測試重點包含 `AppState` session transition 與 stale data cleanup、`ModelCatalogService` default color/target resolution/matched target labels、`CalibrationService` normalize/load/save/reset hint 與 localStorage 可用性、`ShareWorkflow` capture blocker 判斷，以及 `NecklaceScene` 的 GLB cache LRU 與 WebGL resource disposal helper。
 - 新增或調整 ModeController 周邊 service 時，優先補對應 service 的單元測試，再視風險補瀏覽器或人工驗證。
 
 ## 已知限制

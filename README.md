@@ -49,6 +49,7 @@
     │   ├── FaceTracker.js
     │   ├── NecklaceController.js
     │   ├── NecklaceScene.js
+    │   ├── NecklaceScene.test.js
     │   ├── Smoother.js
     │   └── WearCalibration.js
     ├── types/
@@ -145,6 +146,7 @@ npm run typecheck
 - `ModelCatalogService`：預設顏色選擇、換色 target fallback、matched target label 與套色呼叫。
 - `CalibrationService`：調參 normalize、save/load/reset hint、localStorage 可用與不可用情境。
 - `ShareWorkflow`：截圖前置阻擋條件，包含相機未開、沒有目前影格、未偵測到臉與項鍊隱藏。
+- `NecklaceScene`：GLB buffer cache LRU、`dispose()` teardown、共享 geometry/material/texture 去重釋放，以及 depth occluder 替換前原材質釋放。
 
 線上部署後建議對 GitHub Pages 做冒煙測試：
 
@@ -204,6 +206,16 @@ public/models/necklace.glb
 - 項鍊 mesh 仍會正常渲染，並透過深度測試決定哪些珠子或鍊段要被擋住。
 
 若要得到自然的前後遮擋效果，項鍊模型本身需要真的有前後深度。也就是說，項鍊前半段應該位於脖子前方，後半段應該位於脖子後方；如果整條項鍊都在同一個平面上，深度測試無法判斷哪一段該被擋住。
+
+## WebGL 資源與 GLB 快取
+
+`NecklaceScene` 擁有 Three.js 模型資源生命週期。切換項鍊款式時，`loadNecklace()` 會先釋放舊模型底下的 geometry、material 與 texture，再清空 `necklaceRoot` 並載入新 GLB，避免多次切換模型後 GPU memory 持續成長。這些 Three.js 細節維持在 `NecklaceScene` 內，`ModelCatalogService` 只負責款式選擇、載入流程與套色協調。
+
+資源釋放 helper 會遞迴 traverse 舊模型，並用 `Set` 對共享的 geometry、material、texture 去重，避免同一個資源被重複 dispose。材質 texture 清理不只處理 `map`，也涵蓋 normal、roughness、metalness、ao、emissive、alpha、bump、displacement、env、light、specular 等常見 texture-like 欄位；scene-level `environmentMap` 不會在模型切換時釋放，只會在 `NecklaceScene.dispose()` teardown 時釋放。
+
+depth occluder 會用新的 `MeshBasicMaterial` 取代原材質以只寫入 Depth Buffer。替換前的原材質會暫存在 `mesh.userData.originalOccluderMaterials`，讓模型 dispose 時可連同原材質、其 texture 與新的 occluder material 一起釋放。
+
+GLB `ArrayBuffer` 使用小型 LRU cache，最多保留 5 個最近使用的 GLB buffer。cache hit 會刷新 recently-used 順序；新增後超過上限會移除最久未使用項目。解析 GLB 前仍使用 `glbBuffer.slice(0)`，避免 GLTFLoader 修改共用 cache buffer。
 
 ## 測試步驟
 
