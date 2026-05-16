@@ -35,6 +35,13 @@ npm run preview
 - `src/config/tuning.js`：臉部追蹤、項鍊位置、縮放、平滑與 debug 顯示的主要調參位置。
 - `src/config/necklaces.js`：項鍊款式清單、每個 GLB 的模型修正參數與顏色自選設定。
 - `src/utils/landmarks.js`：Face Mesh landmark index、距離、插值、clamp 與臉部量測邏輯。
+- `src/app/ModeController.js`：輕量 use-case orchestrator，接收 UI intent、協調 app services、提交 `AppState`，避免直接承擔底層流程細節。
+- `src/app/ArSessionService.js`：管理 `CameraStream` 與 `FaceTracker` lifecycle、鏡頭切換、selfie mode 與 session reset。
+- `src/app/ModelCatalogService.js`：管理項鍊選擇、模型載入序列、可換色 target、預設色票與套色流程。
+- `src/app/RendererLoop.js`：管理 `requestAnimationFrame`、render FPS、showcase update、scene render 與 debug overlay render。
+- `src/app/CalibrationService.js`：管理 `WearCalibration`、拖曳校準、調參 normalize、save/reset/load 與提示狀態。
+- `src/app/ShareWorkflow.js`：管理截圖前置檢查、capture、download、native share fallback 與分享狀態資料。
+- `src/app/TrackingFeedbackService.js`：組裝 FaceTracker stats、render FPS、FaceQualityAdvisor advice、developer panel 與 debug/status 文字。
 - `src/core/CameraStream.js`：封裝 `getUserMedia`、video 播放與停止。
 - `src/core/FaceTracker.js`：封裝 MediaPipe Face Mesh 初始化、每幀送入 video、結果回呼與錯誤回呼。
 - `src/core/NecklaceController.js`：把 landmarks 轉成項鍊位置、比例、旋轉與透明度。
@@ -47,16 +54,34 @@ npm run preview
 
 ## 執行流程
 
-1. `src/main.js` 初始化 UI、相機、Three.js 場景、項鍊控制器、debug overlay 與 Face Mesh tracker。
+1. `src/main.js` 初始化 `AppState`、`UiController`、`CaptureService` 與 `ModeController`。
 2. 啟動時先依 `NECKLACES[0]` 載入預設模型。
-3. 使用者點擊「開始相機」後，`CameraStream` 要求前鏡頭權限並播放 video。
-4. `FaceTracker` 初始化 MediaPipe Face Mesh，設定最多追蹤 1 張臉、`refineLandmarks: true`、`selfieMode: true`。
-5. 每個 animation frame 將 video frame 送進 Face Mesh。
-6. 偵測到臉時，`NecklaceController` 呼叫 `computeFaceMetrics()` 取得臉部量測。
-7. 控制器根據下巴位置和臉高估算脖子點，轉換到 Three.js world 座標。
-8. 控制器使用臉寬推算項鍊 scale，使用左右臉側連線推算 roll，使用鼻尖相對臉中心偏移估算 yaw，並套用平滑。
+3. `ModelCatalogService` 協調 `NecklaceScene.loadNecklace()` 載入模型，並套用目前款式的預設顏色設定。
+4. `RendererLoop` 啟動 render loop，負責 showcase update、Three.js render 與 debug overlay render。
+5. 使用者點擊「開始相機」後，`ModeController` 將 `AppState.sessionStatus` 切到 `cameraStarting`，再交給 `ArSessionService` 啟動相機與 Face Mesh。
+6. `ArSessionService` 透過 `CameraStream` 要求鏡頭權限，依實際鏡頭設定 `FaceTracker.selfieMode`，再啟動 Face Mesh frame processing。
+7. 偵測結果回到 `ModeController` 後，只負責提交 `noFace` / `tracking` 狀態與呼叫 `NecklaceController.updateFromLandmarks()`。
+8. `NecklaceController` 呼叫 `computeFaceMetrics()`，根據下巴位置、臉高、臉寬、roll、yaw 與校準值計算項鍊 transform。
 9. `NecklaceScene` 更新項鍊 group 的 position、scale、rotation 與材質 opacity。若款式設定 `preserveAuthorOrigin: true`，GLB 作者原點會保留為 AR anchor。
-10. 未偵測到臉或關閉顯示項鍊時，項鍊會平滑淡出。
+10. `TrackingFeedbackService` 組裝追蹤狀態、debug panel 與 FaceQualityAdvisor 提示；未偵測到臉或關閉顯示項鍊時，項鍊會平滑淡出。
+
+## AR Session 狀態
+
+`AppState` 仍保存一般 UI 狀態與資料，但 AR session lifecycle 使用 `sessionStatus` 表達，避免 patch-based state 產生不合法組合。
+
+合法流程大致為：
+
+```text
+showcase -> arIdle -> cameraStarting -> noFace <-> tracking -> capturing -> sharing
+```
+
+- `showcase`：3D 模型展示模式，相機未啟動。
+- `arIdle`：AR 模式但相機尚未啟動。
+- `cameraStarting`：正在啟動或切換相機，會清除舊 landmarks/debug data。
+- `noFace`：相機運作中但目前無可用臉部資料，會清除舊 debug data 與 landmarks。
+- `tracking`：有臉部 landmarks，項鍊可依目前模型與校準值貼合。
+- `capturing` / `sharing`：截圖與分享流程狀態，會保留 live tracking data 供畫面與 debug 使用。
+- `error`：相機、模型、截圖或分享錯誤。若相機已停止，狀態轉換會同步清掉臉部資料。
 
 ## 項鍊顏色自選
 
@@ -167,6 +192,9 @@ npm run preview
 - 需要刪除文件時，只能一次刪除一個明確路徑的文件。
 - 如果需要批量刪除文件，應停止操作並請用戶手動刪除。
 - 優先保持目前的純前端架構，不要引入後端，除非需求明確要求。
+- `ModeController` 應維持輕量 use-case orchestrator；新增功能時優先放入明確的 `src/app/*Service.js` 或 `src/app/*Workflow.js`，再由 `ModeController` 協調。
+- 不要把 camera/session lifecycle、模型 catalog/color 邏輯、render loop、校準流程、分享流程或 telemetry/debug 資料組裝重新塞回 `ModeController`。
+- 調整 AR session lifecycle 時，優先更新 `AppState.AR_SESSION_STATES`、合法 transition 與 stale data cleanup 規則，不要只用零散 patch。
 - 修改追蹤效果時，優先從 `src/config/tuning.js` 與 `src/config/necklaces.js` 調整，再考慮改核心演算法。
 - 新增項鍊款式時，將 GLB 放入 `public/models/`，再於 `src/config/necklaces.js` 新增一筆設定。
 - 新增可換色項鍊時，優先在 GLB material name 使用 `Colorable_Metal`、`Colorable_Pendant`、`Colorable_Gem` 等關鍵字，再於 `colorCustomization.targets` 補上對應設定。

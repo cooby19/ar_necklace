@@ -26,8 +26,14 @@
     ├── styles.css
     ├── app/
     │   ├── AppState.js
+    │   ├── ArSessionService.js
+    │   ├── CalibrationService.js
     │   ├── CaptureService.js
+    │   ├── ModelCatalogService.js
     │   ├── ModeController.js
+    │   ├── RendererLoop.js
+    │   ├── ShareWorkflow.js
+    │   ├── TrackingFeedbackService.js
     │   └── UiController.js
     ├── config/
     │   ├── necklaces.js
@@ -46,7 +52,36 @@
         └── stageResize.js
 ```
 
-其中 `src/main.js` 只負責組裝狀態、UI、模式控制與截圖服務；實際互動流程集中在 `src/app/ModeController.js`。`src/app/` 放應用狀態、UI 綁定、截圖分享與模式協調，`src/core/` 放相機、Face Mesh、Three.js、穿戴校準與品質提示等可重用核心邏輯，`src/utils/` 放 landmark 計算與預覽區尺寸監聽工具。
+其中 `src/main.js` 只負責組裝狀態、UI、模式控制與截圖服務。`src/app/ModeController.js` 現在是輕量 use-case orchestrator：接收 UI intent、協調 app services、提交 `AppState`，但不直接管理相機生命週期、模型 catalog/color、render loop、校準流程、分享流程或 debug/status 資料組裝。`src/app/` 放應用狀態、UI 綁定、工作流程服務與模式協調，`src/core/` 放相機、Face Mesh、Three.js、穿戴校準與品質提示等可重用核心邏輯，`src/utils/` 放 landmark 計算與預覽區尺寸監聽工具。
+
+## 應用流程分層
+
+`ModeController` 的依賴方向是：
+
+```text
+UiController intent
+  -> ModeController
+  -> src/app/*Service 或 *Workflow
+  -> src/core/*、NecklaceScene、FaceTracker、CaptureService
+  -> AppState + UiController sync
+```
+
+目前 app services 的責任如下：
+
+- `ArSessionService`：包裝 `CameraStream` 與 `FaceTracker`，管理 start、stop、switch camera、selfie mode 與 session reset。
+- `ModelCatalogService`：管理項鍊款式查找、模型載入序列、可換色 target、預設色票與 `NecklaceScene.applyColor()` 流程。
+- `RendererLoop`：管理 `requestAnimationFrame`、render FPS、showcase update、Three.js render 與 debug overlay render。
+- `CalibrationService`：管理 `WearCalibration`、拖曳校準、調參 normalize、save/reset/load 與校準提示狀態。
+- `ShareWorkflow`：管理截圖前置檢查、capture、download、native share fallback 與分享狀態資料。
+- `TrackingFeedbackService`：組裝 FaceTracker stats、render FPS、FaceQualityAdvisor advice、developer panel 與 debug status 文字。
+
+`AppState` 保留一般 UI 狀態與資料，但 AR session lifecycle 另有輕量狀態欄位 `sessionStatus`。合法轉換大致為：
+
+```text
+showcase -> arIdle -> cameraStarting -> noFace <-> tracking -> capturing -> sharing
+```
+
+`error` 可由各階段進入，使用者重新切換模式或啟動相機後再回到正常流程。`showcase`、`arIdle`、`cameraStarting`、`noFace` 會清掉過期的 landmarks/debug data，避免出現相機已關閉卻保留舊追蹤資料的狀態組合。
 
 ## 啟動方式
 

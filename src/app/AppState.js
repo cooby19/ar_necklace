@@ -14,12 +14,87 @@ export const APP_MODES = {
   AR: 'ar',
 };
 
+export const AR_SESSION_STATES = {
+  SHOWCASE: 'showcase',
+  AR_IDLE: 'arIdle',
+  CAMERA_STARTING: 'cameraStarting',
+  NO_FACE: 'noFace',
+  TRACKING: 'tracking',
+  CAPTURING: 'capturing',
+  SHARING: 'sharing',
+  ERROR: 'error',
+};
+
+const SESSION_TRANSITIONS = {
+  [AR_SESSION_STATES.SHOWCASE]: [
+    AR_SESSION_STATES.SHOWCASE,
+    AR_SESSION_STATES.AR_IDLE,
+    AR_SESSION_STATES.ERROR,
+  ],
+  [AR_SESSION_STATES.AR_IDLE]: [
+    AR_SESSION_STATES.AR_IDLE,
+    AR_SESSION_STATES.SHOWCASE,
+    AR_SESSION_STATES.CAMERA_STARTING,
+    AR_SESSION_STATES.ERROR,
+  ],
+  [AR_SESSION_STATES.CAMERA_STARTING]: [
+    AR_SESSION_STATES.CAMERA_STARTING,
+    AR_SESSION_STATES.NO_FACE,
+    AR_SESSION_STATES.TRACKING,
+    AR_SESSION_STATES.AR_IDLE,
+    AR_SESSION_STATES.SHOWCASE,
+    AR_SESSION_STATES.ERROR,
+  ],
+  [AR_SESSION_STATES.NO_FACE]: [
+    AR_SESSION_STATES.NO_FACE,
+    AR_SESSION_STATES.TRACKING,
+    AR_SESSION_STATES.CAMERA_STARTING,
+    AR_SESSION_STATES.AR_IDLE,
+    AR_SESSION_STATES.SHOWCASE,
+    AR_SESSION_STATES.ERROR,
+  ],
+  [AR_SESSION_STATES.TRACKING]: [
+    AR_SESSION_STATES.TRACKING,
+    AR_SESSION_STATES.NO_FACE,
+    AR_SESSION_STATES.CAMERA_STARTING,
+    AR_SESSION_STATES.CAPTURING,
+    AR_SESSION_STATES.AR_IDLE,
+    AR_SESSION_STATES.SHOWCASE,
+    AR_SESSION_STATES.ERROR,
+  ],
+  [AR_SESSION_STATES.CAPTURING]: [
+    AR_SESSION_STATES.CAPTURING,
+    AR_SESSION_STATES.SHARING,
+    AR_SESSION_STATES.TRACKING,
+    AR_SESSION_STATES.NO_FACE,
+    AR_SESSION_STATES.AR_IDLE,
+    AR_SESSION_STATES.ERROR,
+  ],
+  [AR_SESSION_STATES.SHARING]: [
+    AR_SESSION_STATES.SHARING,
+    AR_SESSION_STATES.TRACKING,
+    AR_SESSION_STATES.NO_FACE,
+    AR_SESSION_STATES.AR_IDLE,
+    AR_SESSION_STATES.SHOWCASE,
+    AR_SESSION_STATES.ERROR,
+  ],
+  [AR_SESSION_STATES.ERROR]: [
+    AR_SESSION_STATES.ERROR,
+    AR_SESSION_STATES.SHOWCASE,
+    AR_SESSION_STATES.AR_IDLE,
+    AR_SESSION_STATES.CAMERA_STARTING,
+    AR_SESSION_STATES.NO_FACE,
+    AR_SESSION_STATES.TRACKING,
+  ],
+};
+
 export class AppState {
   constructor({ necklaces }) {
     const defaultNecklace = necklaces[0];
 
     this.state = {
       mode: APP_MODES.SHOWCASE,
+      sessionStatus: AR_SESSION_STATES.SHOWCASE,
       cameraStarted: false,
       cameraFacingMode: CAMERA_FACING_MODES.USER,
       isSwitchingCamera: false,
@@ -92,6 +167,17 @@ export class AppState {
     return this.set(patch, eventName);
   }
 
+  transitionSession(nextStatus, patch = {}, eventName = 'session-transition') {
+    if (!canTransitionSession(this.state.sessionStatus, nextStatus)) {
+      console.warn(
+        `[AppState] 忽略不合法的 AR session transition：${this.state.sessionStatus} -> ${nextStatus}`,
+      );
+      return this.getSnapshot();
+    }
+
+    return this.set(createSessionPatch(nextStatus, patch), eventName);
+  }
+
   subscribe(listener) {
     this.listeners.add(listener);
     return () => {
@@ -135,4 +221,63 @@ export function createDefaultColorSelection(necklace) {
   return {
     [defaultTarget]: defaultColor,
   };
+}
+
+export function canTransitionSession(currentStatus, nextStatus) {
+  return Boolean(SESSION_TRANSITIONS[currentStatus]?.includes(nextStatus));
+}
+
+export function createSessionPatch(nextStatus, patch = {}) {
+  const nextPatch = {
+    ...patch,
+    sessionStatus: nextStatus,
+  };
+
+  if (nextStatus === AR_SESSION_STATES.SHOWCASE || nextStatus === AR_SESSION_STATES.AR_IDLE) {
+    return {
+      ...nextPatch,
+      cameraStarted: false,
+      isSwitchingCamera: false,
+      hasFace: false,
+      lastLandmarks: null,
+      lastDebugData: null,
+    };
+  }
+
+  if (nextStatus === AR_SESSION_STATES.CAMERA_STARTING) {
+    return {
+      ...nextPatch,
+      hasFace: false,
+      lastLandmarks: null,
+      lastDebugData: null,
+    };
+  }
+
+  if (nextStatus === AR_SESSION_STATES.NO_FACE) {
+    return {
+      ...nextPatch,
+      hasFace: false,
+      lastLandmarks: null,
+      lastDebugData: null,
+    };
+  }
+
+  if (nextStatus === AR_SESSION_STATES.TRACKING) {
+    return {
+      ...nextPatch,
+      hasFace: true,
+    };
+  }
+
+  if (nextStatus === AR_SESSION_STATES.ERROR && nextPatch.cameraStarted === false) {
+    return {
+      ...nextPatch,
+      isSwitchingCamera: false,
+      hasFace: false,
+      lastLandmarks: null,
+      lastDebugData: null,
+    };
+  }
+
+  return nextPatch;
 }

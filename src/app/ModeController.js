@@ -1,43 +1,32 @@
 import {
   APP_MODES,
-  CAMERA_FACING_MODES,
-  createDefaultColorSelection,
+  AR_SESSION_STATES,
   getCameraLabel,
   getCameraSwitchingLabel,
-  isSelfieCamera,
-  normalizeFacingMode,
 } from './AppState.js';
-import { CameraStream } from '../core/CameraStream.js';
+import { ArSessionService, getNextFacingMode } from './ArSessionService.js';
+import { CalibrationService } from './CalibrationService.js';
+import { ModelCatalogService } from './ModelCatalogService.js';
+import { RendererLoop } from './RendererLoop.js';
+import { ShareWorkflow } from './ShareWorkflow.js';
+import { TrackingFeedbackService } from './TrackingFeedbackService.js';
 import { DebugOverlay } from '../core/DebugOverlay.js';
-import { FaceTracker } from '../core/FaceTracker.js';
 import { FaceQualityAdvisor } from '../core/FaceQualityAdvisor.js';
 import { NecklaceController } from '../core/NecklaceController.js';
 import { NecklaceScene } from '../core/NecklaceScene.js';
-import { WearCalibration } from '../core/WearCalibration.js';
 
 export class ModeController {
   constructor({ appState, uiController, captureService, necklaces }) {
     this.appState = appState;
     this.ui = uiController;
-    this.captureService = captureService;
     this.necklaces = necklaces;
-    this.necklaceLoadSequence = 0;
-    this.calibrationDrag = null;
-    this.calibrationPromptedIds = new Set();
-    this.renderStats = {
-      fps: 0,
-      frameCount: 0,
-      lastSampleAt: performance.now(),
-    };
 
-    this.camera = new CameraStream(this.ui.elements.video);
     this.scene = new NecklaceScene({
       canvas: this.ui.elements.threeCanvas,
       stageElement: this.ui.elements.stage,
       onError: (message) => this.showError(message),
     });
     this.controller = new NecklaceController(this.scene);
-    this.wearCalibration = new WearCalibration();
     this.faceQualityAdvisor = new FaceQualityAdvisor({
       video: this.ui.elements.video,
     });
@@ -45,11 +34,36 @@ export class ModeController {
       canvas: this.ui.elements.debugCanvas,
       stageElement: this.ui.elements.stage,
     });
-    this.faceTracker = new FaceTracker({
-      video: this.ui.elements.video,
+    this.sessionService = new ArSessionService({
+      videoElement: this.ui.elements.video,
       onResults: (results) => this.handleFaceResults(results),
       onError: (error) => this.showError(`Face Mesh 偵測發生錯誤：${error.message ?? error}`),
       onStatsUpdate: () => this.handleFaceTrackerStats(),
+    });
+    this.modelCatalog = new ModelCatalogService({
+      scene: this.scene,
+      necklaces: this.necklaces,
+    });
+    this.calibrationService = new CalibrationService({
+      stageElement: this.ui.elements.stage,
+      pointerElement: this.ui.elements.threeCanvas,
+    });
+    this.shareWorkflow = new ShareWorkflow({
+      captureService,
+      scene: this.scene,
+    });
+    this.rendererLoop = new RendererLoop({
+      scene: this.scene,
+      debugOverlay: this.debugOverlay,
+      getState: () => this.getState(),
+      onDebugFrame: () => this.updateDeveloperPanel(),
+    });
+    this.feedbackService = new TrackingFeedbackService({
+      faceQualityAdvisor: this.faceQualityAdvisor,
+      getTrackerStats: () => this.sessionService.getStats(),
+      getRenderStats: () => this.rendererLoop.getStats(),
+      modelCatalog: this.modelCatalog,
+      calibrationService: this.calibrationService,
     });
   }
 
@@ -67,7 +81,7 @@ export class ModeController {
     this.syncColorAvailability();
     this.syncModeEffects();
     this.loadSelectedNecklace();
-    this.animate();
+    this.rendererLoop.start();
   }
 
   selectMode(mode) {
@@ -75,21 +89,25 @@ export class ModeController {
     if (!Object.values(APP_MODES).includes(mode) || state.mode === mode) return;
 
     if (mode === APP_MODES.SHOWCASE && state.cameraStarted) {
-      this.stopCameraSession();
+      this.stopCameraSession({
+        nextStatus: AR_SESSION_STATES.SHOWCASE,
+        eventName: 'mode-camera-stop',
+      });
     }
 
     const patch = {
       mode,
-      lastLandmarks: null,
-      lastDebugData: null,
-      hasFace: false,
     };
 
     if (mode !== APP_MODES.AR && state.activePanel === 'fit') {
       patch.activePanel = 'styles';
     }
 
-    this.appState.set(patch, 'mode-select');
+    this.appState.transitionSession(
+      mode === APP_MODES.SHOWCASE ? AR_SESSION_STATES.SHOWCASE : AR_SESSION_STATES.AR_IDLE,
+      patch,
+      'mode-select',
+    );
 
     if (mode === APP_MODES.AR) {
       this.scene.setShowcaseMode(false);
@@ -150,45 +168,24 @@ export class ModeController {
 
   handleCalibrationPointerDown(event) {
     const state = this.getState();
-    if (!state.cameraStarted || !state.modelLoaded || !state.hasFace || !state.necklaceVisible) return;
+    if (!this.calibrationService.startDrag(event, state)) return;
 
-    this.ui.elements.threeCanvas.setPointerCapture?.(event.pointerId);
-    this.calibrationDrag = {
-      pointerId: event.pointerId,
-      lastClientX: event.clientX,
-      lastClientY: event.clientY,
-    };
     this.ui.setCalibrationDragging(true);
-    event.preventDefault();
   }
 
   handleCalibrationPointerMove(event) {
-    if (!this.calibrationDrag || this.calibrationDrag.pointerId !== event.pointerId) return;
-
-    const rect = this.ui.elements.stage.getBoundingClientRect();
-    const deltaX = rect.width > 0 ? (event.clientX - this.calibrationDrag.lastClientX) / rect.width : 0;
-    const deltaY = rect.height > 0 ? (event.clientY - this.calibrationDrag.lastClientY) / rect.height : 0;
-    this.calibrationDrag.lastClientX = event.clientX;
-    this.calibrationDrag.lastClientY = event.clientY;
-
     const state = this.getState();
-    this.applyTuning(
-      {
-        horizontalOffset: (state.adjustments.horizontalOffset ?? 0) + deltaX,
-        verticalOffset: (state.adjustments.verticalOffset ?? 0) + deltaY,
-      },
-      'calibration-drag',
-    );
+    const result = this.calibrationService.updateDrag(event, state.adjustments);
+    if (!result) return;
+
+    this.applyTuning(result.adjustments, 'calibration-drag');
     this.ui.syncTuningControlsFromAdjustments(this.appState.get('adjustments'));
-    this.updateCalibrationHint({ dirty: true });
-    event.preventDefault();
+    this.applyCalibrationHint(result.hint);
   }
 
   handleCalibrationPointerUp(event) {
-    if (!this.calibrationDrag || this.calibrationDrag.pointerId !== event.pointerId) return;
+    if (!this.calibrationService.endDrag(event)) return;
 
-    this.ui.elements.threeCanvas.releasePointerCapture?.(event.pointerId);
-    this.calibrationDrag = null;
     this.ui.setCalibrationDragging(false);
   }
 
@@ -198,16 +195,32 @@ export class ModeController {
     this.ui.elements.switchCameraButton.disabled = true;
     this.ui.elements.stopCameraButton.disabled = true;
     this.ui.setStartButtonLabel('啟動中...');
+    this.controller.fadeOut();
+    this.appState.transitionSession(AR_SESSION_STATES.CAMERA_STARTING, {}, 'camera-start-request');
 
     try {
-      await this.startCameraForMode(this.appState.get('cameraFacingMode'));
-      this.appState.set({ cameraStarted: true }, 'camera-start');
+      const session = await this.sessionService.start(this.appState.get('cameraFacingMode'));
+      this.scene.resize();
+      this.debugOverlay.resize();
+      this.appState.transitionSession(
+        AR_SESSION_STATES.NO_FACE,
+        {
+          cameraStarted: true,
+          cameraFacingMode: session.cameraFacingMode,
+        },
+        'camera-start',
+      );
       this.ui.setCameraOn(true);
       this.ui.setCaptureDisabled(false);
       this.ui.setStatus('idle', '相機已啟動', '正在尋找臉部');
       this.ui.setStartButtonLabel('相機運作中');
     } catch (error) {
-      this.stopCameraSession();
+      this.stopCameraSession({ eventName: 'camera-start-cleanup' });
+      this.appState.transitionSession(
+        AR_SESSION_STATES.ERROR,
+        { cameraStarted: false },
+        'camera-start-error',
+      );
       this.showError(`無法啟動相機：${error.message ?? error}`);
       this.ui.setStatus('error', '相機啟動失敗', '請確認瀏覽器權限與 HTTPS/localhost 環境');
     }
@@ -227,76 +240,72 @@ export class ModeController {
     if (!state.cameraStarted || state.isSwitchingCamera) return;
 
     const previousFacingMode = state.cameraFacingMode;
-    const nextFacingMode =
-      previousFacingMode === CAMERA_FACING_MODES.USER
-        ? CAMERA_FACING_MODES.ENVIRONMENT
-        : CAMERA_FACING_MODES.USER;
+    const nextFacingMode = getNextFacingMode(previousFacingMode);
 
     this.ui.clearError();
-    this.appState.set({ isSwitchingCamera: true }, 'camera-switch-start');
+    this.appState.transitionSession(
+      AR_SESSION_STATES.CAMERA_STARTING,
+      { isSwitchingCamera: true },
+      'camera-switch-start',
+    );
     this.ui.setCaptureDisabled(true);
     this.ui.setStatus('idle', '正在切換鏡頭', getCameraSwitchingLabel(nextFacingMode));
 
     try {
-      await this.startCameraForMode(nextFacingMode, { strictFacingMode: true });
-      this.ui.setStatus('idle', '鏡頭已切換', this.getActiveCameraLabel());
-    } catch (error) {
-      const failedLabel = getCameraLabel(nextFacingMode);
-      this.showError(`無法切換到${failedLabel}：${error.message ?? error}`);
-      this.ui.setStatus('error', '鏡頭切換失敗', `正在恢復${getCameraLabel(previousFacingMode)}`);
+      const session = await this.sessionService.switchCamera(previousFacingMode, {
+        onRestoreStart: ({ error }) => {
+          const failedLabel = getCameraLabel(nextFacingMode);
+          this.showError(`無法切換到${failedLabel}：${error.message ?? error}`);
+          this.ui.setStatus('error', '鏡頭切換失敗', `正在恢復${getCameraLabel(previousFacingMode)}`);
+        },
+      });
+      this.scene.resize();
+      this.debugOverlay.resize();
+      this.appState.transitionSession(
+        AR_SESSION_STATES.NO_FACE,
+        {
+          cameraStarted: true,
+          cameraFacingMode: session.cameraFacingMode,
+          isSwitchingCamera: false,
+        },
+        session.status === 'restored' ? 'camera-switch-restore' : 'camera-switch-success',
+      );
 
-      try {
-        await this.startCameraForMode(previousFacingMode);
+      if (session.status === 'restored') {
         this.ui.setStatus('idle', '已恢復原鏡頭', this.getActiveCameraLabel());
-      } catch (restoreError) {
-        this.stopCameraSession();
-        this.showError(`鏡頭切換失敗，且無法恢復原鏡頭：${restoreError.message ?? restoreError}`);
-        this.ui.setStatus('error', '相機已停止', '請重新啟動相機');
+      } else {
+        this.ui.setStatus('idle', '鏡頭已切換', this.getActiveCameraLabel());
       }
+    } catch (error) {
+      this.stopCameraSession({ eventName: 'camera-switch-cleanup' });
+      this.appState.transitionSession(
+        AR_SESSION_STATES.ERROR,
+        { cameraStarted: false },
+        'camera-switch-error',
+      );
+      const restoreError = error.restoreError ?? error;
+      this.showError(`鏡頭切換失敗，且無法恢復原鏡頭：${restoreError.message ?? restoreError}`);
+      this.ui.setStatus('error', '相機已停止', '請重新啟動相機');
     } finally {
-      this.appState.set({ isSwitchingCamera: false }, 'camera-switch-end');
+      if (this.appState.get('isSwitchingCamera')) {
+        this.appState.set({ isSwitchingCamera: false }, 'camera-switch-end');
+      }
       this.ui.setCaptureDisabled(!this.appState.get('cameraStarted'));
     }
   }
 
-  async startCameraForMode(facingMode, { strictFacingMode = false } = {}) {
-    this.faceTracker.stop();
-    this.controller.fadeOut();
-    this.appState.set(
-      {
-        hasFace: false,
-        lastLandmarks: null,
-        lastDebugData: null,
-      },
-      'camera-session-reset',
-    );
-    this.faceTracker.setSelfieMode(isSelfieCamera(facingMode));
-
-    await this.camera.start({ facingMode, strictFacingMode });
-
-    const cameraFacingMode = normalizeFacingMode(this.camera.getFacingMode(), facingMode);
-    this.appState.set({ cameraFacingMode }, 'camera-facing-mode');
-    this.faceTracker.setSelfieMode(isSelfieCamera(cameraFacingMode));
-    this.scene.resize();
-    this.debugOverlay.resize();
-    await this.faceTracker.start();
-  }
-
-  stopCameraSession() {
-    this.camera.stop();
-    this.faceTracker.stop();
+  stopCameraSession({ nextStatus = AR_SESSION_STATES.AR_IDLE, eventName = 'camera-stop' } = {}) {
+    this.sessionService.stop();
     this.controller.reset();
-    this.calibrationDrag = null;
+    this.calibrationService.cancelDrag();
     this.ui.setCalibrationDragging(false);
-    this.appState.set(
+    this.appState.transitionSession(
+      nextStatus,
       {
         cameraStarted: false,
         isSwitchingCamera: false,
-        hasFace: false,
-        lastLandmarks: null,
-        lastDebugData: null,
       },
-      'camera-stop',
+      eventName,
     );
     this.ui.setCameraOn(false);
     this.ui.setCaptureDisabled(true);
@@ -307,41 +316,34 @@ export class ModeController {
   async handleCapture() {
     this.ui.clearError();
     const state = this.getState();
+    const blocker = this.shareWorkflow.getCaptureBlocker(state, {
+      hasCurrentVideoFrame: this.ui.hasCurrentVideoFrame(),
+    });
 
-    if (!state.cameraStarted || !this.ui.hasCurrentVideoFrame()) {
-      this.ui.setStatus('idle', '尚未開啟相機', '請先啟動相機再拍照');
-      return;
-    }
-
-    if (!state.hasFace) {
-      this.ui.setStatus('idle', '尚未偵測到臉', '請將臉保持在畫面中央後再拍照');
-      return;
-    }
-
-    if (!state.necklaceVisible) {
-      this.ui.setStatus('idle', '項鍊目前隱藏', '請先開啟項鍊預覽再拍照');
+    if (blocker) {
+      this.applyStatusView(blocker.view);
       return;
     }
 
     this.ui.setCaptureDisabled(true);
     this.ui.setCaptureBusy(true);
+    this.appState.transitionSession(AR_SESSION_STATES.CAPTURING, {}, 'capture-start');
 
     try {
-      this.scene.renderForCapture();
-      const capture = await this.captureService.createCapture({
-        mirrored: isSelfieCamera(state.cameraFacingMode),
-      });
-      this.appState.set(
+      const result = await this.shareWorkflow.capture(state);
+      this.appState.transitionSession(
+        AR_SESSION_STATES.SHARING,
         {
-          captureDataUrl: capture.dataUrl,
-          captureBlob: capture.blob,
+          captureDataUrl: result.capture.dataUrl,
+          captureBlob: result.capture.blob,
         },
         'capture-create',
       );
-      this.ui.setShareImage(capture.dataUrl);
+      this.ui.setShareImage(result.capture.dataUrl);
       this.ui.openShareSheet();
-      this.ui.setStatus('tracking', '美圖已產出', '可下載或分享給朋友');
+      this.applyStatusView(result.view);
     } catch (error) {
+      this.appState.transitionSession(AR_SESSION_STATES.ERROR, {}, 'capture-error');
       this.showError(`無法產生美圖：${error.message ?? error}`);
     } finally {
       this.ui.setCaptureDisabled(!this.appState.get('cameraStarted'));
@@ -351,10 +353,10 @@ export class ModeController {
 
   downloadCapture() {
     const dataUrl = this.appState.get('captureDataUrl');
-    if (!dataUrl) return;
+    const statusView = this.shareWorkflow.download(dataUrl);
+    if (!statusView) return;
 
-    this.captureService.download(dataUrl);
-    this.ui.setStatus('idle', '圖片已下載', '可以上傳 Instagram 或傳給朋友');
+    this.applyStatusView(statusView);
   }
 
   async shareCapture() {
@@ -362,28 +364,27 @@ export class ModeController {
     if (!state.captureBlob) return;
 
     try {
-      const result = await this.captureService.share(state.captureBlob);
-
-      if (result.status === 'shared') {
-        this.ui.setStatus('idle', '分享面板已開啟', '選擇 Instagram、訊息或好友');
-        return;
-      }
-
-      if (result.status === 'unsupported') {
-        this.downloadCapture();
-        this.ui.setStatus('idle', '此瀏覽器不支援直接分享', '已改為下載圖片');
-      }
+      const statusView = await this.shareWorkflow.share({
+        blob: state.captureBlob,
+        dataUrl: state.captureDataUrl,
+      });
+      if (statusView) this.applyStatusView(statusView);
     } catch (error) {
+      this.appState.transitionSession(AR_SESSION_STATES.ERROR, {}, 'capture-share-error');
       this.showError(`分享失敗：${error.message ?? error}`);
     }
   }
 
   closeShareSheet() {
     this.ui.closeShareSheet();
+    const state = this.getState();
+    if (state.sessionStatus !== AR_SESSION_STATES.SHARING) return;
+
+    this.appState.transitionSession(this.getLiveSessionStatus(state), {}, 'share-close');
   }
 
   selectNecklace(necklaceId) {
-    const next = this.necklaces.find((necklace) => necklace.id === necklaceId);
+    const next = this.modelCatalog.getById(necklaceId);
     if (!next) return;
 
     const state = this.getState();
@@ -392,14 +393,7 @@ export class ModeController {
       return;
     }
 
-    this.appState.set(
-      {
-        selectedNecklace: next,
-        selectedColorId: next.colorCustomization?.defaultColor ?? '',
-        selectedColorIdsByTarget: createDefaultColorSelection(next),
-      },
-      'necklace-select',
-    );
+    this.appState.set(this.modelCatalog.createSelectionPatch(next), 'necklace-select');
     this.controller.reset();
     this.applyCalibrationForSelectedNecklace();
     this.loadSelectedNecklace();
@@ -407,17 +401,11 @@ export class ModeController {
 
   selectColor(colorId, targetId) {
     const state = this.getState();
-    const colorOption = getColorOption(state.selectedNecklace, colorId);
-    const resolvedTargetId = this.resolveColorSelectionTarget(targetId);
-    if (!colorOption || !resolvedTargetId) return;
+    const selection = this.modelCatalog.createColorSelection(state, colorId, targetId);
+    if (!selection) return;
 
-    const selectedColorIdsByTarget = {
-      ...state.selectedColorIdsByTarget,
-      [resolvedTargetId]: colorOption.id,
-    };
-
-    this.appState.set({ selectedColorId: colorOption.id, selectedColorIdsByTarget }, 'color-select');
-    this.applySelectedColors([resolvedTargetId]);
+    this.appState.set(selection.patch, 'color-select');
+    this.modelCatalog.applySelectedColors(this.getState(), selection.targetIds);
   }
 
   handleDebugToggle(isEnabled) {
@@ -443,66 +431,51 @@ export class ModeController {
 
   saveCalibration() {
     const state = this.getState();
-    const didSave = this.wearCalibration.save(state.selectedNecklace.id, state.adjustments);
-
-    if (!didSave) {
-      this.ui.setCalibrationHint('localStorage 目前不可用，校準會暫時套用但不會保存。');
-      return;
-    }
-
-    this.ui.setCalibrationHint('已儲存此款式校準，下次開啟會自動套用。', { isSaved: true });
+    const result = this.calibrationService.save(state.selectedNecklace.id, state.adjustments);
+    this.applyCalibrationHint(result.hint);
   }
 
   resetCalibration() {
     const state = this.getState();
-    const defaults = this.wearCalibration.reset(state.selectedNecklace.id);
-    this.ui.syncTuningControlsFromAdjustments(defaults);
-    this.applyTuning(defaults, 'calibration-reset');
-    this.ui.setCalibrationHint('已重設此款式校準，可重新拖曳或調整大小。');
+    const result = this.calibrationService.reset(state.selectedNecklace.id);
+    this.ui.syncTuningControlsFromAdjustments(result.adjustments);
+    this.applyTuning(result.adjustments, 'calibration-reset');
+    this.applyCalibrationHint(result.hint);
   }
 
   applyCalibrationForSelectedNecklace() {
     const state = this.getState();
-    const calibration = this.wearCalibration.get(state.selectedNecklace.id);
-    this.ui.syncTuningControlsFromAdjustments(calibration);
-    this.applyTuning(calibration, 'calibration-load');
-    this.updateCalibrationHint();
+    const result = this.calibrationService.load(state.selectedNecklace.id);
+    this.ui.syncTuningControlsFromAdjustments(result.adjustments);
+    this.applyTuning(result.adjustments, 'calibration-load');
+    this.applyCalibrationHint(result.hint);
   }
 
   updateCalibrationHint({ dirty = false } = {}) {
     const state = this.getState();
-
-    if (!this.wearCalibration.isAvailable) {
-      this.ui.setCalibrationHint('localStorage 目前不可用，校準會暫時套用但不會保存。', { isDirty: dirty });
-      return;
-    }
-
-    if (dirty) {
-      this.ui.setCalibrationHint('已套用到預覽，記得按「儲存校準」保留此款式設定。', { isDirty: true });
-      return;
-    }
-
-    if (this.wearCalibration.has(state.selectedNecklace.id)) {
-      this.ui.setCalibrationHint('已套用此款式上次儲存的佩戴校準。', { isSaved: true });
-      return;
-    }
-
-    this.ui.setCalibrationHint('偵測到臉後可拖曳項鍊微調，完成後儲存此款式校準。');
+    this.applyCalibrationHint(
+      this.calibrationService.getHint({
+        necklaceId: state.selectedNecklace.id,
+        dirty,
+      }),
+    );
   }
 
   applyTuning(adjustments, eventName = 'tuning-change') {
     const currentAdjustments = this.appState.get('adjustments') ?? {};
-    const normalizedAdjustments = this.wearCalibration.normalize({
-      ...currentAdjustments,
-      ...adjustments,
-    });
+    const normalizedAdjustments = this.calibrationService.mergeAdjustments(currentAdjustments, adjustments);
 
     this.appState.set({ adjustments: normalizedAdjustments }, eventName);
     this.controller.setAdjustments(normalizedAdjustments);
   }
 
+  applyCalibrationHint(hint) {
+    if (!hint) return;
+
+    this.ui.setCalibrationHint(hint.message, hint.options ?? {});
+  }
+
   async loadSelectedNecklace() {
-    const loadId = ++this.necklaceLoadSequence;
     const selectedNecklace = this.appState.get('selectedNecklace');
     this.appState.set({ modelLoaded: false }, 'model-load-start');
     this.ui.clearError();
@@ -510,16 +483,19 @@ export class ModeController {
     this.ui.setStatus('loading', '款式載入中', selectedNecklace.label);
 
     try {
-      await this.scene.loadNecklace(selectedNecklace);
-      if (!this.isLatestNecklaceLoad(loadId)) return;
+      const result = await this.modelCatalog.load(selectedNecklace);
+      if (result.status === 'stale') return;
 
       this.appState.set({ modelLoaded: true }, 'model-load-success');
-      this.ensureColorSelectionForMatchedTargets();
-      this.applySelectedColors();
+      const colorDefaultsPatch = this.modelCatalog.ensureColorSelectionForMatchedTargets(this.getState());
+      if (colorDefaultsPatch) {
+        this.appState.set(colorDefaultsPatch, 'color-target-defaults');
+      }
+      this.modelCatalog.applySelectedColors(this.getState());
       this.syncColorAvailability();
       this.syncModeEffects();
     } catch (error) {
-      if (!this.isLatestNecklaceLoad(loadId) || error?.name === 'AbortError') return;
+      if (error?.name === 'AbortError') return;
 
       const message =
         `無法載入 ${selectedNecklace.url}。請確認 .glb 已放在 public/models/necklace.glb。` +
@@ -528,10 +504,6 @@ export class ModeController {
       this.ui.setStatus('error', '模型載入失敗', '請先放置 necklace.glb');
       this.syncColorAvailability();
     }
-  }
-
-  isLatestNecklaceLoad(loadId) {
-    return this.necklaceLoadSequence === loadId;
   }
 
   syncModeEffects() {
@@ -559,21 +531,18 @@ export class ModeController {
 
   handleFaceResults(results) {
     const state = this.getState();
-    if (state.mode !== APP_MODES.AR) return;
+    if (state.mode !== APP_MODES.AR || !state.cameraStarted) return;
 
     const landmarks = results.multiFaceLandmarks?.[0] ?? null;
     const hasFace = Boolean(landmarks);
 
     if (!state.modelLoaded || !landmarks) {
       this.controller.fadeOut();
-      this.appState.set(
-        {
-          lastLandmarks: landmarks,
-          hasFace,
-          lastDebugData: null,
-        },
-        'face-results',
-      );
+      this.commitFaceResult(hasFace ? AR_SESSION_STATES.TRACKING : AR_SESSION_STATES.NO_FACE, {
+        lastLandmarks: landmarks,
+        hasFace,
+        lastDebugData: null,
+      });
       this.updateTrackingStatus();
       this.updateDeveloperPanel();
       return;
@@ -581,26 +550,33 @@ export class ModeController {
 
     const lastDebugData = this.controller.updateFromLandmarks(landmarks, state.necklaceVisible);
     this.markCalibrationReady();
-    this.appState.set(
-      {
-        lastLandmarks: landmarks,
-        hasFace,
-        lastDebugData,
-      },
-      'face-results',
-    );
+    this.commitFaceResult(AR_SESSION_STATES.TRACKING, {
+      lastLandmarks: landmarks,
+      hasFace,
+      lastDebugData,
+    });
     this.updateTrackingStatus();
     this.updateDeveloperPanel();
   }
 
+  commitFaceResult(nextStatus, patch) {
+    const state = this.getState();
+    const shouldPreserveWorkflowStatus = [AR_SESSION_STATES.CAPTURING, AR_SESSION_STATES.SHARING].includes(
+      state.sessionStatus,
+    );
+
+    if (shouldPreserveWorkflowStatus) {
+      this.appState.set(patch, 'face-results');
+      return;
+    }
+
+    this.appState.transitionSession(nextStatus, patch, 'face-results');
+  }
+
   markCalibrationReady() {
     const necklaceId = this.appState.get('selectedNecklace').id;
-    if (this.calibrationPromptedIds.has(necklaceId)) return;
-
-    this.calibrationPromptedIds.add(necklaceId);
-    if (!this.wearCalibration.has(necklaceId)) {
-      this.ui.setCalibrationHint('已偵測到臉，可以直接拖曳項鍊，或用滑桿調整上下與大小。');
-    }
+    const hint = this.calibrationService.markFaceReady(necklaceId);
+    this.applyCalibrationHint(hint);
   }
 
   handleFaceTrackerStats() {
@@ -613,152 +589,36 @@ export class ModeController {
 
   updateDeveloperPanel() {
     const state = this.getState();
-    this.ui.updateDeveloperPanel({
-      debugData: state.lastDebugData,
-      stats: {
-        ...this.faceTracker.getStats(),
-        renderFps: this.renderStats.fps,
-      },
-      modelUrl: state.selectedNecklace?.url,
-      materialHitCount: this.scene.getColorableMaterialCount(),
-    });
+    this.ui.updateDeveloperPanel(this.feedbackService.createDeveloperPanelModel(state));
   }
 
   updateTrackingStatus() {
     const state = this.getState();
-    if (!state.cameraStarted) return;
-    const inferenceStats = this.formatInferenceStats();
-    const advice = this.faceQualityAdvisor.getAdvice({
-      landmarks: state.lastLandmarks,
-      debugData: state.lastDebugData,
-    });
-    const message = this.formatAdviceMessage(advice, inferenceStats, state);
-
-    if (!state.hasFace) {
-      this.ui.setStatus(advice.kind, advice.label, message);
-      return;
-    }
-
-    if (!state.lastDebugData) {
-      this.ui.setStatus(advice.kind, advice.label, message);
-      return;
-    }
-
-    const data = state.lastDebugData;
-    this.ui.setStatus(
-      advice.kind,
-      advice.label,
-      state.debugEnabled
-        ? `neck x/y: ${data.neckPoint.x.toFixed(3)}, ${data.neckPoint.y.toFixed(3)} · scale ${data.scale.toFixed(2)} · yaw ${data.rotationY.toFixed(2)} · ${inferenceStats}`
-        : message,
-    );
-  }
-
-  formatAdviceMessage(advice, inferenceStats, state) {
-    let message = advice.message;
-
-    if (
-      advice.id === 'ok' &&
-      state.lastDebugData &&
-      !this.wearCalibration.has(state.selectedNecklace.id)
-    ) {
-      message = '可拖曳項鍊微調，完成後按「儲存校準」';
-    }
-
-    return state.debugEnabled ? `${message} · ${inferenceStats}` : message;
-  }
-
-  formatInferenceStats() {
-    const stats = this.faceTracker.getStats();
-    const averageMs = stats.averageInferenceMs > 0 ? `${stats.averageInferenceMs.toFixed(0)}ms` : '--ms';
-    const schedulerLabel = stats.schedulerType === 'video-frame' ? 'rVFC' : 'RAF';
-    return `inference: ${stats.currentFps}fps · avg ${averageMs} · ${schedulerLabel}`;
+    const statusView = this.feedbackService.createTrackingStatus(state);
+    this.applyStatusView(statusView);
   }
 
   syncColorAvailability() {
     const state = this.getState();
-    const targetIds = state.modelLoaded ? this.scene.getColorableTargets() : [];
+    const colorUiModel = this.modelCatalog.buildColorUiModel(state);
 
-    this.ui.populateColorSwatches({
-      necklace: state.selectedNecklace,
-      selectedColorIdsByTarget: state.selectedColorIdsByTarget,
-      fallbackColorId: state.selectedColorId,
-      targetIds,
-    });
-    this.ui.updateColorUiAvailability({
-      necklace: state.selectedNecklace,
-      modelLoaded: state.modelLoaded,
-      hasColorableMaterials: this.scene.hasColorableMaterials(),
-      targetLabels: this.getMatchedColorTargetLabels(),
-    });
-  }
-
-  getMatchedColorTargetLabels() {
-    const state = this.getState();
-    const targetIds = this.scene.getColorableTargets();
-    const targets = state.selectedNecklace.colorCustomization?.targets ?? [];
-    return targetIds
-      .map((targetId) => targets.find((target) => target.id === targetId)?.label)
-      .filter(Boolean);
-  }
-
-  ensureColorSelectionForMatchedTargets() {
-    const state = this.getState();
-    const defaultColorId = state.selectedNecklace.colorCustomization?.defaultColor ?? '';
-    if (!defaultColorId) return;
-
-    const targetIds = this.scene.getColorableTargets();
-    const selectedColorIdsByTarget = { ...state.selectedColorIdsByTarget };
-    let didChange = false;
-
-    targetIds.forEach((targetId) => {
-      if (selectedColorIdsByTarget[targetId]) return;
-      selectedColorIdsByTarget[targetId] = defaultColorId;
-      didChange = true;
-    });
-
-    if (didChange) {
-      this.appState.set({ selectedColorIdsByTarget }, 'color-target-defaults');
-    }
-  }
-
-  applySelectedColors(targetIds = this.scene.getColorableTargets()) {
-    const state = this.getState();
-    let didApply = false;
-
-    targetIds.forEach((targetId) => {
-      const colorId = this.getSelectedColorIdForTarget(state, targetId);
-      const colorOption = getColorOption(state.selectedNecklace, colorId);
-      if (!colorOption) return;
-
-      didApply = this.scene.applyColor(targetId, colorOption.color) || didApply;
-    });
-
-    return didApply;
-  }
-
-  getSelectedColorIdForTarget(state, targetId) {
-    return (
-      state.selectedColorIdsByTarget?.[targetId] ??
-      state.selectedColorId ??
-      state.selectedNecklace.colorCustomization?.defaultColor ??
-      ''
-    );
-  }
-
-  resolveColorSelectionTarget(targetId) {
-    const activeTargetIds = this.scene.getColorableTargets();
-    if (targetId && activeTargetIds.includes(targetId)) return targetId;
-    if (activeTargetIds.length === 1) return activeTargetIds[0];
-
-    const state = this.getState();
-    const defaultTarget = state.selectedNecklace.colorCustomization?.defaultTarget ?? 'all';
-    if (defaultTarget !== 'all' && activeTargetIds.includes(defaultTarget)) return defaultTarget;
-    return activeTargetIds[0] ?? '';
+    this.ui.populateColorSwatches(colorUiModel.swatches);
+    this.ui.updateColorUiAvailability(colorUiModel.availability);
   }
 
   getActiveCameraLabel() {
     return `目前使用${getCameraLabel(this.appState.get('cameraFacingMode'))}`;
+  }
+
+  getLiveSessionStatus(state) {
+    if (!state.cameraStarted) return AR_SESSION_STATES.AR_IDLE;
+    return state.hasFace ? AR_SESSION_STATES.TRACKING : AR_SESSION_STATES.NO_FACE;
+  }
+
+  applyStatusView(statusView) {
+    if (!statusView) return;
+
+    this.ui.setStatus(statusView.kind, statusView.label, statusView.metrics);
   }
 
   showError(message) {
@@ -768,34 +628,4 @@ export class ModeController {
   getState() {
     return this.appState.getSnapshot();
   }
-
-  animate = () => {
-    const now = performance.now();
-    const state = this.getState();
-    this.updateRenderFps(now);
-
-    if (state.mode === APP_MODES.SHOWCASE && state.modelLoaded) {
-      this.scene.updateShowcase(now);
-    }
-
-    this.scene.render();
-    this.debugOverlay.render(state.lastLandmarks, state.lastDebugData);
-    if (state.debugEnabled) this.updateDeveloperPanel();
-    requestAnimationFrame(this.animate);
-  };
-
-  updateRenderFps(now) {
-    this.renderStats.frameCount += 1;
-    const elapsed = now - this.renderStats.lastSampleAt;
-    if (elapsed < 500) return;
-
-    this.renderStats.fps = Math.round((this.renderStats.frameCount * 1000) / elapsed);
-    this.renderStats.frameCount = 0;
-    this.renderStats.lastSampleAt = now;
-  }
-}
-
-function getColorOption(necklace, colorId) {
-  const palette = necklace.colorCustomization?.palette ?? [];
-  return palette.find((colorOption) => colorOption.id === colorId);
 }
