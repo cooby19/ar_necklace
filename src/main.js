@@ -1,4 +1,4 @@
-import './styles.css';
+import './styles/index.css';
 import { NECKLACES } from './config/necklaces.js';
 import { AppState } from './app/AppState.js';
 import { CaptureService } from './app/CaptureService.js';

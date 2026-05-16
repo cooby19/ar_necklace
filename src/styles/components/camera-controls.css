@@ -1,0 +1,231 @@
+.camera-toolrail {
+  position: absolute;
+  z-index: 5;
+  top: max(62px, calc(env(safe-area-inset-top) + 62px));
+  right: max(14px, env(safe-area-inset-right));
+  display: grid;
+  gap: 10px;
+}
+
+.camera-toggle-button > span {
+  display: inline-grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  background: var(--camera-glass);
+  color: #ffffff;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
+  cursor: pointer;
+  backdrop-filter: blur(16px);
+  transition:
+    transform 120ms ease,
+    background 140ms ease,
+    border-color 140ms ease,
+    opacity 140ms ease;
+}
+
+.camera-toggle-button:hover > span,
+.camera-toggle-button input:checked + span {
+  border-color: rgba(200, 169, 106, 0.8);
+  background: var(--camera-glass-strong);
+}
+
+.camera-toggle-button:active > span {
+  transform: translateY(1px);
+}
+
+.debug-tool-toggle {
+  opacity: 0.46;
+  transition: opacity 140ms ease;
+}
+
+.debug-tool-toggle:hover,
+.debug-tool-toggle:focus-within,
+.debug-tool-toggle:has(input:checked) {
+  opacity: 1;
+}
+
+.camera-toggle-button svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.9;
+}
+
+.camera-toggle-button {
+  position: relative;
+  display: inline-grid;
+  cursor: pointer;
+}
+
+.camera-toggle-button input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.stage-actionbar {
+  position: absolute;
+  z-index: 5;
+  left: 50%;
+  bottom: max(22px, env(safe-area-inset-bottom));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  max-width: calc(100vw - 24px);
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.camera-control-toolbar {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 56px;
+  padding: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  border-radius: 999px;
+  background: rgba(24, 24, 24, 0.38);
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.16);
+  pointer-events: auto;
+  backdrop-filter: blur(18px);
+}
+
+.start-camera-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 126px;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid rgba(255, 255, 255, 0.34);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--ink);
+  font-weight: 900;
+  cursor: pointer;
+  box-shadow: inset 0 0 0 5px rgba(200, 169, 106, 0.12);
+  pointer-events: auto;
+  transition:
+    transform 140ms ease,
+    box-shadow 140ms ease,
+    opacity 140ms ease;
+}
+
+.start-camera-button span {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--champagne-dark);
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 3px rgba(200, 169, 106, 0.16);
+}
+
+.start-camera-button:hover {
+  box-shadow: inset 0 0 0 5px rgba(200, 169, 106, 0.2);
+}
+
+.start-camera-button:active {
+  transform: translateY(1px);
+}
+
+.start-camera-button:disabled {
+  cursor: wait;
+  opacity: 0.76;
+}
+
+.camera-control-button {
+  display: inline-grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 auto;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+  cursor: pointer;
+  transition:
+    transform 120ms ease,
+    background 140ms ease,
+    border-color 140ms ease,
+    opacity 140ms ease;
+}
+
+.camera-control-button:not(:disabled):hover {
+  border-color: rgba(200, 169, 106, 0.8);
+  background: var(--camera-glass-strong);
+}
+
+.camera-control-button:active {
+  transform: translateY(1px);
+}
+
+.camera-control-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.camera-control-button svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.9;
+}
+
+.capture-button {
+  display: inline-grid;
+  place-items: center;
+  width: 68px;
+  height: 68px;
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--ink);
+  box-shadow:
+    0 16px 36px rgba(0, 0, 0, 0.2),
+    inset 0 0 0 8px rgba(200, 169, 106, 0.14);
+  cursor: pointer;
+  pointer-events: auto;
+  backdrop-filter: blur(16px);
+  transition:
+    transform 140ms ease,
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    opacity 140ms ease;
+}
+
+.capture-button:hover {
+  border-color: rgba(200, 169, 106, 0.9);
+  box-shadow:
+    0 18px 42px rgba(0, 0, 0, 0.24),
+    inset 0 0 0 8px rgba(200, 169, 106, 0.2);
+}
+
+.capture-button:active {
+  transform: translateY(1px);
+}
+
+.capture-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.54;
+}
+
+.capture-button svg {
+  width: 30px;
+  height: 30px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}

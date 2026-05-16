@@ -1,0 +1,140 @@
+.product-panel {
+  display: grid;
+  grid-template-columns: minmax(230px, 0.95fr) minmax(270px, 1fr) minmax(250px, 0.95fr);
+  gap: 12px;
+  min-height: 150px;
+  padding: 14px;
+  border: 1px solid rgba(229, 223, 220, 0.92);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.76);
+  box-shadow: 0 12px 30px rgba(44, 40, 38, 0.08);
+  backdrop-filter: blur(16px);
+}
+
+.product-panel__section {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  min-width: 0;
+}
+
+.product-panel__section + .product-panel__section {
+  padding-left: 12px;
+  border-left: 1px solid var(--line);
+}
+
+.necklace-card-list {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+}
+
+.necklace-card {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  width: min(260px, 88vw);
+  min-width: 220px;
+  min-height: 72px;
+  padding: 9px;
+  border: 1px solid rgba(215, 204, 199, 0.94);
+  border-radius: 8px;
+  background:
+    linear-gradient(90deg, rgba(231, 223, 216, 0.44), rgba(255, 255, 255, 0) 32%),
+    rgba(255, 255, 255, 0.72);
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 140ms ease,
+    background 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.necklace-card:hover,
+.necklace-card.is-selected {
+  border-color: rgba(200, 169, 106, 0.78);
+  background:
+    linear-gradient(90deg, rgba(200, 169, 106, 0.12), rgba(255, 255, 255, 0) 38%),
+    var(--warm-white);
+}
+
+.necklace-card.is-selected {
+  box-shadow:
+    inset 0 0 0 1px rgba(200, 169, 106, 0.24),
+    0 10px 22px rgba(36, 34, 32, 0.08);
+}
+
+.necklace-card__preview {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 54px;
+  height: 54px;
+  overflow: hidden;
+  border: 1px solid rgba(234, 219, 221, 0.92);
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(255, 248, 246, 0.92)),
+    #fff8f6;
+}
+
+.necklace-card__thumbnail {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.necklace-card__preview.has-thumbnail::before,
+.necklace-card__preview.has-thumbnail::after {
+  display: none;
+}
+
+.necklace-card__preview::before {
+  position: absolute;
+  top: 15px;
+  left: 11px;
+  width: 30px;
+  height: 20px;
+  content: "";
+  border: 2px solid var(--champagne);
+  border-top: 0;
+  border-radius: 0 0 28px 28px;
+}
+
+.necklace-card__preview::after {
+  position: absolute;
+  top: 32px;
+  left: 25px;
+  width: 5px;
+  height: 5px;
+  content: "";
+  border-radius: 999px;
+  background: var(--champagne);
+  box-shadow: 0 0 0 4px rgba(200, 169, 106, 0.14);
+}
+
+.necklace-card__content {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.necklace-card__content strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.necklace-card__content small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.25;
+}

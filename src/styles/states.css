@@ -1,0 +1,94 @@
+.stage.is-camera-on .stage-placeholder {
+  opacity: 0;
+}
+
+.stage.is-showcase .necklace-outline {
+  opacity: 0;
+}
+
+.stage.is-selfie-camera .camera-video {
+  transform: scaleX(-1);
+}
+
+.stage.is-camera-on .camera-video {
+  opacity: 1;
+}
+
+.stage.is-showcase #threeCanvas {
+  cursor: grab;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.stage.is-ar-mode.is-camera-on #threeCanvas {
+  cursor: grab;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.stage.is-dragging-showcase #threeCanvas {
+  cursor: grabbing;
+}
+
+.stage.is-dragging-calibration #threeCanvas {
+  cursor: grabbing;
+}
+
+.debug-canvas.is-visible {
+  opacity: 1;
+}
+
+.developer-panel[hidden] {
+  display: none;
+}
+
+.status-dot.is-tracking {
+  background: var(--ok);
+  box-shadow: 0 0 0 4px rgba(124, 155, 114, 0.16);
+}
+
+.status-dot.is-error {
+  background: var(--danger);
+  box-shadow: 0 0 0 4px rgba(180, 88, 88, 0.16);
+}
+
+.camera-toolrail[hidden] {
+  display: none;
+}
+
+.stage-actionbar[hidden] {
+  display: none;
+}
+
+.stage.is-camera-on .start-camera-button {
+  display: none;
+}
+
+.stage:not(.is-camera-on) .capture-button {
+  display: none;
+}
+
+.capture-button.is-capturing {
+  cursor: wait;
+}
+
+.control-section[hidden],
+.advanced-panel[hidden] {
+  display: none;
+}
+
+.color-swatch-list[hidden] {
+  display: none;
+}
+
+.color-meaning[hidden] {
+  display: none;
+}
+
+.error-box[hidden] {
+  display: none;
+}
+
+.share-sheet[hidden] {
+  display: none;
+}
