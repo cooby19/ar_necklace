@@ -1,5 +1,13 @@
+// @ts-check
+
+/** @typedef {import('../types/domain').WearAdjustments} WearAdjustments */
+/** @typedef {import('../types/domain').WearAdjustmentPatch} WearAdjustmentPatch */
+/** @typedef {{ getItem: Storage['getItem'], setItem: Storage['setItem'], removeItem: Storage['removeItem'] }} StorageLike */
+/** @typedef {Record<string, WearAdjustmentPatch>} CalibrationCache */
+
 const STORAGE_KEY = 'web-ar-necklace:wear-calibration:v1';
 
+/** @satisfies {WearAdjustments} */
 export const DEFAULT_WEAR_CALIBRATION = {
   horizontalOffset: 0,
   verticalOffset: 0,
@@ -7,6 +15,7 @@ export const DEFAULT_WEAR_CALIBRATION = {
   rotationOffset: 0,
 };
 
+/** @type {Record<keyof WearAdjustments, readonly [number, number]>} */
 const LIMITS = {
   horizontalOffset: [-0.28, 0.28],
   verticalOffset: [-0.28, 0.28],
@@ -15,6 +24,9 @@ const LIMITS = {
 };
 
 export class WearCalibration {
+  /**
+   * @param {{ storage?: StorageLike | null }} [options]
+   */
   constructor({ storage } = {}) {
     try {
       this.storage = storage ?? window.localStorage;
@@ -22,17 +34,31 @@ export class WearCalibration {
       this.storage = null;
     }
     this.isAvailable = this.checkStorageAvailability();
+    /** @type {CalibrationCache} */
     this.cache = this.readAll();
   }
 
+  /**
+   * @param {string} necklaceId
+   * @returns {WearAdjustments}
+   */
   get(necklaceId) {
     return this.normalize(this.cache[necklaceId]);
   }
 
+  /**
+   * @param {string} necklaceId
+   * @returns {boolean}
+   */
   has(necklaceId) {
     return Boolean(this.cache[necklaceId]);
   }
 
+  /**
+   * @param {string} necklaceId
+   * @param {WearAdjustmentPatch} calibration
+   * @returns {boolean}
+   */
   save(necklaceId, calibration) {
     if (!necklaceId) return false;
 
@@ -45,6 +71,10 @@ export class WearCalibration {
     return this.persist();
   }
 
+  /**
+   * @param {string} necklaceId
+   * @returns {WearAdjustments}
+   */
   reset(necklaceId) {
     if (!necklaceId) return this.getDefault();
 
@@ -55,10 +85,17 @@ export class WearCalibration {
     return this.getDefault();
   }
 
+  /**
+   * @returns {WearAdjustments}
+   */
   getDefault() {
     return { ...DEFAULT_WEAR_CALIBRATION };
   }
 
+  /**
+   * @param {WearAdjustmentPatch} [calibration]
+   * @returns {WearAdjustments}
+   */
   normalize(calibration = {}) {
     return {
       horizontalOffset: clampNumber(
@@ -88,23 +125,31 @@ export class WearCalibration {
     };
   }
 
+  /**
+   * @returns {CalibrationCache}
+   */
   readAll() {
-    if (!this.isAvailable) return {};
+    const storage = this.storage;
+    if (!this.isAvailable || !storage) return {};
 
     try {
-      const parsed = JSON.parse(this.storage.getItem(STORAGE_KEY) ?? '{}');
-      return parsed && typeof parsed === 'object' ? parsed : {};
+      const parsed = JSON.parse(storage.getItem(STORAGE_KEY) ?? '{}');
+      return parsed && typeof parsed === 'object' ? /** @type {CalibrationCache} */ (parsed) : {};
     } catch (error) {
       console.warn('[WearCalibration] 無法讀取 localStorage 校準資料', error);
       return {};
     }
   }
 
+  /**
+   * @returns {boolean}
+   */
   persist() {
-    if (!this.isAvailable) return false;
+    const storage = this.storage;
+    if (!this.isAvailable || !storage) return false;
 
     try {
-      this.storage.setItem(STORAGE_KEY, JSON.stringify(this.cache));
+      storage.setItem(STORAGE_KEY, JSON.stringify(this.cache));
       return true;
     } catch (error) {
       console.warn('[WearCalibration] 無法儲存 localStorage 校準資料', error);
@@ -112,6 +157,9 @@ export class WearCalibration {
     }
   }
 
+  /**
+   * @returns {boolean}
+   */
   checkStorageAvailability() {
     if (!this.storage) return false;
 
@@ -127,6 +175,13 @@ export class WearCalibration {
   }
 }
 
+/**
+ * @param {number | undefined} value
+ * @param {number} min
+ * @param {number} max
+ * @param {number} fallback
+ * @returns {number}
+ */
 function clampNumber(value, min, max, fallback) {
   const number = Number(value);
   if (!Number.isFinite(number)) return fallback;

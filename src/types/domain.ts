@@ -21,6 +21,18 @@ export interface LandmarkPoint {
   visibility?: number;
 }
 
+export type FaceLandmarkList = readonly LandmarkPoint[];
+
+export type FaceLandmarksResult = FaceLandmarkList;
+
+export interface FaceMeshResults {
+  multiFaceLandmarks?: readonly FaceLandmarkList[];
+  multiFaceWorldLandmarks?: readonly FaceLandmarkList[];
+  image?: CanvasImageSource;
+}
+
+export type FaceTrackerResultsHandler = (results: FaceMeshResults) => void;
+
 export interface FaceMetrics {
   chin: LandmarkPoint;
   forehead: LandmarkPoint;
@@ -181,7 +193,7 @@ export interface AppStateSnapshot {
   isSwitchingCamera: boolean;
   modelLoaded: boolean;
   hasFace: boolean;
-  lastLandmarks: readonly LandmarkPoint[] | null;
+  lastLandmarks: FaceLandmarkList | null;
   lastDebugData: NecklaceDebugData | null;
   selectedNecklace: NecklaceConfig;
   selectedColorId: string;
@@ -221,4 +233,22 @@ export interface RenderStats {
   fps: number;
   frameCount: number;
   lastSampleAt: number;
+}
+
+export type TrackingStatusKind = 'idle' | 'tracking' | 'error';
+
+export type StatusViewKind = TrackingStatusKind | 'loading';
+
+export interface WorkflowStatusView {
+  kind: StatusViewKind;
+  label: string;
+  metrics: string;
+}
+
+export interface FaceTrackingAdvice {
+  id: string;
+  kind: TrackingStatusKind;
+  label: string;
+  message: string;
+  priority: number;
 }

@@ -1,5 +1,13 @@
+// @ts-check
+
 import { computeFaceMetrics } from '../utils/landmarks.js';
 
+/** @typedef {import('../types/domain').FaceLandmarkList} FaceLandmarkList */
+/** @typedef {import('../types/domain').FaceMetrics} FaceMetrics */
+/** @typedef {import('../types/domain').FaceTrackingAdvice} FaceTrackingAdvice */
+/** @typedef {import('../types/domain').NecklaceDebugData} NecklaceDebugData */
+
+/** @satisfies {FaceTrackingAdvice} */
 const DEFAULT_ADVICE = {
   id: 'ok',
   kind: 'tracking',
@@ -9,6 +17,9 @@ const DEFAULT_ADVICE = {
 };
 
 export class FaceQualityAdvisor {
+  /**
+   * @param {{ video?: HTMLVideoElement | null, sampleIntervalMs?: number }} [options]
+   */
   constructor({ video, sampleIntervalMs = 850 } = {}) {
     this.video = video;
     this.sampleIntervalMs = sampleIntervalMs;
@@ -18,13 +29,23 @@ export class FaceQualityAdvisor {
     this.ctx = this.canvas.getContext('2d', { willReadFrequently: true });
     this.lastBrightness = null;
     this.lastBrightnessSampleAt = 0;
+    /** @type {FaceTrackingAdvice} */
     this.currentAdvice = DEFAULT_ADVICE;
     this.currentAdviceSetAt = 0;
     this.minAdviceHoldMs = 950;
   }
 
+  /**
+   * @param {{
+   *   landmarks?: FaceLandmarkList | null,
+   *   debugData?: NecklaceDebugData | null,
+   *   now?: number,
+   * }} [input]
+   * @returns {FaceTrackingAdvice}
+   */
   getAdvice({ landmarks, debugData, now = performance.now() } = {}) {
     const brightness = this.sampleBrightness(now);
+    /** @type {FaceTrackingAdvice | null} */
     const darkAdvice =
       brightness !== null && brightness < 48
         ? {
@@ -36,7 +57,7 @@ export class FaceQualityAdvisor {
           }
         : null;
 
-    if (darkAdvice && (!landmarks?.length || brightness < 42)) {
+    if (darkAdvice && (!landmarks?.length || (brightness !== null && brightness < 42))) {
       return this.stabilize(darkAdvice, now);
     }
 
@@ -72,7 +93,7 @@ export class FaceQualityAdvisor {
       this.getDistanceAdvice(metrics),
       this.getAngleAdvice(metrics),
       this.getCenterAdvice(metrics),
-    ].filter(Boolean);
+    ].filter(isAdvice);
 
     if (!candidates.length) {
       return this.stabilize(DEFAULT_ADVICE, now);
@@ -82,6 +103,10 @@ export class FaceQualityAdvisor {
     return this.stabilize(candidates[0], now);
   }
 
+  /**
+   * @param {FaceMetrics | NecklaceDebugData} metrics
+   * @returns {FaceTrackingAdvice | null}
+   */
   getDistanceAdvice(metrics) {
     const faceWidth = metrics.faceWidth ?? 0;
     const faceHeight = metrics.faceHeight ?? 0;
@@ -96,9 +121,14 @@ export class FaceQualityAdvisor {
     };
   }
 
+  /**
+   * @param {FaceMetrics | NecklaceDebugData} metrics
+   * @returns {FaceTrackingAdvice | null}
+   */
   getAngleAdvice(metrics) {
     const roll = Math.abs(metrics.roll ?? 0);
-    const yaw = Math.max(Math.abs(metrics.yawSignal ?? 0), Math.abs(metrics.rotationY ?? 0) / 1.6);
+    const rotationY = 'rotationY' in metrics ? metrics.rotationY : 0;
+    const yaw = Math.max(Math.abs(metrics.yawSignal ?? 0), Math.abs(rotationY) / 1.6);
     if (roll <= 0.28 && yaw <= 0.32) return null;
 
     return {
@@ -110,6 +140,10 @@ export class FaceQualityAdvisor {
     };
   }
 
+  /**
+   * @param {FaceMetrics | NecklaceDebugData} metrics
+   * @returns {FaceTrackingAdvice | null}
+   */
   getCenterAdvice(metrics) {
     const center = metrics.faceCenter ?? metrics.cheekCenter;
     if (!center) return null;
@@ -127,15 +161,21 @@ export class FaceQualityAdvisor {
     };
   }
 
+  /**
+   * @param {number} now
+   * @returns {number | null}
+   */
   sampleBrightness(now) {
-    if (!this.canSampleVideo()) return this.lastBrightness;
+    const video = this.video;
+    const ctx = this.ctx;
+    if (!video || !ctx || !this.canSampleVideo()) return this.lastBrightness;
     if (now - this.lastBrightnessSampleAt < this.sampleIntervalMs) return this.lastBrightness;
 
     this.lastBrightnessSampleAt = now;
 
     try {
-      this.ctx.drawImage(this.video, 0, 0, this.canvas.width, this.canvas.height);
-      const data = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height).data;
+      ctx.drawImage(video, 0, 0, this.canvas.width, this.canvas.height);
+      const data = ctx.getImageData(0, 0, this.canvas.width, this.canvas.height).data;
       let total = 0;
 
       for (let index = 0; index < data.length; index += 4) {
@@ -150,16 +190,24 @@ export class FaceQualityAdvisor {
     return this.lastBrightness;
   }
 
+  /**
+   * @returns {boolean}
+   */
   canSampleVideo() {
-    return (
+    return Boolean(
       this.video &&
       this.ctx &&
       this.video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
       this.video.videoWidth > 0 &&
-      this.video.videoHeight > 0
+      this.video.videoHeight > 0,
     );
   }
 
+  /**
+   * @param {FaceTrackingAdvice} nextAdvice
+   * @param {number} now
+   * @returns {FaceTrackingAdvice}
+   */
   stabilize(nextAdvice, now) {
     const current = this.currentAdvice ?? DEFAULT_ADVICE;
     const canSwitch =
@@ -174,4 +222,12 @@ export class FaceQualityAdvisor {
 
     return this.currentAdvice;
   }
+}
+
+/**
+ * @param {FaceTrackingAdvice | null} advice
+ * @returns {advice is FaceTrackingAdvice}
+ */
+function isAdvice(advice) {
+  return Boolean(advice);
 }

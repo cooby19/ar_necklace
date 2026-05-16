@@ -1,3 +1,10 @@
+// @ts-check
+
+/** @typedef {import('../types/domain').FaceLandmarkList} FaceLandmarkList */
+/** @typedef {import('../types/domain').FaceMetrics} FaceMetrics */
+/** @typedef {import('../types/domain').LandmarkPoint} LandmarkPoint */
+
+/** @satisfies {Record<string, number>} */
 export const FACE_LANDMARKS = {
   forehead: 10,
   chin: 152,
@@ -7,15 +14,30 @@ export const FACE_LANDMARKS = {
   faceCenter: 168,
 };
 
+/**
+ * @param {FaceLandmarkList | null | undefined} landmarks
+ * @param {number} index
+ * @returns {LandmarkPoint | null}
+ */
 export function getLandmark(landmarks, index) {
   return landmarks?.[index] ?? null;
 }
 
+/**
+ * @param {LandmarkPoint | null | undefined} a
+ * @param {LandmarkPoint | null | undefined} b
+ * @returns {number}
+ */
 export function distance2D(a, b) {
   if (!a || !b) return 0;
   return Math.hypot(a.x - b.x, a.y - b.y);
 }
 
+/**
+ * @param {LandmarkPoint} a
+ * @param {LandmarkPoint} b
+ * @returns {Required<Pick<LandmarkPoint, 'x' | 'y' | 'z'>>}
+ */
 export function midpoint2D(a, b) {
   return {
     x: (a.x + b.x) * 0.5,
@@ -24,14 +46,30 @@ export function midpoint2D(a, b) {
   };
 }
 
+/**
+ * @param {number} value
+ * @param {number} min
+ * @param {number} max
+ * @returns {number}
+ */
 export function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
+/**
+ * @param {number} a
+ * @param {number} b
+ * @param {number} alpha
+ * @returns {number}
+ */
 export function lerp(a, b, alpha) {
   return a + (b - a) * alpha;
 }
 
+/**
+ * @param {FaceLandmarkList | null | undefined} landmarks
+ * @returns {FaceMetrics | null}
+ */
 export function computeFaceMetrics(landmarks) {
   const chin = getLandmark(landmarks, FACE_LANDMARKS.chin);
   const forehead = getLandmark(landmarks, FACE_LANDMARKS.forehead);

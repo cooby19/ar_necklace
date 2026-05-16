@@ -1,12 +1,36 @@
+// @ts-check
+
 import { TRACKING_TUNING } from '../config/tuning.js';
+
+/** @typedef {import('../types/domain').FaceMeshResults} FaceMeshResults */
+/** @typedef {import('../types/domain').FaceTrackerResultsHandler} FaceTrackerResultsHandler */
+/** @typedef {import('../types/domain').InferenceTuning} InferenceTuning */
+/** @typedef {import('../types/domain').TrackerStats} TrackerStats */
+
+/**
+ * @typedef {{
+ *   setOptions: (options: Record<string, unknown>) => void,
+ *   onResults: (handler: FaceTrackerResultsHandler) => void,
+ *   initialize: () => Promise<void>,
+ *   send: (input: { image: HTMLVideoElement }) => Promise<void>,
+ * }} FaceMeshInstance
+ */
+
+/** @typedef {new (options: { locateFile: (file: string) => string }) => FaceMeshInstance} FaceMeshConstructor */
+/** @typedef {Window & { FaceMesh?: FaceMeshConstructor }} FaceMeshWindow */
 
 const FACE_MESH_SCRIPT_URL = `${import.meta.env.BASE_URL}vendor/mediapipe/face_mesh/face_mesh.js`;
 
+/** @type {Promise<FaceMeshConstructor> | null} */
 let faceMeshScriptPromise = null;
 
+/**
+ * @returns {Promise<FaceMeshConstructor>}
+ */
 async function loadFaceMeshConstructor() {
-  if (window.FaceMesh) {
-    return window.FaceMesh;
+  const faceMeshWindow = getFaceMeshWindow();
+  if (faceMeshWindow.FaceMesh) {
+    return faceMeshWindow.FaceMesh;
   }
 
   if (!faceMeshScriptPromise) {
@@ -16,8 +40,9 @@ async function loadFaceMeshConstructor() {
       script.async = true;
       script.crossOrigin = 'anonymous';
       script.onload = () => {
-        if (window.FaceMesh) {
-          resolve(window.FaceMesh);
+        const loadedWindow = getFaceMeshWindow();
+        if (loadedWindow.FaceMesh) {
+          resolve(loadedWindow.FaceMesh);
           return;
         }
 
@@ -36,14 +61,25 @@ async function loadFaceMeshConstructor() {
 }
 
 export class FaceTracker {
+  /**
+   * @param {{
+   *   video: HTMLVideoElement,
+   *   onResults?: FaceTrackerResultsHandler,
+   *   onError?: (error: unknown) => void,
+   *   onStatsUpdate?: (stats: TrackerStats) => void,
+   * }} options
+   */
   constructor({ video, onResults, onError, onStatsUpdate }) {
     this.video = video;
     this.onResults = onResults;
     this.onError = onError;
     this.onStatsUpdate = onStatsUpdate;
+    /** @type {FaceMeshInstance | null} */
     this.faceMesh = null;
     this.isRunning = false;
+    /** @type {number | null} */
     this.frameHandle = null;
+    /** @type {TrackerStats['schedulerType']} */
     this.schedulerType = 'raf';
     this.isSendingFrame = false;
     this.selfieMode = true;
@@ -52,7 +88,9 @@ export class FaceTracker {
     this.lastInferenceStartedAt = 0;
     this.lastInferenceCompletedAt = 0;
     this.lastAdjustmentAt = 0;
+    /** @type {number[]} */
     this.inferenceSamples = [];
+    /** @type {TrackerStats} */
     this.stats = {
       currentFps: this.currentFps,
       targetFps: this.inferenceConfig.targetFps,
@@ -64,6 +102,9 @@ export class FaceTracker {
     };
   }
 
+  /**
+   * @returns {Promise<void>}
+   */
   async init() {
     const FaceMeshConstructor = await loadFaceMeshConstructor();
 
@@ -89,6 +130,9 @@ export class FaceTracker {
     await this.faceMesh.initialize();
   }
 
+  /**
+   * @returns {Promise<void>}
+   */
   async start() {
     if (!this.faceMesh) {
       await this.init();
@@ -102,11 +146,17 @@ export class FaceTracker {
     this.scheduleNextFrame();
   }
 
+  /**
+   * @returns {void}
+   */
   stop() {
     this.isRunning = false;
     this.cancelScheduledFrame();
   }
 
+  /**
+   * @returns {void}
+   */
   scheduleNextFrame() {
     if (!this.isRunning) return;
 
@@ -118,6 +168,9 @@ export class FaceTracker {
     this.frameHandle = requestAnimationFrame(this.tickAnimationFrame);
   }
 
+  /**
+   * @returns {void}
+   */
   cancelScheduledFrame() {
     if (this.frameHandle === null) return;
 
@@ -130,6 +183,9 @@ export class FaceTracker {
     this.frameHandle = null;
   }
 
+  /**
+   * @returns {boolean}
+   */
   supportsVideoFrameCallback() {
     return (
       typeof this.video.requestVideoFrameCallback === 'function' &&
@@ -137,18 +193,24 @@ export class FaceTracker {
     );
   }
 
+  /** @param {number} now */
   tickVideoFrame = async (now) => {
     this.frameHandle = null;
     await this.processFrameCandidate(now);
     this.scheduleNextFrame();
   };
 
+  /** @param {number} now */
   tickAnimationFrame = async (now) => {
     this.frameHandle = null;
     await this.processFrameCandidate(now);
     this.scheduleNextFrame();
   };
 
+  /**
+   * @param {number} now
+   * @returns {Promise<void>}
+   */
   async processFrameCandidate(now) {
     if (!this.isRunning) return;
 
@@ -159,6 +221,10 @@ export class FaceTracker {
     }
   }
 
+  /**
+   * @param {number} now
+   * @returns {boolean}
+   */
   canSendFrame(now) {
     if (this.isSendingFrame) return false;
     if (this.video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return false;
@@ -167,7 +233,13 @@ export class FaceTracker {
     return now - this.lastInferenceStartedAt >= intervalMs;
   }
 
+  /**
+   * @param {number} startedAt
+   * @returns {Promise<void>}
+   */
   async sendFrame(startedAt) {
+    if (!this.faceMesh) return;
+
     this.isSendingFrame = true;
     this.lastInferenceStartedAt = startedAt;
 
@@ -184,6 +256,11 @@ export class FaceTracker {
     }
   }
 
+  /**
+   * @param {number} inferenceMs
+   * @param {number} completedAt
+   * @returns {void}
+   */
   recordInferenceTiming(inferenceMs, completedAt) {
     this.inferenceSamples.push(inferenceMs);
     if (this.inferenceSamples.length > this.inferenceConfig.averageWindowSize) {
@@ -207,6 +284,11 @@ export class FaceTracker {
     this.emitStats();
   }
 
+  /**
+   * @param {number} averageInferenceMs
+   * @param {number} now
+   * @returns {void}
+   */
   adjustAdaptiveFps(averageInferenceMs, now) {
     if (!this.inferenceConfig.adaptiveEnabled) return;
     if (this.inferenceSamples.length < this.inferenceConfig.averageWindowSize) return;
@@ -234,14 +316,23 @@ export class FaceTracker {
     };
   }
 
+  /**
+   * @returns {TrackerStats}
+   */
   getStats() {
     return { ...this.stats };
   }
 
+  /**
+   * @returns {void}
+   */
   emitStats() {
     this.onStatsUpdate?.(this.getStats());
   }
 
+  /**
+   * @returns {void}
+   */
   resetRuntimeStats() {
     this.currentFps = this.inferenceConfig.targetFps;
     this.lastInferenceStartedAt = 0;
@@ -260,6 +351,10 @@ export class FaceTracker {
     this.emitStats();
   }
 
+  /**
+   * @param {boolean} isSelfieMode
+   * @returns {void}
+   */
   setSelfieMode(isSelfieMode) {
     this.selfieMode = Boolean(isSelfieMode);
     this.faceMesh?.setOptions({
@@ -268,6 +363,10 @@ export class FaceTracker {
   }
 }
 
+/**
+ * @param {Partial<InferenceTuning>} [config]
+ * @returns {InferenceTuning}
+ */
 function normalizeInferenceConfig(config = {}) {
   const minFps = clampNumber(config.minFps, 1, 60, 15);
   const maxFps = Math.max(minFps, clampNumber(config.maxFps, minFps, 60, 30));
@@ -286,8 +385,22 @@ function normalizeInferenceConfig(config = {}) {
   };
 }
 
+/**
+ * @param {number | undefined} value
+ * @param {number} min
+ * @param {number} max
+ * @param {number} fallback
+ * @returns {number}
+ */
 function clampNumber(value, min, max, fallback) {
   const number = Number(value);
   if (!Number.isFinite(number)) return fallback;
   return Math.min(max, Math.max(min, number));
+}
+
+/**
+ * @returns {FaceMeshWindow}
+ */
+function getFaceMeshWindow() {
+  return /** @type {FaceMeshWindow} */ (window);
 }

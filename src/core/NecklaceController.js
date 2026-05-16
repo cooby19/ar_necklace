@@ -1,8 +1,35 @@
+// @ts-check
+
 import { TRACKING_TUNING } from '../config/tuning.js';
 import { ScalarSmoother, VectorSmoother } from './Smoother.js';
 import { clamp, computeFaceMetrics, lerp } from '../utils/landmarks.js';
 
+/** @typedef {import('../types/domain').FaceLandmarkList} FaceLandmarkList */
+/** @typedef {import('../types/domain').FaceMetrics} FaceMetrics */
+/** @typedef {import('../types/domain').LandmarkPoint} LandmarkPoint */
+/** @typedef {import('../types/domain').NecklaceDebugData} NecklaceDebugData */
+/** @typedef {import('../types/domain').WearAdjustmentPatch} WearAdjustmentPatch */
+/** @typedef {import('../types/domain').WearAdjustments} WearAdjustments */
+/** @typedef {Required<Pick<LandmarkPoint, 'x' | 'y' | 'z'>>} WorldPoint */
+
+/**
+ * @typedef {{
+ *   screenToWorld: (point: LandmarkPoint) => WorldPoint,
+ *   normalizedSegmentToWorldLength: (start: LandmarkPoint, end: LandmarkPoint) => number,
+ *   updateTransform: (transform: {
+ *     position: WorldPoint,
+ *     scale: number,
+ *     rotationY: number,
+ *     rotationZ: number,
+ *   }) => void,
+ *   setOpacity: (opacity: number) => void,
+ * }} NecklaceSceneTrackingPort
+ */
+
 export class NecklaceController {
+  /**
+   * @param {NecklaceSceneTrackingPort} scene
+   */
   constructor(scene) {
     this.scene = scene;
     this.positionSmoother = new VectorSmoother(TRACKING_TUNING.smoothing.position);
@@ -16,9 +43,14 @@ export class NecklaceController {
       scaleMultiplier: 1,
       rotationOffset: 0,
     };
+    /** @type {NecklaceDebugData | null} */
     this.lastDebugData = null;
   }
 
+  /**
+   * @param {WearAdjustmentPatch} adjustments
+   * @returns {void}
+   */
   setAdjustments(adjustments) {
     this.adjustments = {
       ...this.adjustments,
@@ -26,6 +58,11 @@ export class NecklaceController {
     };
   }
 
+  /**
+   * @param {FaceLandmarkList} landmarks
+   * @param {boolean} shouldShowNecklace
+   * @returns {NecklaceDebugData | null}
+   */
   updateFromLandmarks(landmarks, shouldShowNecklace) {
     const metrics = computeFaceMetrics(landmarks);
     if (!metrics || metrics.faceWidth <= 0 || metrics.faceHeight <= 0) {
@@ -70,6 +107,12 @@ export class NecklaceController {
     return this.lastDebugData;
   }
 
+  /**
+   * @param {FaceMetrics} metrics
+   * @param {number} yawSignal
+   * @param {number} sideAmount
+   * @returns {LandmarkPoint}
+   */
   estimateNeckPoint(metrics, yawSignal, sideAmount) {
     const sideNeckX = lerp(metrics.chin.x, metrics.cheekCenter.x, TRACKING_TUNING.yawAnchorBlend);
     const yawShift = -yawSignal * TRACKING_TUNING.yawDirection * TRACKING_TUNING.yawPositionShift;
@@ -87,6 +130,11 @@ export class NecklaceController {
     };
   }
 
+  /**
+   * @param {FaceMetrics} metrics
+   * @param {number} sideAmount
+   * @returns {number}
+   */
   estimateFaceWidthForScale(metrics, sideAmount) {
     const measuredWidth = this.scene.normalizedSegmentToWorldLength(
       metrics.leftCheek,
@@ -106,6 +154,10 @@ export class NecklaceController {
     return lerp(cappedMeasuredWidth, heightBasedWidth, heightBlend);
   }
 
+  /**
+   * @param {FaceMetrics} metrics
+   * @returns {number}
+   */
   estimateYawSignal(metrics) {
     let depthYawSignal = metrics.cheekDepthYawSignal * TRACKING_TUNING.yawDepthStrength;
     const noseYawSignal = metrics.noseYawSignal;
@@ -126,10 +178,18 @@ export class NecklaceController {
     );
   }
 
+  /**
+   * @param {number} yawSignal
+   * @returns {number}
+   */
   getSideAmount(yawSignal) {
     return Math.min(1, Math.abs(yawSignal) / 0.42);
   }
 
+  /**
+   * @param {number} yawSignal
+   * @returns {number}
+   */
   estimateYaw(yawSignal) {
     return clamp(
       yawSignal * TRACKING_TUNING.yawDirection * TRACKING_TUNING.yawStrength,
@@ -138,12 +198,18 @@ export class NecklaceController {
     );
   }
 
+  /**
+   * @returns {void}
+   */
   fadeOut() {
     const opacity = this.opacitySmoother.next(0);
     this.scene.setOpacity(opacity);
     this.lastDebugData = null;
   }
 
+  /**
+   * @returns {void}
+   */
   reset() {
     this.positionSmoother.reset();
     this.scaleSmoother.reset();

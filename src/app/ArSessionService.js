@@ -9,6 +9,7 @@ import { CameraStream } from '../core/CameraStream.js';
 import { FaceTracker } from '../core/FaceTracker.js';
 
 /** @typedef {import('../types/domain').CameraFacingMode} CameraFacingMode */
+/** @typedef {import('../types/domain').FaceTrackerResultsHandler} FaceTrackerResultsHandler */
 /** @typedef {import('../types/domain').TrackerStats} TrackerStats */
 
 /**
@@ -45,7 +46,7 @@ export class ArSessionService {
   /**
    * @param {{
    *   videoElement: HTMLVideoElement,
-   *   onResults?: (results: unknown) => void,
+   *   onResults?: FaceTrackerResultsHandler,
    *   onError?: (error: unknown) => void,
    *   onStatsUpdate?: (stats: TrackerStats) => void,
    * }} options
