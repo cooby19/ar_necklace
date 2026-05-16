@@ -26,13 +26,17 @@
     ├── styles.css
     ├── app/
     │   ├── AppState.js
+    │   ├── AppState.test.js
     │   ├── ArSessionService.js
     │   ├── CalibrationService.js
+    │   ├── CalibrationService.test.js
     │   ├── CaptureService.js
     │   ├── ModelCatalogService.js
+    │   ├── ModelCatalogService.test.js
     │   ├── ModeController.js
     │   ├── RendererLoop.js
     │   ├── ShareWorkflow.js
+    │   ├── ShareWorkflow.test.js
     │   ├── TrackingFeedbackService.js
     │   └── UiController.js
     ├── config/
@@ -97,6 +101,30 @@ http://localhost:5173
 ```
 
 相機權限通常需要 `localhost` 或 HTTPS。
+
+## 品質驗證
+
+本專案使用 Vitest 補輕量單元測試，優先覆蓋不需要真實相機、MediaPipe 或 WebGL 的純邏輯。這些測試主要保護 ModeController 重構後拆出的 app services 與狀態轉換規則。
+
+```bash
+npm test
+npm run build
+```
+
+目前單元測試重點：
+
+- `AppState`：AR session 合法/不合法 transition，以及 `showcase`、`arIdle`、`cameraStarting`、`noFace` 對過期 landmarks/debug data 的清理。
+- `ModelCatalogService`：預設顏色選擇、換色 target fallback、matched target label 與套色呼叫。
+- `CalibrationService`：調參 normalize、save/load/reset hint、localStorage 可用與不可用情境。
+- `ShareWorkflow`：截圖前置阻擋條件，包含相機未開、沒有目前影格、未偵測到臉與項鍊隱藏。
+
+線上部署後建議對 GitHub Pages 做冒煙測試：
+
+- 開啟 `https://cooby19.github.io/ar_necklace/`，確認頁面可載入且 console 沒有 error。
+- 確認 `index.html` 指向最新 `assets/index-*.js` 與 `assets/index-*.css`。
+- 確認 showcase 初始畫面、Three.js canvas、`models/necklace.glb` 與 `vendor/mediapipe/face_mesh/*` 路徑沒有 404。
+- 基本操作款式卡片、色票、AR/模型展示切換與 Debug toggle。
+- 相機權限、Face Mesh 真實追蹤、前後鏡頭切換與 iOS Safari 表現仍需人工實機確認。
 
 ## 放置 GLB 模型
 

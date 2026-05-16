@@ -19,11 +19,13 @@
 ```bash
 npm install
 npm run dev
+npm test
 npm run build
 npm run preview
 ```
 
 - `npm run dev` 執行 `vite --host 0.0.0.0`，設定 port 為 `5173`。
+- `npm test` 執行 Vitest 單元測試，主要覆蓋不需相機、MediaPipe 或 WebGL 的純邏輯。
 - `npm run build` 產出到 `dist/`。
 - 相機權限通常需要 `localhost` 或 HTTPS。
 
@@ -36,6 +38,7 @@ npm run preview
 - `src/config/necklaces.js`：項鍊款式清單、每個 GLB 的模型修正參數與顏色自選設定。
 - `src/utils/landmarks.js`：Face Mesh landmark index、距離、插值、clamp 與臉部量測邏輯。
 - `src/app/ModeController.js`：輕量 use-case orchestrator，接收 UI intent、協調 app services、提交 `AppState`，避免直接承擔底層流程細節。
+- `src/app/*.test.js`：Vitest 輕量單元測試，優先保護 AppState session lifecycle、model catalog/color、校準與分享前置檢查等純邏輯。
 - `src/app/ArSessionService.js`：管理 `CameraStream` 與 `FaceTracker` lifecycle、鏡頭切換、selfie mode 與 session reset。
 - `src/app/ModelCatalogService.js`：管理項鍊選擇、模型載入序列、可換色 target、預設色票與套色流程。
 - `src/app/RendererLoop.js`：管理 `requestAnimationFrame`、render FPS、showcase update、scene render 與 debug overlay render。
@@ -174,7 +177,16 @@ showcase -> arIdle -> cameraStarting -> noFace <-> tracking -> capturing -> shar
 
 - `npm run build` 會產出 `dist/`，正式部署到 GitHub Pages 時應使用 build 後的 `dist` 內容更新 `gh-pages` 分支。
 - 此專案在 GitHub Pages 子路徑執行時，靜態資產 URL 應透過 `import.meta.env.BASE_URL` 或相容方式組合，避免硬編碼根目錄造成模型或 MediaPipe 資產載入失敗。
-- 更新 `gh-pages` 前先確認 `npm run build` 成功，並盡量避免把 `node_modules/`、本機暫存檔或未建置來源檔放入部署分支。
+- 更新 `gh-pages` 前先確認 `npm test` 與 `npm run build` 成功，並盡量避免把 `node_modules/`、本機暫存檔或未建置來源檔放入部署分支。
+- 目前線上 URL 為 `https://cooby19.github.io/ar_necklace/`。部署後需做冒煙測試：頁面載入無 console error、bundle 指向最新檔、showcase/Three.js canvas 正常、`models/necklace.glb` 與 `vendor/mediapipe/face_mesh/*` 沒有 404、款式卡片/色票/debug toggle 基本互動可用。
+- 自動化環境通常無法完整驗證相機權限、真實 Face Mesh 追蹤、前後鏡頭切換、iOS Safari 權限與效能；這些需人工實機確認。
+
+## 單元測試策略
+
+- 使用 Vitest，測試命令為 `npm test`。
+- 優先測純邏輯與低 DOM 依賴，避免在單元測試中啟動真實 camera、MediaPipe 或 WebGL。
+- 目前測試重點包含 `AppState` session transition 與 stale data cleanup、`ModelCatalogService` default color/target resolution/matched target labels、`CalibrationService` normalize/load/save/reset hint 與 localStorage 可用性、`ShareWorkflow` capture blocker 判斷。
+- 新增或調整 ModeController 周邊 service 時，優先補對應 service 的單元測試，再視風險補瀏覽器或人工驗證。
 
 ## 已知限制
 
