@@ -51,6 +51,8 @@
     │   ├── NecklaceScene.js
     │   ├── Smoother.js
     │   └── WearCalibration.js
+    ├── types/
+    │   └── domain.ts
     └── utils/
         ├── landmarks.js
         └── stageResize.js
@@ -78,6 +80,31 @@ UiController intent
 - `CalibrationService`：管理 `WearCalibration`、拖曳校準、調參 normalize、save/reset/load 與校準提示狀態。
 - `ShareWorkflow`：管理截圖前置檢查、capture、download、native share fallback 與分享狀態資料。
 - `TrackingFeedbackService`：組裝 FaceTracker stats、render FPS、FaceQualityAdvisor advice、developer panel 與 debug status 文字。
+
+## 漸進式 TypeScript 狀態
+
+專案目前採漸進式 TypeScript strict boundary，而不是一次性改成全 TypeScript：
+
+- `tsconfig.json` 使用 `allowJs: true`、`checkJs: false`、`strict: true`。
+- `src/types/domain.ts` 保存跨檔案共享的 domain types。
+- 只檢查局部加上 `// @ts-check` 的 `.js` 檔案，以及 `src/types/domain.ts`。
+- 使用 `npm run typecheck` 執行 `tsc --noEmit`。
+
+目前已納入 typed boundary 的核心範圍包含：
+
+- `AppState` 與 AR session lifecycle。
+- config schema：`tuning`、`necklaces`。
+- MediaPipe results、FaceTracker、ArSessionService、ModeController、NecklaceController、landmark metrics 的資料流。
+- model/color、calibration、share、tracking feedback、renderer loop、camera stream、debug overlay、capture service。
+- pure logic：landmarks、Smoother、WearCalibration、FaceQualityAdvisor。
+
+仍刻意未完整型別化的區域：
+
+- `src/app/UiController.js`：DOM query、event binding、UI render helper 與 focus trap 噪音較高。若要推進，建議先拆 DOM helper 或 view helper，再分段加 `// @ts-check`。
+- `src/core/NecklaceScene.js`：Three.js、GLTFLoader、材質 traverse、WebGL render 與 asset cache 型別噪音較高。其他模組應先用小型 port 描述實際使用 surface，不要為了型別化整包重構。
+- `src/main.js` 與 `src/app/*.test.js`：適合作為下一階段低成本補強。
+
+目前不建議打開全域 `checkJs`，也不建議直接把 `UiController` 或 `NecklaceScene` 整包轉成 TypeScript。維護時優先持續保護 runtime 資料形狀容易錯接的 service boundary。
 
 `AppState` 保留一般 UI 狀態與資料，但 AR session lifecycle 另有輕量狀態欄位 `sessionStatus`。合法轉換大致為：
 
@@ -109,6 +136,7 @@ http://localhost:5173
 ```bash
 npm test
 npm run build
+npm run typecheck
 ```
 
 目前單元測試重點：

@@ -13,6 +13,7 @@
 - `@mediapipe/face_mesh` 用於臉部 landmark 偵測。
 - MediaPipe wasm/model 等執行資產已 vendored 到 `public/vendor/mediapipe/face_mesh`，執行時不依賴 CDN。
 - 預設項鍊模型位於 `public/models/necklace.glb`，URL 為 `/models/necklace.glb`。
+- TypeScript 採漸進式 strict boundary：`tsconfig` 使用 `allowJs: true`、`checkJs: false`、`strict: true`，只檢查局部 `// @ts-check` 的 `.js` 與 `src/types/domain.ts`。
 
 ## 常用命令
 
@@ -21,12 +22,14 @@ npm install
 npm run dev
 npm test
 npm run build
+npm run typecheck
 npm run preview
 ```
 
 - `npm run dev` 執行 `vite --host 0.0.0.0`，設定 port 為 `5173`。
 - `npm test` 執行 Vitest 單元測試，主要覆蓋不需相機、MediaPipe 或 WebGL 的純邏輯。
 - `npm run build` 產出到 `dist/`。
+- `npm run typecheck` 執行 `tsc --noEmit`，檢查 `src/types/domain.ts` 與局部 `// @ts-check` 檔案。
 - 相機權限通常需要 `localhost` 或 HTTPS。
 
 ## 目錄結構重點
@@ -51,9 +54,32 @@ npm run preview
 - `src/core/NecklaceScene.js`：Three.js 場景、GLB 載入、模型正規化、隱形深度遮擋、透明度、座標轉換與渲染。
 - `src/core/Smoother.js`：標量與向量的線性平滑器。
 - `src/core/DebugOverlay.js`：在 2D canvas 上畫 landmarks、下巴、脖子估算點、臉寬線與 debug 文字。
+- `src/types/domain.ts`：共享 domain types，包含 AppState snapshot、MediaPipe/landmark、tracking/debug、config schema、render stats、capture/share 與 workflow status 資料形狀。
 - `public/models/README.md`：項鍊 GLB 模型放置與建模對位建議。
 - `dist/`：建置輸出，已在 `.gitignore` 中忽略。
 - `node_modules/`：依賴目錄，已在 `.gitignore` 中忽略。
+
+## 漸進式 TypeScript 邊界
+
+目前專案不做一次性 TypeScript 轉換，也不要打開全域 `checkJs`。型別策略是先保護 runtime 資料形狀容易錯接的低噪音邊界，再逐步擴張。
+
+已納入局部 `// @ts-check` 的重點範圍：
+
+- AppState 與 AR session lifecycle。
+- config schema：`tuning`、`necklaces`。
+- model/color service、calibration、share workflow。
+- MediaPipe results 到 `FaceTracker`、`ArSessionService`、`ModeController`、`NecklaceController`、`computeFaceMetrics` 的資料流。
+- pure logic：landmarks、Smoother、WearCalibration、FaceQualityAdvisor。
+- 低噪音 service/debug/render/capture boundary：RendererLoop、TrackingFeedbackService、CameraStream、DebugOverlay、stageResize、CaptureService。
+- shared domain types：`src/types/domain.ts`。
+
+仍刻意未完整型別化的區域：
+
+- `src/app/UiController.js`：DOM query、event binding、render helper 與 focus trap 噪音高。若要推進，先抽小型 DOM helper 或 view helper，再分段加 `// @ts-check`。
+- `src/core/NecklaceScene.js`：Three.js、GLTFLoader、材質 traverse、WebGL render 與 asset cache 噪音高。外部檔案應優先用小型 port 描述它們實際使用的 surface，不要為了型別化整包重構。
+- `src/main.js` 與 `src/app/*.test.js`：可作為下一階段低成本補強，但不應牽動整體架構。
+
+新增型別時優先把跨檔案共享的資料形狀放入 `src/types/domain.ts`。若只描述某個 service 依賴物件的少量方法，使用該檔案內的 local port/interface 即可，避免把 `NecklaceScene` 或 `UiController` 的完整實作 surface 暴露到全專案。
 
 ## 執行流程
 
@@ -177,13 +203,14 @@ showcase -> arIdle -> cameraStarting -> noFace <-> tracking -> capturing -> shar
 
 - `npm run build` 會產出 `dist/`，正式部署到 GitHub Pages 時應使用 build 後的 `dist` 內容更新 `gh-pages` 分支。
 - 此專案在 GitHub Pages 子路徑執行時，靜態資產 URL 應透過 `import.meta.env.BASE_URL` 或相容方式組合，避免硬編碼根目錄造成模型或 MediaPipe 資產載入失敗。
-- 更新 `gh-pages` 前先確認 `npm test` 與 `npm run build` 成功，並盡量避免把 `node_modules/`、本機暫存檔或未建置來源檔放入部署分支。
+- 更新 `gh-pages` 前先確認 `npm test`、`npm run build` 與 `npm run typecheck` 成功，並盡量避免把 `node_modules/`、本機暫存檔或未建置來源檔放入部署分支。
 - 目前線上 URL 為 `https://cooby19.github.io/ar_necklace/`。部署後需做冒煙測試：頁面載入無 console error、bundle 指向最新檔、showcase/Three.js canvas 正常、`models/necklace.glb` 與 `vendor/mediapipe/face_mesh/*` 沒有 404、款式卡片/色票/debug toggle 基本互動可用。
 - 自動化環境通常無法完整驗證相機權限、真實 Face Mesh 追蹤、前後鏡頭切換、iOS Safari 權限與效能；這些需人工實機確認。
 
 ## 單元測試策略
 
 - 使用 Vitest，測試命令為 `npm test`。
+- 使用 TypeScript 做漸進式型別檢查，命令為 `npm run typecheck`。
 - 優先測純邏輯與低 DOM 依賴，避免在單元測試中啟動真實 camera、MediaPipe 或 WebGL。
 - 目前測試重點包含 `AppState` session transition 與 stale data cleanup、`ModelCatalogService` default color/target resolution/matched target labels、`CalibrationService` normalize/load/save/reset hint 與 localStorage 可用性、`ShareWorkflow` capture blocker 判斷。
 - 新增或調整 ModeController 周邊 service 時，優先補對應 service 的單元測試，再視風險補瀏覽器或人工驗證。
