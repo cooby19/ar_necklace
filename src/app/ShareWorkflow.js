@@ -1,11 +1,58 @@
+// @ts-check
+
 import { isSelfieCamera } from './AppState.js';
 
+/** @typedef {import('../types/domain').CameraFacingMode} CameraFacingMode */
+
+/**
+ * @typedef {{
+ *   kind: 'idle' | 'tracking' | 'error',
+ *   label: string,
+ *   metrics: string,
+ * }} WorkflowStatusView
+ */
+
+/**
+ * @typedef {{
+ *   dataUrl: string,
+ *   blob: Blob,
+ * }} CaptureResult
+ */
+
+/**
+ * @typedef {{
+ *   createCapture: (options: { mirrored: boolean }) => Promise<CaptureResult>,
+ *   download: (dataUrl: string) => void,
+ *   share: (blob: Blob) => Promise<{ status: 'shared' | 'unsupported' | 'aborted' | 'empty' }>,
+ * }} CaptureServicePort
+ */
+
+/** @typedef {{ renderForCapture: () => void }} CaptureScenePort */
+
+/**
+ * @typedef {{
+ *   cameraStarted: boolean,
+ *   hasFace: boolean,
+ *   necklaceVisible: boolean,
+ * }} CaptureReadinessState
+ */
+
+/** @typedef {CaptureReadinessState & { cameraFacingMode: CameraFacingMode }} CaptureState */
+
 export class ShareWorkflow {
+  /**
+   * @param {{ captureService: CaptureServicePort, scene: CaptureScenePort }} options
+   */
   constructor({ captureService, scene }) {
     this.captureService = captureService;
     this.scene = scene;
   }
 
+  /**
+   * @param {CaptureReadinessState} state
+   * @param {{ hasCurrentVideoFrame: boolean }} options
+   * @returns {{ status: 'blocked', view: WorkflowStatusView } | null}
+   */
   getCaptureBlocker(state, { hasCurrentVideoFrame }) {
     if (!state.cameraStarted || !hasCurrentVideoFrame) {
       return {
@@ -43,6 +90,10 @@ export class ShareWorkflow {
     return null;
   }
 
+  /**
+   * @param {CaptureState} state
+   * @returns {Promise<{ capture: CaptureResult, view: WorkflowStatusView }>}
+   */
   async capture(state) {
     this.scene.renderForCapture();
     const capture = await this.captureService.createCapture({
@@ -59,6 +110,10 @@ export class ShareWorkflow {
     };
   }
 
+  /**
+   * @param {string} dataUrl
+   * @returns {WorkflowStatusView | null}
+   */
   download(dataUrl) {
     if (!dataUrl) return null;
 
@@ -70,6 +125,10 @@ export class ShareWorkflow {
     };
   }
 
+  /**
+   * @param {{ blob: Blob | null, dataUrl: string }} capture
+   * @returns {Promise<WorkflowStatusView | null>}
+   */
   async share({ blob, dataUrl }) {
     if (!blob) return null;
 

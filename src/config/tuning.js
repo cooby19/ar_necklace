@@ -1,3 +1,6 @@
+// @ts-check
+
+/** @satisfies {import('../types/domain').TrackingTuning} */
 export const TRACKING_TUNING = {
   // Landmark assumptions:
   // - 234/454 approximate face side points for face width.

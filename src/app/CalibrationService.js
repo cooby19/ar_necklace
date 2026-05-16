@@ -1,14 +1,53 @@
+// @ts-check
+
 import { WearCalibration } from '../core/WearCalibration.js';
 
+/** @typedef {import('../types/domain').WearAdjustments} WearAdjustments */
+/** @typedef {import('../types/domain').WearAdjustmentPatch} WearAdjustmentPatch */
+
+/**
+ * @typedef {{
+ *   message: string,
+ *   options?: { isDirty?: boolean, isSaved?: boolean },
+ * }} CalibrationHint
+ */
+
+/**
+ * @typedef {{
+ *   pointerId: number,
+ *   lastClientX: number,
+ *   lastClientY: number,
+ * }} CalibrationDragState
+ */
+
+/**
+ * @typedef {{
+ *   cameraStarted: boolean,
+ *   modelLoaded: boolean,
+ *   hasFace: boolean,
+ *   necklaceVisible: boolean,
+ * }} CalibrationReadyState
+ */
+
 export class CalibrationService {
+  /**
+   * @param {{ stageElement: HTMLElement, pointerElement: HTMLElement }} options
+   */
   constructor({ stageElement, pointerElement }) {
     this.stageElement = stageElement;
     this.pointerElement = pointerElement;
     this.wearCalibration = new WearCalibration();
+    /** @type {CalibrationDragState | null} */
     this.drag = null;
+    /** @type {Set<string>} */
     this.promptedIds = new Set();
   }
 
+  /**
+   * @param {PointerEvent} event
+   * @param {CalibrationReadyState} state
+   * @returns {boolean}
+   */
   startDrag(event, state) {
     if (!this.canStartDrag(state)) return false;
 
@@ -22,6 +61,11 @@ export class CalibrationService {
     return true;
   }
 
+  /**
+   * @param {PointerEvent} event
+   * @param {WearAdjustmentPatch} [currentAdjustments]
+   * @returns {{ adjustments: WearAdjustments, hint: CalibrationHint } | null}
+   */
   updateDrag(event, currentAdjustments = {}) {
     if (!this.drag || this.drag.pointerId !== event.pointerId) return null;
 
@@ -42,6 +86,10 @@ export class CalibrationService {
     };
   }
 
+  /**
+   * @param {PointerEvent} event
+   * @returns {boolean}
+   */
   endDrag(event) {
     if (!this.drag || this.drag.pointerId !== event.pointerId) return false;
 
@@ -50,14 +98,25 @@ export class CalibrationService {
     return true;
   }
 
+  /**
+   * @returns {void}
+   */
   cancelDrag() {
     this.drag = null;
   }
 
+  /**
+   * @param {CalibrationReadyState} state
+   * @returns {boolean}
+   */
   canStartDrag(state) {
     return Boolean(state.cameraStarted && state.modelLoaded && state.hasFace && state.necklaceVisible);
   }
 
+  /**
+   * @param {string} necklaceId
+   * @returns {{ adjustments: WearAdjustments, hint: CalibrationHint }}
+   */
   load(necklaceId) {
     const adjustments = this.wearCalibration.get(necklaceId);
     return {
@@ -66,6 +125,11 @@ export class CalibrationService {
     };
   }
 
+  /**
+   * @param {string} necklaceId
+   * @param {WearAdjustmentPatch} adjustments
+   * @returns {{ didSave: boolean, hint: CalibrationHint }}
+   */
   save(necklaceId, adjustments) {
     const didSave = this.wearCalibration.save(necklaceId, adjustments);
 
@@ -82,6 +146,10 @@ export class CalibrationService {
     };
   }
 
+  /**
+   * @param {string} necklaceId
+   * @returns {{ adjustments: WearAdjustments, hint: CalibrationHint }}
+   */
   reset(necklaceId) {
     const adjustments = this.wearCalibration.reset(necklaceId);
     return {
@@ -92,6 +160,11 @@ export class CalibrationService {
     };
   }
 
+  /**
+   * @param {WearAdjustmentPatch} [currentAdjustments]
+   * @param {WearAdjustmentPatch} [nextAdjustments]
+   * @returns {WearAdjustments}
+   */
   mergeAdjustments(currentAdjustments = {}, nextAdjustments = {}) {
     return this.normalizeAdjustments({
       ...currentAdjustments,
@@ -99,10 +172,18 @@ export class CalibrationService {
     });
   }
 
+  /**
+   * @param {WearAdjustmentPatch} adjustments
+   * @returns {WearAdjustments}
+   */
   normalizeAdjustments(adjustments) {
     return this.wearCalibration.normalize(adjustments);
   }
 
+  /**
+   * @param {string} necklaceId
+   * @returns {CalibrationHint | null}
+   */
   markFaceReady(necklaceId) {
     if (this.promptedIds.has(necklaceId)) return null;
 
@@ -114,6 +195,10 @@ export class CalibrationService {
     };
   }
 
+  /**
+   * @param {{ necklaceId?: string, dirty?: boolean }} [options]
+   * @returns {CalibrationHint}
+   */
   getHint({ necklaceId, dirty = false } = {}) {
     if (!this.wearCalibration.isAvailable) {
       return {
@@ -141,6 +226,10 @@ export class CalibrationService {
     };
   }
 
+  /**
+   * @param {string} necklaceId
+   * @returns {boolean}
+   */
   hasCalibration(necklaceId) {
     return this.wearCalibration.has(necklaceId);
   }

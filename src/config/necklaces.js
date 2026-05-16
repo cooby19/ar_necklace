@@ -1,3 +1,6 @@
+// @ts-check
+
+/** @satisfies {readonly import('../types/domain').NecklaceConfig[]} */
 export const NECKLACES = [
   {
     id: 'default-necklace',

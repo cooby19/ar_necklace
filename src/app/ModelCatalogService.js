@@ -1,16 +1,90 @@
+// @ts-check
+
 import { createDefaultColorSelection } from './AppState.js';
 
+/** @typedef {import('../types/domain').AppStatePatch} AppStatePatch */
+/** @typedef {import('../types/domain').AppStateSnapshot} AppStateSnapshot */
+/** @typedef {import('../types/domain').ColorOption} ColorOption */
+/** @typedef {import('../types/domain').ColorSelectionByTarget} ColorSelectionByTarget */
+/** @typedef {import('../types/domain').NecklaceConfig} NecklaceConfig */
+
+/**
+ * @typedef {{
+ *   loadNecklace: (necklace: NecklaceConfig) => Promise<unknown>,
+ *   getColorableTargets: () => string[],
+ *   hasColorableMaterials: () => boolean,
+ *   getColorableMaterialCount: () => number,
+ *   applyColor: (targetId: string, color: string) => boolean,
+ * }} NecklaceSceneColorPort
+ */
+
+/** @typedef {'stale' | 'loaded'} ModelLoadStatus */
+
+/**
+ * @typedef {{
+ *   status: ModelLoadStatus,
+ *   necklace: NecklaceConfig,
+ *   targetIds?: string[],
+ *   hasColorableMaterials?: boolean,
+ *   materialHitCount?: number,
+ * }} ModelLoadResult
+ */
+
+/**
+ * @typedef {{
+ *   selectedNecklace: NecklaceConfig,
+ *   selectedColorId: string,
+ *   selectedColorIdsByTarget: ColorSelectionByTarget,
+ *   modelLoaded?: boolean,
+ * }} ColorSelectionState
+ */
+
+/**
+ * @typedef {{
+ *   patch: AppStatePatch,
+ *   targetIds: string[],
+ * }} ColorSelectionResult
+ */
+
+/**
+ * @typedef {{
+ *   swatches: {
+ *     necklace: NecklaceConfig,
+ *     selectedColorIdsByTarget: ColorSelectionByTarget,
+ *     fallbackColorId: string,
+ *     targetIds: string[],
+ *   },
+ *   availability: {
+ *     necklace: NecklaceConfig,
+ *     modelLoaded: boolean,
+ *     hasColorableMaterials: boolean,
+ *     targetLabels: string[],
+ *   },
+ * }} ColorUiModel
+ */
+
 export class ModelCatalogService {
+  /**
+   * @param {{ scene: NecklaceSceneColorPort, necklaces: readonly NecklaceConfig[] }} options
+   */
   constructor({ scene, necklaces }) {
     this.scene = scene;
     this.necklaces = necklaces;
     this.loadSequence = 0;
   }
 
+  /**
+   * @param {string} necklaceId
+   * @returns {NecklaceConfig | null}
+   */
   getById(necklaceId) {
     return this.necklaces.find((necklace) => necklace.id === necklaceId) ?? null;
   }
 
+  /**
+   * @param {NecklaceConfig} necklace
+   * @returns {AppStatePatch}
+   */
   createSelectionPatch(necklace) {
     return {
       selectedNecklace: necklace,
@@ -19,6 +93,10 @@ export class ModelCatalogService {
     };
   }
 
+  /**
+   * @param {NecklaceConfig} necklace
+   * @returns {Promise<ModelLoadResult>}
+   */
   async load(necklace) {
     const loadId = ++this.loadSequence;
     await this.scene.loadNecklace(necklace);
@@ -36,10 +114,18 @@ export class ModelCatalogService {
     };
   }
 
+  /**
+   * @param {number} loadId
+   * @returns {boolean}
+   */
   isLatestLoad(loadId) {
     return this.loadSequence === loadId;
   }
 
+  /**
+   * @param {AppStateSnapshot} state
+   * @returns {ColorUiModel}
+   */
   buildColorUiModel(state) {
     const targetIds = state.modelLoaded ? this.getColorableTargets() : [];
 
@@ -59,6 +145,12 @@ export class ModelCatalogService {
     };
   }
 
+  /**
+   * @param {ColorSelectionState} state
+   * @param {string} colorId
+   * @param {string | null | undefined} targetId
+   * @returns {ColorSelectionResult | null}
+   */
   createColorSelection(state, colorId, targetId) {
     const colorOption = getColorOption(state.selectedNecklace, colorId);
     const resolvedTargetId = this.resolveColorSelectionTarget(state.selectedNecklace, targetId);
@@ -76,6 +168,10 @@ export class ModelCatalogService {
     };
   }
 
+  /**
+   * @param {ColorSelectionState} state
+   * @returns {AppStatePatch | null}
+   */
   ensureColorSelectionForMatchedTargets(state) {
     const defaultColorId = state.selectedNecklace.colorCustomization?.defaultColor ?? '';
     if (!defaultColorId) return null;
@@ -93,6 +189,11 @@ export class ModelCatalogService {
     return didChange ? { selectedColorIdsByTarget } : null;
   }
 
+  /**
+   * @param {ColorSelectionState} state
+   * @param {string[]} [targetIds]
+   * @returns {boolean}
+   */
   applySelectedColors(state, targetIds = this.getColorableTargets()) {
     let didApply = false;
 
@@ -107,6 +208,11 @@ export class ModelCatalogService {
     return didApply;
   }
 
+  /**
+   * @param {ColorSelectionState} state
+   * @param {string} targetId
+   * @returns {string}
+   */
   getSelectedColorIdForTarget(state, targetId) {
     return (
       state.selectedColorIdsByTarget?.[targetId] ??
@@ -116,6 +222,11 @@ export class ModelCatalogService {
     );
   }
 
+  /**
+   * @param {NecklaceConfig} necklace
+   * @param {string | null | undefined} targetId
+   * @returns {string}
+   */
   resolveColorSelectionTarget(necklace, targetId) {
     const activeTargetIds = this.getColorableTargets();
     if (targetId && activeTargetIds.includes(targetId)) return targetId;
@@ -126,27 +237,51 @@ export class ModelCatalogService {
     return activeTargetIds[0] ?? '';
   }
 
+  /**
+   * @param {NecklaceConfig} necklace
+   * @returns {string[]}
+   */
   getMatchedColorTargetLabels(necklace) {
     const targetIds = this.getColorableTargets();
     const targets = necklace.colorCustomization?.targets ?? [];
-    return targetIds
-      .map((targetId) => targets.find((target) => target.id === targetId)?.label)
-      .filter(Boolean);
+    /** @type {string[]} */
+    const labels = [];
+
+    targetIds.forEach((targetId) => {
+      const label = targets.find((target) => target.id === targetId)?.label;
+      if (label) labels.push(label);
+    });
+
+    return labels;
   }
 
+  /**
+   * @returns {string[]}
+   */
   getColorableTargets() {
     return this.scene.getColorableTargets();
   }
 
+  /**
+   * @returns {boolean}
+   */
   hasColorableMaterials() {
     return this.scene.hasColorableMaterials();
   }
 
+  /**
+   * @returns {number}
+   */
   getColorableMaterialCount() {
     return this.scene.getColorableMaterialCount();
   }
 }
 
+/**
+ * @param {NecklaceConfig} necklace
+ * @param {string} colorId
+ * @returns {ColorOption | undefined}
+ */
 function getColorOption(necklace, colorId) {
   const palette = necklace.colorCustomization?.palette ?? [];
   return palette.find((colorOption) => colorOption.id === colorId);
