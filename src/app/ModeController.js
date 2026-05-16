@@ -1,10 +1,10 @@
 import {
   APP_MODES,
   AR_SESSION_STATES,
+  CAMERA_FACING_MODES,
   getCameraLabel,
   getCameraSwitchingLabel,
 } from './AppState.js';
-import { ArSessionService, getNextFacingMode } from './ArSessionService.js';
 import { CalibrationService } from './CalibrationService.js';
 import { ModelCatalogService } from './ModelCatalogService.js';
 import { RendererLoop } from './RendererLoop.js';
@@ -34,12 +34,8 @@ export class ModeController {
       canvas: this.ui.elements.debugCanvas,
       stageElement: this.ui.elements.stage,
     });
-    this.sessionService = new ArSessionService({
-      videoElement: this.ui.elements.video,
-      onResults: (results) => this.handleFaceResults(results),
-      onError: (error) => this.showError(`Face Mesh 偵測發生錯誤：${error.message ?? error}`),
-      onStatsUpdate: () => this.handleFaceTrackerStats(),
-    });
+    this.sessionService = null;
+    this.sessionServicePromise = null;
     this.modelCatalog = new ModelCatalogService({
       scene: this.scene,
       necklaces: this.necklaces,
@@ -60,7 +56,7 @@ export class ModeController {
     });
     this.feedbackService = new TrackingFeedbackService({
       faceQualityAdvisor: this.faceQualityAdvisor,
-      getTrackerStats: () => this.sessionService.getStats(),
+      getTrackerStats: () => this.sessionService?.getStats() ?? createIdleTrackerStats(),
       getRenderStats: () => this.rendererLoop.getStats(),
       modelCatalog: this.modelCatalog,
       calibrationService: this.calibrationService,
@@ -199,7 +195,8 @@ export class ModeController {
     this.appState.transitionSession(AR_SESSION_STATES.CAMERA_STARTING, {}, 'camera-start-request');
 
     try {
-      const session = await this.sessionService.start(this.appState.get('cameraFacingMode'));
+      const sessionService = await this.getSessionService();
+      const session = await sessionService.start(this.appState.get('cameraFacingMode'));
       this.scene.resize();
       this.debugOverlay.resize();
       this.appState.transitionSession(
@@ -252,7 +249,8 @@ export class ModeController {
     this.ui.setStatus('idle', '正在切換鏡頭', getCameraSwitchingLabel(nextFacingMode));
 
     try {
-      const session = await this.sessionService.switchCamera(previousFacingMode, {
+      const sessionService = await this.getSessionService();
+      const session = await sessionService.switchCamera(previousFacingMode, {
         onRestoreStart: ({ error }) => {
           const failedLabel = getCameraLabel(nextFacingMode);
           this.showError(`無法切換到${failedLabel}：${error.message ?? error}`);
@@ -295,7 +293,7 @@ export class ModeController {
   }
 
   stopCameraSession({ nextStatus = AR_SESSION_STATES.AR_IDLE, eventName = 'camera-stop' } = {}) {
-    this.sessionService.stop();
+    this.sessionService?.stop();
     this.controller.reset();
     this.calibrationService.cancelDrag();
     this.ui.setCalibrationDragging(false);
@@ -625,7 +623,48 @@ export class ModeController {
     this.ui.showError(message);
   }
 
+  async getSessionService() {
+    if (this.sessionService) return this.sessionService;
+
+    if (!this.sessionServicePromise) {
+      this.sessionServicePromise = import('./ArSessionService.js')
+        .then(({ ArSessionService }) => {
+          this.sessionService = new ArSessionService({
+            videoElement: this.ui.elements.video,
+            onResults: (results) => this.handleFaceResults(results),
+            onError: (error) => this.showError(`Face Mesh 偵測發生錯誤：${error.message ?? error}`),
+            onStatsUpdate: () => this.handleFaceTrackerStats(),
+          });
+          return this.sessionService;
+        })
+        .catch((error) => {
+          this.sessionServicePromise = null;
+          throw error;
+        });
+    }
+
+    return this.sessionServicePromise;
+  }
+
   getState() {
     return this.appState.getSnapshot();
   }
+}
+
+function getNextFacingMode(facingMode) {
+  return facingMode === CAMERA_FACING_MODES.USER
+    ? CAMERA_FACING_MODES.ENVIRONMENT
+    : CAMERA_FACING_MODES.USER;
+}
+
+function createIdleTrackerStats() {
+  return {
+    currentFps: 0,
+    targetFps: 0,
+    averageInferenceMs: 0,
+    lastInferenceMs: 0,
+    skippedFrameCount: 0,
+    inferenceCount: 0,
+    schedulerType: 'raf',
+  };
 }

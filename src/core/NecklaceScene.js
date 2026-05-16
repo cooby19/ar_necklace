@@ -1,4 +1,19 @@
-import * as THREE from 'three';
+import {
+  ACESFilmicToneMapping,
+  Box3,
+  DirectionalLight,
+  Group,
+  HemisphereLight,
+  MathUtils,
+  MeshBasicMaterial,
+  OrthographicCamera,
+  PMREMGenerator,
+  PointLight,
+  Scene,
+  SRGBColorSpace,
+  Vector3,
+  WebGLRenderer,
+} from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { observeStageSize } from '../utils/stageResize.js';
@@ -10,9 +25,9 @@ export class NecklaceScene {
     this.canvas = canvas;
     this.stageElement = stageElement;
     this.onError = onError;
-    this.scene = new THREE.Scene();
-    this.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -10, 10);
-    this.renderer = new THREE.WebGLRenderer({
+    this.scene = new Scene();
+    this.camera = new OrthographicCamera(-1, 1, 1, -1, -10, 10);
+    this.renderer = new WebGLRenderer({
       canvas,
       alpha: true,
       antialias: true,
@@ -20,8 +35,8 @@ export class NecklaceScene {
       preserveDrawingBuffer: true,
     });
     this.loader = new GLTFLoader();
-    this.necklaceRoot = new THREE.Group();
-    this.pmremGenerator = new THREE.PMREMGenerator(this.renderer);
+    this.necklaceRoot = new Group();
+    this.pmremGenerator = new PMREMGenerator(this.renderer);
     this.environmentMap = null;
     this.currentModel = null;
     this.modelConfig = null;
@@ -47,8 +62,8 @@ export class NecklaceScene {
   }
 
   setupRenderer() {
-    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.outputColorSpace = SRGBColorSpace;
+    this.renderer.toneMapping = ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.08;
     this.renderer.setClearColor(0x000000, 0);
   }
@@ -63,14 +78,14 @@ export class NecklaceScene {
   }
 
   setupLights() {
-    const hemisphere = new THREE.HemisphereLight(0xffffff, 0x5d6680, 0.8);
-    const key = new THREE.DirectionalLight(0xffffff, 2.25);
+    const hemisphere = new HemisphereLight(0xffffff, 0x5d6680, 0.8);
+    const key = new DirectionalLight(0xffffff, 2.25);
     key.position.set(0.25, 0.7, 1.8);
-    const warmFill = new THREE.DirectionalLight(0xffd7a3, 0.62);
+    const warmFill = new DirectionalLight(0xffd7a3, 0.62);
     warmFill.position.set(-1.2, -0.35, 0.85);
-    const coolRim = new THREE.DirectionalLight(0xbfd5ff, 1.05);
+    const coolRim = new DirectionalLight(0xbfd5ff, 1.05);
     coolRim.position.set(1.45, 0.32, -1.15);
-    const sparkle = new THREE.PointLight(0xffffff, 0.85, 3.2);
+    const sparkle = new PointLight(0xffffff, 0.85, 3.2);
     sparkle.position.set(0.08, 0.26, 1.25);
     this.scene.add(hemisphere, key, warmFill, coolRim, sparkle);
   }
@@ -215,11 +230,11 @@ export class NecklaceScene {
   }
 
   prepareModel(model) {
-    const box = new THREE.Box3().setFromObject(model);
-    const size = box.getSize(new THREE.Vector3());
+    const box = new Box3().setFromObject(model);
+    const size = box.getSize(new Vector3());
 
     if (!this.modelConfig?.preserveAuthorOrigin) {
-      const center = box.getCenter(new THREE.Vector3());
+      const center = box.getCenter(new Vector3());
       // Legacy assets may be authored away from origin, so center them unless the GLB origin is the anchor.
       model.position.sub(center);
     }
@@ -307,7 +322,7 @@ export class NecklaceScene {
     }
 
     if ('roughness' in material) {
-      material.roughness = THREE.MathUtils.clamp(material.roughness ?? 0.16, 0.08, 0.24);
+      material.roughness = MathUtils.clamp(material.roughness ?? 0.16, 0.08, 0.24);
     }
 
     if (material.normalScale?.isVector2) {
@@ -322,7 +337,7 @@ export class NecklaceScene {
     }
 
     if ('ior' in material) {
-      material.ior = THREE.MathUtils.clamp(material.ior ?? 1.5, 1.5, 1.72);
+      material.ior = MathUtils.clamp(material.ior ?? 1.5, 1.5, 1.72);
     }
 
     if ('transmission' in material) {
@@ -363,7 +378,7 @@ export class NecklaceScene {
 
   prepareDepthOccluder(mesh) {
     mesh.renderOrder = 0;
-    mesh.material = new THREE.MeshBasicMaterial({
+    mesh.material = new MeshBasicMaterial({
       colorWrite: false,
       depthWrite: true,
       depthTest: true,
