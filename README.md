@@ -10,30 +10,43 @@
 .
 ├── index.html
 ├── package.json
+├── package-lock.json
 ├── vite.config.js
 ├── public/
 │   ├── models/
 │   │   ├── README.md
 │   │   └── necklace.glb
+│   ├── thumbnails/
+│   │   └── default-necklace.svg
 │   └── vendor/
 │       └── mediapipe/
 │           └── face_mesh/
 └── src/
     ├── main.js
     ├── styles.css
+    ├── app/
+    │   ├── AppState.js
+    │   ├── CaptureService.js
+    │   ├── ModeController.js
+    │   └── UiController.js
     ├── config/
     │   ├── necklaces.js
     │   └── tuning.js
     ├── core/
     │   ├── CameraStream.js
     │   ├── DebugOverlay.js
+    │   ├── FaceQualityAdvisor.js
     │   ├── FaceTracker.js
     │   ├── NecklaceController.js
     │   ├── NecklaceScene.js
-    │   └── Smoother.js
+    │   ├── Smoother.js
+    │   └── WearCalibration.js
     └── utils/
-        └── landmarks.js
+        ├── landmarks.js
+        └── stageResize.js
 ```
+
+其中 `src/main.js` 只負責組裝狀態、UI、模式控制與截圖服務；實際互動流程集中在 `src/app/ModeController.js`。`src/app/` 放應用狀態、UI 綁定、截圖分享與模式協調，`src/core/` 放相機、Face Mesh、Three.js、穿戴校準與品質提示等可重用核心邏輯，`src/utils/` 放 landmark 計算與預覽區尺寸監聽工具。
 
 ## 啟動方式
 
