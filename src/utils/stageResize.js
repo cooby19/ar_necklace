@@ -1,6 +1,14 @@
+// @ts-check
+
+/**
+ * @param {HTMLElement} stageElement
+ * @param {() => void} onResize
+ * @returns {() => void}
+ */
 export function observeStageSize(stageElement, onResize) {
   let frameId = 0;
 
+  /** @returns {void} */
   const scheduleResize = () => {
     if (frameId) return;
 

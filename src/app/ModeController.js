@@ -137,6 +137,8 @@ import { NecklaceScene } from '../core/NecklaceScene.js';
  *   hasColorableMaterials: () => boolean,
  *   getColorableMaterialCount: () => number,
  *   applyColor: (targetId: string, color: string) => boolean,
+ *   updateShowcase: (now: number) => void,
+ *   render: () => void,
  *   renderForCapture: () => void,
  *   resize: () => void,
  *   setShowcaseMode: (isShowcase: boolean) => void,

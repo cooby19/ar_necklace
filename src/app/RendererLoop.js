@@ -1,12 +1,46 @@
+// @ts-check
+
 import { APP_MODES } from './AppState.js';
 
+/** @typedef {import('../types/domain').AppStateSnapshot} AppStateSnapshot */
+/** @typedef {import('../types/domain').NecklaceDebugData} NecklaceDebugData */
+/** @typedef {import('../types/domain').FaceLandmarkList} FaceLandmarkList */
+/** @typedef {import('../types/domain').RenderStats} RenderStats */
+
+/**
+ * @typedef {{
+ *   updateShowcase: (now: number) => void,
+ *   render: () => void,
+ * }} RendererScenePort
+ */
+
+/**
+ * @typedef {{
+ *   render: (landmarks: FaceLandmarkList | null, debugData: NecklaceDebugData | null) => void,
+ * }} DebugOverlayPort
+ */
+
+/**
+ * @typedef {{
+ *   scene: RendererScenePort,
+ *   debugOverlay: DebugOverlayPort,
+ *   getState: () => AppStateSnapshot,
+ *   onDebugFrame?: (stats: RenderStats) => void,
+ * }} RendererLoopOptions
+ */
+
 export class RendererLoop {
+  /**
+   * @param {RendererLoopOptions} options
+   */
   constructor({ scene, debugOverlay, getState, onDebugFrame }) {
     this.scene = scene;
     this.debugOverlay = debugOverlay;
     this.getState = getState;
     this.onDebugFrame = onDebugFrame;
+    /** @type {number | null} */
     this.frameHandle = null;
+    /** @type {RenderStats} */
     this.stats = {
       fps: 0,
       frameCount: 0,
@@ -14,17 +48,26 @@ export class RendererLoop {
     };
   }
 
+  /**
+   * @returns {void}
+   */
   start() {
     if (this.frameHandle !== null) return;
     this.frameHandle = requestAnimationFrame(this.tick);
   }
 
+  /**
+   * @returns {void}
+   */
   stop() {
     if (this.frameHandle === null) return;
     cancelAnimationFrame(this.frameHandle);
     this.frameHandle = null;
   }
 
+  /**
+   * @returns {RenderStats}
+   */
   getStats() {
     return {
       fps: this.stats.fps,
@@ -33,6 +76,7 @@ export class RendererLoop {
     };
   }
 
+  /** @param {number} now */
   tick = (now) => {
     this.frameHandle = null;
     const state = this.getState();
@@ -52,6 +96,10 @@ export class RendererLoop {
     this.frameHandle = requestAnimationFrame(this.tick);
   };
 
+  /**
+   * @param {number} now
+   * @returns {void}
+   */
   updateRenderFps(now) {
     this.stats.frameCount += 1;
     const elapsed = now - this.stats.lastSampleAt;

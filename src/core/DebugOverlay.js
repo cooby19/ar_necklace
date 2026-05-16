@@ -1,7 +1,16 @@
+// @ts-check
+
 import { TRACKING_TUNING } from '../config/tuning.js';
 import { observeStageSize } from '../utils/stageResize.js';
 
+/** @typedef {import('../types/domain').FaceLandmarkList} FaceLandmarkList */
+/** @typedef {import('../types/domain').LandmarkPoint} LandmarkPoint */
+/** @typedef {import('../types/domain').NecklaceDebugData} NecklaceDebugData */
+
 export class DebugOverlay {
+  /**
+   * @param {{ canvas: HTMLCanvasElement, stageElement: HTMLElement }} options
+   */
   constructor({ canvas, stageElement }) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
@@ -11,12 +20,21 @@ export class DebugOverlay {
     this.stopObservingStageSize = observeStageSize(this.stageElement, this.resize);
   }
 
+  /**
+   * @param {boolean} isEnabled
+   * @returns {void}
+   */
   setEnabled(isEnabled) {
     this.isEnabled = isEnabled;
     this.canvas.classList.toggle('is-visible', isEnabled);
     if (!isEnabled) this.clear();
   }
 
+  /**
+   * @param {FaceLandmarkList | null} landmarks
+   * @param {NecklaceDebugData | null} debugData
+   * @returns {void}
+   */
   render(landmarks, debugData) {
     if (!this.isEnabled) return;
     this.resize();
@@ -36,6 +54,10 @@ export class DebugOverlay {
     }
   }
 
+  /**
+   * @param {FaceLandmarkList} landmarks
+   * @returns {void}
+   */
   drawLandmarks(landmarks) {
     const { landmarkSampleStep, pointRadius } = TRACKING_TUNING.debug;
     for (let index = 0; index < landmarks.length; index += landmarkSampleStep) {
@@ -43,26 +65,48 @@ export class DebugOverlay {
     }
   }
 
+  /**
+   * @param {LandmarkPoint | null | undefined} point
+   * @param {string} color
+   * @param {number} radius
+   * @returns {void}
+   */
   drawPoint(point, color, radius) {
-    if (!point) return;
+    const ctx = this.ctx;
+    if (!point || !ctx) return;
+
     const { x, y } = this.toCanvas(point);
-    this.ctx.beginPath();
-    this.ctx.arc(x, y, radius, 0, Math.PI * 2);
-    this.ctx.fillStyle = color;
-    this.ctx.fill();
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.fill();
   }
 
+  /**
+   * @param {LandmarkPoint} start
+   * @param {LandmarkPoint} end
+   * @param {string} color
+   * @param {number} width
+   * @returns {void}
+   */
   drawLine(start, end, color, width) {
+    const ctx = this.ctx;
+    if (!ctx) return;
+
     const a = this.toCanvas(start);
     const b = this.toCanvas(end);
-    this.ctx.beginPath();
-    this.ctx.moveTo(a.x, a.y);
-    this.ctx.lineTo(b.x, b.y);
-    this.ctx.strokeStyle = color;
-    this.ctx.lineWidth = width;
-    this.ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.stroke();
   }
 
+  /**
+   * @param {LandmarkPoint} point
+   * @returns {{ x: number, y: number }}
+   */
   toCanvas(point) {
     const width = this.canvas.width / this.dpr;
     const height = this.canvas.height / this.dpr;
@@ -73,6 +117,7 @@ export class DebugOverlay {
     };
   }
 
+  /** @returns {void} */
   resize = () => {
     const rect = this.stageElement.getBoundingClientRect();
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -88,15 +133,24 @@ export class DebugOverlay {
     this.canvas.height = targetHeight;
     this.canvas.style.width = `${width}px`;
     this.canvas.style.height = `${height}px`;
-    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    this.ctx?.setTransform(dpr, 0, 0, dpr, 0, 0);
   };
 
+  /**
+   * @returns {void}
+   */
   clear() {
+    const ctx = this.ctx;
+    if (!ctx) return;
+
     const width = this.canvas.width / this.dpr;
     const height = this.canvas.height / this.dpr;
-    this.ctx.clearRect(0, 0, width, height);
+    ctx.clearRect(0, 0, width, height);
   }
 
+  /**
+   * @returns {void}
+   */
   dispose() {
     this.stopObservingStageSize?.();
   }

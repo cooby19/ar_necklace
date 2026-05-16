@@ -1,7 +1,19 @@
+// @ts-check
+
 const SHARE_IMAGE_SIZE = 1080;
 const SHARE_FILE_NAME = 'soft-jewelry-try-on.png';
 
+/** @typedef {import('../types/domain').CaptureResult} CaptureResult */
+/** @typedef {import('../types/domain').ShareResult} ShareResult */
+
 export class CaptureService {
+  /**
+   * @param {{
+   *   stageElement: HTMLElement,
+   *   videoElement: HTMLVideoElement,
+   *   threeCanvas: HTMLCanvasElement,
+   * }} options
+   */
   constructor({ stageElement, videoElement, threeCanvas }) {
     this.stageElement = stageElement;
     this.videoElement = videoElement;
@@ -9,6 +21,10 @@ export class CaptureService {
     this.fileName = SHARE_FILE_NAME;
   }
 
+  /**
+   * @param {{ mirrored?: boolean }} [options]
+   * @returns {Promise<CaptureResult>}
+   */
   async createCapture({ mirrored = false } = {}) {
     const captureCanvas = this.createBrandedCapture({ mirrored });
     return {
@@ -17,6 +33,10 @@ export class CaptureService {
     };
   }
 
+  /**
+   * @param {string} dataUrl
+   * @returns {void}
+   */
   download(dataUrl) {
     if (!dataUrl) return;
 
@@ -28,6 +48,10 @@ export class CaptureService {
     link.remove();
   }
 
+  /**
+   * @param {Blob | null | undefined} blob
+   * @returns {Promise<ShareResult>}
+   */
   async share(blob) {
     if (!blob) return { status: 'empty' };
 
@@ -46,7 +70,7 @@ export class CaptureService {
       await navigator.share(sharePayload);
       return { status: 'shared' };
     } catch (error) {
-      if (error.name === 'AbortError') {
+      if (isAbortError(error)) {
         return { status: 'aborted' };
       }
 
@@ -54,6 +78,10 @@ export class CaptureService {
     }
   }
 
+  /**
+   * @param {{ mirrored: boolean }} options
+   * @returns {HTMLCanvasElement}
+   */
   createBrandedCapture({ mirrored }) {
     const stageRect = this.stageElement.getBoundingClientRect();
     const sourceWidth = Math.max(1, Math.round(stageRect.width));
@@ -62,14 +90,14 @@ export class CaptureService {
     sourceCanvas.width = sourceWidth;
     sourceCanvas.height = sourceHeight;
 
-    const sourceContext = sourceCanvas.getContext('2d');
+    const sourceContext = getCanvas2dContext(sourceCanvas);
     drawCoverVideo(sourceContext, this.videoElement, sourceWidth, sourceHeight, { mirrored });
     sourceContext.drawImage(this.threeCanvas, 0, 0, sourceWidth, sourceHeight);
 
     const outputCanvas = document.createElement('canvas');
     outputCanvas.width = SHARE_IMAGE_SIZE;
     outputCanvas.height = SHARE_IMAGE_SIZE;
-    const outputContext = outputCanvas.getContext('2d');
+    const outputContext = getCanvas2dContext(outputCanvas);
 
     outputContext.fillStyle = '#fffaf7';
     outputContext.fillRect(0, 0, SHARE_IMAGE_SIZE, SHARE_IMAGE_SIZE);
@@ -81,6 +109,27 @@ export class CaptureService {
   }
 }
 
+/**
+ * @param {HTMLCanvasElement} canvas
+ * @returns {CanvasRenderingContext2D}
+ */
+function getCanvas2dContext(canvas) {
+  const context = canvas.getContext('2d');
+  if (!context) {
+    throw new Error('瀏覽器無法建立 2D 圖片輸出環境');
+  }
+
+  return context;
+}
+
+/**
+ * @param {CanvasRenderingContext2D} context
+ * @param {HTMLVideoElement} video
+ * @param {number} width
+ * @param {number} height
+ * @param {{ mirrored?: boolean }} [options]
+ * @returns {void}
+ */
 function drawCoverVideo(context, video, width, height, { mirrored = false } = {}) {
   const videoWidth = video.videoWidth || width;
   const videoHeight = video.videoHeight || height;
@@ -103,6 +152,15 @@ function drawCoverVideo(context, video, width, height, { mirrored = false } = {}
   }
 }
 
+/**
+ * @param {CanvasRenderingContext2D} context
+ * @param {HTMLCanvasElement} image
+ * @param {number} x
+ * @param {number} y
+ * @param {number} width
+ * @param {number} height
+ * @returns {void}
+ */
 function drawCoverImage(context, image, x, y, width, height) {
   const sourceWidth = image.width;
   const sourceHeight = image.height;
@@ -114,6 +172,11 @@ function drawCoverImage(context, image, x, y, width, height) {
   context.drawImage(image, cropX, cropY, cropWidth, cropHeight, x, y, width, height);
 }
 
+/**
+ * @param {CanvasRenderingContext2D} context
+ * @param {number} size
+ * @returns {void}
+ */
 function drawShareImagePolish(context, size) {
   const topGradient = context.createLinearGradient(0, 0, 0, size * 0.28);
   topGradient.addColorStop(0, 'rgba(47, 42, 42, 0.2)');
@@ -132,6 +195,10 @@ function drawShareImagePolish(context, size) {
   context.strokeRect(9, 9, size - 18, size - 18);
 }
 
+/**
+ * @param {CanvasRenderingContext2D} context
+ * @returns {void}
+ */
 function drawBrandLogo(context) {
   const x = 56;
   const y = 56;
@@ -166,6 +233,15 @@ function drawBrandLogo(context) {
   context.restore();
 }
 
+/**
+ * @param {CanvasRenderingContext2D} context
+ * @param {number} x
+ * @param {number} y
+ * @param {number} width
+ * @param {number} height
+ * @param {number} radius
+ * @returns {void}
+ */
 function drawRoundedRect(context, x, y, width, height, radius) {
   const safeRadius = Math.min(radius, width / 2, height / 2);
   context.beginPath();
@@ -181,6 +257,10 @@ function drawRoundedRect(context, x, y, width, height, radius) {
   context.closePath();
 }
 
+/**
+ * @param {HTMLCanvasElement} canvas
+ * @returns {Promise<Blob>}
+ */
 function canvasToBlob(canvas) {
   return new Promise((resolve, reject) => {
     canvas.toBlob((blob) => {
@@ -191,4 +271,12 @@ function canvasToBlob(canvas) {
       reject(new Error('瀏覽器無法輸出圖片'));
     }, 'image/png');
   });
+}
+
+/**
+ * @param {unknown} error
+ * @returns {boolean}
+ */
+function isAbortError(error) {
+  return Boolean(error && typeof error === 'object' && 'name' in error && error.name === 'AbortError');
 }

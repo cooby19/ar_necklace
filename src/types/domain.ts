@@ -235,6 +235,13 @@ export interface RenderStats {
   lastSampleAt: number;
 }
 
+export interface DeveloperPanelModel {
+  debugData: NecklaceDebugData | null;
+  stats: TrackerStats & { renderFps?: number };
+  modelUrl?: string;
+  materialHitCount?: number;
+}
+
 export type TrackingStatusKind = 'idle' | 'tracking' | 'error';
 
 export type StatusViewKind = TrackingStatusKind | 'loading';
@@ -251,4 +258,15 @@ export interface FaceTrackingAdvice {
   label: string;
   message: string;
   priority: number;
+}
+
+export interface CaptureResult {
+  dataUrl: string;
+  blob: Blob;
+}
+
+export type ShareStatus = 'shared' | 'unsupported' | 'aborted' | 'empty';
+
+export interface ShareResult {
+  status: ShareStatus;
 }

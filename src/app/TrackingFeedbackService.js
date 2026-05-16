@@ -1,4 +1,41 @@
+// @ts-check
+
+/** @typedef {import('../types/domain').AppStateSnapshot} AppStateSnapshot */
+/** @typedef {import('../types/domain').DeveloperPanelModel} DeveloperPanelModel */
+/** @typedef {import('../types/domain').FaceLandmarkList} FaceLandmarkList */
+/** @typedef {import('../types/domain').FaceTrackingAdvice} FaceTrackingAdvice */
+/** @typedef {import('../types/domain').NecklaceDebugData} NecklaceDebugData */
+/** @typedef {import('../types/domain').RenderStats} RenderStats */
+/** @typedef {import('../types/domain').TrackerStats} TrackerStats */
+/** @typedef {import('../types/domain').WorkflowStatusView} WorkflowStatusView */
+
+/**
+ * @typedef {{
+ *   getAdvice: (input: {
+ *     landmarks?: FaceLandmarkList | null,
+ *     debugData?: NecklaceDebugData | null,
+ *     now?: number,
+ *   }) => FaceTrackingAdvice,
+ * }} FaceQualityAdvisorPort
+ */
+
+/** @typedef {{ getColorableMaterialCount: () => number }} TrackingModelCatalogPort */
+/** @typedef {{ hasCalibration: (necklaceId: string) => boolean }} TrackingCalibrationPort */
+
+/**
+ * @typedef {{
+ *   faceQualityAdvisor: FaceQualityAdvisorPort,
+ *   getTrackerStats: () => TrackerStats,
+ *   getRenderStats: () => RenderStats,
+ *   modelCatalog: TrackingModelCatalogPort,
+ *   calibrationService: TrackingCalibrationPort,
+ * }} TrackingFeedbackOptions
+ */
+
 export class TrackingFeedbackService {
+  /**
+   * @param {TrackingFeedbackOptions} options
+   */
   constructor({ faceQualityAdvisor, getTrackerStats, getRenderStats, modelCatalog, calibrationService }) {
     this.faceQualityAdvisor = faceQualityAdvisor;
     this.getTrackerStats = getTrackerStats;
@@ -7,6 +44,10 @@ export class TrackingFeedbackService {
     this.calibrationService = calibrationService;
   }
 
+  /**
+   * @param {AppStateSnapshot} state
+   * @returns {DeveloperPanelModel}
+   */
   createDeveloperPanelModel(state) {
     return {
       debugData: state.lastDebugData,
@@ -19,6 +60,10 @@ export class TrackingFeedbackService {
     };
   }
 
+  /**
+   * @param {AppStateSnapshot} state
+   * @returns {WorkflowStatusView | null}
+   */
   createTrackingStatus(state) {
     if (!state.cameraStarted) return null;
 
@@ -47,6 +92,12 @@ export class TrackingFeedbackService {
     };
   }
 
+  /**
+   * @param {FaceTrackingAdvice} advice
+   * @param {string} inferenceStats
+   * @param {AppStateSnapshot} state
+   * @returns {string}
+   */
   formatAdviceMessage(advice, inferenceStats, state) {
     let message = advice.message;
 
@@ -61,6 +112,9 @@ export class TrackingFeedbackService {
     return state.debugEnabled ? `${message} · ${inferenceStats}` : message;
   }
 
+  /**
+   * @returns {string}
+   */
   formatInferenceStats() {
     const stats = this.getTrackerStats();
     const averageMs = stats.averageInferenceMs > 0 ? `${stats.averageInferenceMs.toFixed(0)}ms` : '--ms';
