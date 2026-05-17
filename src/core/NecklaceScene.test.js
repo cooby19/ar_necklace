@@ -8,16 +8,21 @@ function createSceneDouble() {
   const scene = Object.create(NecklaceScene.prototype);
   scene.activeModelLoad = null;
   scene.assetLoader = { clearCache: vi.fn() };
-  scene.environmentMap = null;
+  scene.rendererHost = {
+    environmentMap: null,
+    dispose: vi.fn(),
+  };
   scene.materialCustomization = { reset: vi.fn() };
-  scene.necklaceRoot = { clear: vi.fn() };
-  scene.pmremGenerator = { dispose: vi.fn() };
-  scene.renderer = { dispose: vi.fn() };
+  scene.placement = {
+    currentModel: null,
+    clearModel: vi.fn(() => {
+      scene.placement.currentModel = null;
+    }),
+    getModel: vi.fn(() => scene.placement.currentModel),
+  };
   scene.resourceDisposer = new ModelResourceDisposer({
-    getEnvironmentMap: () => scene.environmentMap,
+    getEnvironmentMap: () => scene.rendererHost.environmentMap,
   });
-  scene.scene = { environment: null };
-  scene.stopObservingStageSize = vi.fn();
   return scene;
 }
 
@@ -68,9 +73,8 @@ describe('NecklaceScene teardown', () => {
       controller: { abort },
       signal: { aborted: false },
     };
-    scene.currentModel = createModel([createMesh({ geometry, material })]);
-    scene.environmentMap = environmentMap;
-    scene.scene.environment = environmentMap;
+    scene.placement.currentModel = createModel([createMesh({ geometry, material })]);
+    scene.rendererHost.environmentMap = environmentMap;
 
     expect(() => scene.dispose()).not.toThrow();
     expect(() => scene.dispose()).not.toThrow();
@@ -80,11 +84,10 @@ describe('NecklaceScene teardown', () => {
     expect(material.dispose).toHaveBeenCalledOnce();
     expect(texture.dispose).toHaveBeenCalledOnce();
     expect(scene.assetLoader.clearCache).toHaveBeenCalledTimes(2);
-    expect(scene.currentModel).toBeNull();
+    expect(scene.placement.currentModel).toBeNull();
+    expect(scene.placement.clearModel).toHaveBeenCalledTimes(2);
     expect(scene.materialCustomization.reset).toHaveBeenCalledTimes(2);
-    expect(scene.scene.environment).toBeNull();
-    expect(environmentMap.dispose).toHaveBeenCalledOnce();
-    expect(scene.pmremGenerator).toBeNull();
-    expect(scene.renderer).toBeNull();
+    expect(environmentMap.dispose).not.toHaveBeenCalled();
+    expect(scene.rendererHost.dispose).toHaveBeenCalledTimes(2);
   });
 });
