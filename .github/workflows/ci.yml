@@ -4,9 +4,12 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
-  test-and-build:
-    name: Test and build
+  quality:
+    name: Quality checks
     runs-on: ubuntu-latest
 
     steps:
@@ -22,8 +25,81 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run tests
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
         run: npm test
+
+      - name: Audit production dependencies
+        run: |
+          mkdir -p audit-reports
+          set +e
+          npm audit --omit=dev --json > audit-reports/npm-audit-omit-dev.json
+          audit_exit=$?
+          set -e
+          if [ "$audit_exit" -ne 0 ]; then
+            echo "::warning::npm audit --omit=dev reported production dependency advisories. See the npm-audit-omit-dev artifact."
+            npm audit --omit=dev || true
+          fi
+
+      - name: Upload audit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-audit-omit-dev
+          path: audit-reports/npm-audit-omit-dev.json
+          if-no-files-found: ignore
+
+  visual:
+    name: Visual regression
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Visual tests
+        run: npm run test:visual
+
+      - name: Upload Playwright artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-artifacts
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
 
       - name: Build
         run: npm run build

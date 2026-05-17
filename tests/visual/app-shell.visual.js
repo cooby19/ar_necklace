@@ -12,6 +12,15 @@ const STABLE_MEDIA_CSS = `
   *::after {
     caret-color: transparent !important;
   }
+
+  :root,
+  body,
+  button,
+  input,
+  select,
+  textarea {
+    font-family: Arial, "Liberation Sans", sans-serif !important;
+  }
 `;
 
 const SAMPLE_CAPTURE = `data:image/svg+xml,${encodeURIComponent(`

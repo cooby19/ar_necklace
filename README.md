@@ -140,9 +140,11 @@ http://localhost:5173
 本專案使用 Vitest 補輕量單元測試，優先覆蓋不需要真實相機、MediaPipe 或 WebGL 的純邏輯。這些測試主要保護 ModeController 重構後拆出的 app services 與狀態轉換規則。
 
 ```bash
+npm run typecheck
 npm test
 npm run build
-npm run typecheck
+npm run test:visual
+npm audit --omit=dev
 ```
 
 目前單元測試重點：
@@ -155,6 +157,10 @@ npm run typecheck
 - `CalibrationService`：調參 normalize、save/load/reset hint、localStorage 可用與不可用情境。
 - `ShareWorkflow`：截圖前置阻擋條件，包含相機未開、沒有目前影格、未偵測到臉與項鍊隱藏。
 - `NecklaceScene`：GLB buffer cache LRU、`dispose()` teardown、共享 geometry/material/texture 去重釋放，以及 depth occluder 替換前原材質釋放。
+
+Playwright 視覺回歸測試會啟動本機 Vite dev server，檢查桌面、平板與手機 viewport 的 showcase shell 與分享預覽。CI 會先執行 `npx playwright install --with-deps chromium` 安裝 Chromium 與 Linux browser dependencies，失敗時上傳 `playwright-report/` 與 `test-results/` 方便比對。
+
+CI 的 npm audit 先以 production dependency 為範圍執行 `npm audit --omit=dev`；若現有 production advisory 尚未修復，會產出 audit report artifact 與 warning，避免 dev dependency 或既有 advisory 讓 PR gate 長期無法通過。
 
 線上部署後建議對 GitHub Pages 做冒煙測試：
 
