@@ -20,6 +20,7 @@ import { observeStageSize } from '../utils/stageResize.js';
 
 const GEM_NAME_PATTERN = /(gem|gemstone|jewel|stone)/i;
 const MAX_GLB_BUFFER_CACHE_ENTRIES = 5;
+const OPACITY_UPDATE_EPSILON = 0.003;
 const MATERIAL_TEXTURE_KEYS = [
   'alphaMap',
   'anisotropyMap',
@@ -70,10 +71,12 @@ export class NecklaceScene {
     this.currentModel = null;
     this.modelConfig = null;
     this.colorableMaterials = new Map();
+    this.opacityMaterials = [];
     this.glbBufferCache = new Map();
     this.activeModelLoad = null;
     this.modelLoadSequence = 0;
     this.opacity = 0;
+    this.appliedOpacity = 0;
     this.showcase = {
       enabled: false,
       isDragging: false,
@@ -129,7 +132,9 @@ export class NecklaceScene {
       this.necklaceRoot.clear();
       this.currentModel = null;
       this.colorableMaterials.clear();
+      this.opacityMaterials = [];
       this.opacity = 0;
+      this.appliedOpacity = 0;
       this.showcase.lastTime = 0;
 
       const loadStartedAt = performance.now();
@@ -144,6 +149,7 @@ export class NecklaceScene {
       this.markOccluderParts(model);
       this.prepareModel(model);
       this.prepareGemMaterials(model);
+      this.collectOpacityMaterials(model);
       this.collectColorableMaterials(model);
       const prepareCompletedAt = performance.now();
       this.currentModel = model;
@@ -560,6 +566,24 @@ export class NecklaceScene {
     });
   }
 
+  collectOpacityMaterials(model) {
+    const visited = new Set();
+    const opacityMaterials = [];
+
+    model.traverse((child) => {
+      if (!child.isMesh || !child.material || child.userData.isDepthOccluder) return;
+      const materials = Array.isArray(child.material) ? child.material : [child.material];
+
+      materials.forEach((material) => {
+        if (!material || visited.has(material.uuid)) return;
+        visited.add(material.uuid);
+        opacityMaterials.push(material);
+      });
+    });
+
+    this.opacityMaterials = opacityMaterials;
+  }
+
   materialMatchesTarget(material, target) {
     const materialName = (material.name ?? '').toLowerCase();
     return target.materialNameIncludes?.some((keyword) => materialName.includes(keyword.toLowerCase()));
@@ -670,18 +694,16 @@ export class NecklaceScene {
   }
 
   setOpacity(opacity) {
-    this.opacity = opacity;
-    this.necklaceRoot.visible = opacity > 0.015;
+    const nextOpacity = MathUtils.clamp(opacity, 0, 1);
+    this.opacity = nextOpacity;
+    this.necklaceRoot.visible = nextOpacity > 0.015;
 
-    this.necklaceRoot.traverse((child) => {
-      if (!child.isMesh || !child.material) return;
-      if (child.userData.isDepthOccluder) return;
-      const materials = Array.isArray(child.material) ? child.material : [child.material];
-      materials.forEach((material) => {
-        material.opacity = opacity;
-        material.needsUpdate = true;
-      });
+    if (Math.abs(nextOpacity - this.appliedOpacity) < OPACITY_UPDATE_EPSILON) return;
+
+    this.opacityMaterials.forEach((material) => {
+      material.opacity = nextOpacity;
     });
+    this.appliedOpacity = nextOpacity;
   }
 
   updateTransform({ position, scale, rotationY, rotationZ }) {
@@ -751,6 +773,7 @@ export class NecklaceScene {
     this.necklaceRoot.clear();
     this.currentModel = null;
     this.colorableMaterials.clear();
+    this.opacityMaterials = [];
     this.glbBufferCache.clear();
     if (this.scene) {
       this.scene.environment = null;

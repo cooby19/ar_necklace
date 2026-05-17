@@ -14,6 +14,7 @@ import { isSelfieCamera } from './AppState.js';
 
 /**
  * @typedef {{
+ *   url: string,
  *   dataUrl: string,
  *   blob: Blob,
  * }} CaptureResult
@@ -22,7 +23,7 @@ import { isSelfieCamera } from './AppState.js';
 /**
  * @typedef {{
  *   createCapture: (options: { mirrored: boolean }) => Promise<CaptureResult>,
- *   download: (dataUrl: string) => void,
+ *   download: (capture: { blob?: Blob | null, url?: string, dataUrl?: string } | string) => void,
  *   share: (blob: Blob) => Promise<{ status: 'shared' | 'unsupported' | 'aborted' | 'empty' }>,
  * }} CaptureServicePort
  */
@@ -111,13 +112,15 @@ export class ShareWorkflow {
   }
 
   /**
-   * @param {string} dataUrl
+   * @param {{ blob?: Blob | null, url?: string, dataUrl?: string } | string} capture
    * @returns {WorkflowStatusView | null}
    */
-  download(dataUrl) {
-    if (!dataUrl) return null;
+  download(capture) {
+    const hasCapture =
+      typeof capture === 'string' ? Boolean(capture) : Boolean(capture?.blob || capture?.url || capture?.dataUrl);
+    if (!hasCapture) return null;
 
-    this.captureService.download(dataUrl);
+    this.captureService.download(capture);
     return {
       kind: 'idle',
       label: '圖片已下載',
@@ -143,7 +146,7 @@ export class ShareWorkflow {
     }
 
     if (result.status === 'unsupported') {
-      this.download(dataUrl);
+      this.download({ blob, dataUrl });
       return {
         kind: 'idle',
         label: '此瀏覽器不支援直接分享',

@@ -261,6 +261,7 @@ export interface FaceTrackingAdvice {
 }
 
 export interface CaptureResult {
+  url: string;
   dataUrl: string;
   blob: Blob;
 }

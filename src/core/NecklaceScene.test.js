@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NecklaceScene } from './NecklaceScene.js';
 
+let materialId = 0;
+
 function createSceneDouble() {
   const scene = Object.create(NecklaceScene.prototype);
   scene.activeModelLoad = null;
@@ -39,6 +41,7 @@ function createTexture() {
 
 function createMaterial(texture = createTexture()) {
   return {
+    uuid: `material-${materialId += 1}`,
     map: texture,
     customTextureSlot: { value: texture },
     dispose: vi.fn(),
@@ -174,5 +177,44 @@ describe('NecklaceScene resource disposal', () => {
     expect(environmentMap.dispose).toHaveBeenCalledOnce();
     expect(scene.pmremGenerator).toBeNull();
     expect(scene.renderer).toBeNull();
+  });
+});
+
+describe('NecklaceScene opacity updates', () => {
+  it('uses cached opacity materials and skips tiny opacity changes', () => {
+    const scene = createSceneDouble();
+    scene.opacity = 0;
+    scene.appliedOpacity = 0;
+    scene.opacityMaterials = [];
+
+    const material = {
+      uuid: 'material-1',
+      opacity: 0,
+      needsUpdate: false,
+    };
+    const occluderMaterial = {
+      uuid: 'material-2',
+      opacity: 0,
+      needsUpdate: false,
+    };
+    const model = createModel([
+      createMesh({ geometry: {}, material }),
+      createMesh({ geometry: {}, material: occluderMaterial, userData: { isDepthOccluder: true } }),
+    ]);
+    const traverse = vi.spyOn(model, 'traverse');
+    scene.necklaceRoot = {
+      visible: false,
+    };
+
+    scene.collectOpacityMaterials(model);
+    scene.setOpacity(0.5);
+    scene.setOpacity(0.501);
+
+    expect(traverse).toHaveBeenCalledOnce();
+    expect(scene.opacityMaterials).toEqual([material]);
+    expect(material.opacity).toBe(0.5);
+    expect(material.needsUpdate).toBe(false);
+    expect(occluderMaterial.opacity).toBe(0);
+    expect(scene.necklaceRoot.visible).toBe(true);
   });
 });

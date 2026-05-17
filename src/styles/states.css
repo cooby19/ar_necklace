@@ -2,7 +2,8 @@
   opacity: 0;
 }
 
-.stage.is-showcase .necklace-outline {
+.stage.is-showcase .necklace-outline,
+.stage.is-ar-mode .necklace-outline {
   opacity: 0;
 }
 

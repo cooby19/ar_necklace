@@ -27,25 +27,55 @@ export class CaptureService {
    */
   async createCapture({ mirrored = false } = {}) {
     const captureCanvas = this.createBrandedCapture({ mirrored });
+    const blob = await canvasToBlob(captureCanvas);
+    const url = URL.createObjectURL(blob);
     return {
-      dataUrl: captureCanvas.toDataURL('image/png'),
-      blob: await canvasToBlob(captureCanvas),
+      url,
+      dataUrl: url,
+      blob,
     };
   }
 
   /**
-   * @param {string} dataUrl
+   * @param {{ blob?: Blob | null, url?: string, dataUrl?: string } | string} capture
    * @returns {void}
    */
-  download(dataUrl) {
-    if (!dataUrl) return;
+  download(capture) {
+    const downloadUrl = this.createDownloadUrl(capture);
+    if (!downloadUrl.href) return;
 
     const link = document.createElement('a');
-    link.href = dataUrl;
+    link.href = downloadUrl.href;
     link.download = this.fileName;
     document.body.append(link);
     link.click();
     link.remove();
+
+    if (downloadUrl.shouldRevoke) {
+      window.setTimeout(() => URL.revokeObjectURL(downloadUrl.href), 0);
+    }
+  }
+
+  /**
+   * @param {{ blob?: Blob | null, url?: string, dataUrl?: string } | string} capture
+   * @returns {{ href: string, shouldRevoke: boolean }}
+   */
+  createDownloadUrl(capture) {
+    if (typeof capture === 'string') {
+      return { href: capture, shouldRevoke: false };
+    }
+
+    if (capture?.blob) {
+      return {
+        href: URL.createObjectURL(capture.blob),
+        shouldRevoke: true,
+      };
+    }
+
+    return {
+      href: capture?.url || capture?.dataUrl || '',
+      shouldRevoke: false,
+    };
   }
 
   /**

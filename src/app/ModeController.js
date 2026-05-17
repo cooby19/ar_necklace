@@ -17,6 +17,8 @@ import { FaceQualityAdvisor } from '../core/FaceQualityAdvisor.js';
 import { NecklaceController } from '../core/NecklaceController.js';
 import { NecklaceScene } from '../core/NecklaceScene.js';
 
+const TRACKING_FEEDBACK_UPDATE_INTERVAL_MS = 350;
+
 /** @typedef {import('../types/domain').AppMode} AppMode */
 /** @typedef {import('../types/domain').AppStateMeta} AppStateMeta */
 /** @typedef {import('../types/domain').AppStatePatch} AppStatePatch */
@@ -112,7 +114,7 @@ import { NecklaceScene } from '../core/NecklaceScene.js';
  *   setCaptureDisabled: (isDisabled: boolean) => void,
  *   setCaptureBusy: (isBusy: boolean) => void,
  *   setStatus: (kind: WorkflowStatusView['kind'], label: string, metrics: string) => void,
- *   setShareImage: (dataUrl: string) => void,
+ *   setShareImage: (url: string) => void,
  *   openShareSheet: () => void,
  *   closeShareSheet: () => void,
  *   updateDeveloperPanel: (model: DeveloperPanelModel) => void,
@@ -124,8 +126,8 @@ import { NecklaceScene } from '../core/NecklaceScene.js';
 
 /**
  * @typedef {{
- *   createCapture: (options: { mirrored: boolean }) => Promise<{ dataUrl: string, blob: Blob }>,
- *   download: (dataUrl: string) => void,
+ *   createCapture: (options: { mirrored: boolean }) => Promise<{ url: string, dataUrl: string, blob: Blob }>,
+ *   download: (capture: { blob?: Blob | null, url?: string, dataUrl?: string } | string) => void,
  *   share: (blob: Blob) => Promise<{ status: 'shared' | 'unsupported' | 'aborted' | 'empty' }>,
  * }} CaptureServicePort
  */
@@ -213,7 +215,7 @@ export class ModeController {
       scene: this.scene,
       debugOverlay: this.debugOverlay,
       getState: () => this.getState(),
-      onDebugFrame: () => this.updateDeveloperPanel(),
+      onDebugFrame: () => this.scheduleTrackingFeedbackUpdate(),
     });
     this.feedbackService = new TrackingFeedbackService({
       faceQualityAdvisor: this.faceQualityAdvisor,
@@ -222,6 +224,12 @@ export class ModeController {
       modelCatalog: this.modelCatalog,
       calibrationService: this.calibrationService,
     });
+    /** @type {{ nextStatus: ArSessionStatus, patch: AppStatePatch } | null} */
+    this.pendingFaceResult = null;
+    /** @type {number | null} */
+    this.trackingFeedbackTimer = null;
+    this.lastTrackingFeedbackUpdateAt = 0;
+    this.capturePreviewUrl = '';
   }
 
   /**
@@ -277,6 +285,7 @@ export class ModeController {
     if (mode === APP_MODES.AR) {
       this.scene.setShowcaseMode(false);
       this.controller.reset();
+      this.rendererLoop.requestRender();
     }
 
     this.syncModeEffects();
@@ -523,6 +532,7 @@ export class ModeController {
     this.ui.setCaptureDisabled(true);
     this.ui.elements.startButton.disabled = false;
     this.ui.setStartButtonLabel('開始相機');
+    this.rendererLoop.requestRender();
   }
 
   /**
@@ -549,12 +559,13 @@ export class ModeController {
       this.appState.transitionSession(
         AR_SESSION_STATES.SHARING,
         {
-          captureDataUrl: result.capture.dataUrl,
+          captureDataUrl: result.capture.url,
           captureBlob: result.capture.blob,
         },
         'capture-create',
       );
-      this.ui.setShareImage(result.capture.dataUrl);
+      this.rememberCapturePreviewUrl(result.capture.url);
+      this.ui.setShareImage(result.capture.url);
       this.ui.openShareSheet();
       this.applyStatusView(result.view);
     } catch (error) {
@@ -570,8 +581,11 @@ export class ModeController {
    * @returns {void}
    */
   downloadCapture() {
-    const dataUrl = this.appState.get('captureDataUrl');
-    const statusView = this.shareWorkflow.download(dataUrl);
+    const state = this.getState();
+    const statusView = this.shareWorkflow.download({
+      blob: state.captureBlob,
+      dataUrl: state.captureDataUrl,
+    });
     if (!statusView) return;
 
     this.applyStatusView(statusView);
@@ -605,6 +619,18 @@ export class ModeController {
     if (state.sessionStatus !== AR_SESSION_STATES.SHARING) return;
 
     this.appState.transitionSession(this.getLiveSessionStatus(state), {}, 'share-close');
+  }
+
+  /**
+   * @param {string} url
+   * @returns {void}
+   */
+  rememberCapturePreviewUrl(url) {
+    if (this.capturePreviewUrl && this.capturePreviewUrl !== url && this.capturePreviewUrl.startsWith('blob:')) {
+      URL.revokeObjectURL(this.capturePreviewUrl);
+    }
+
+    this.capturePreviewUrl = url;
   }
 
   /**
@@ -801,6 +827,8 @@ export class ModeController {
     this.scene.setShowcaseMode(false);
 
     if (!state.cameraStarted && state.modelLoaded) {
+      this.controller.reset();
+      this.rendererLoop.requestRender();
       this.ui.setStatus('idle', 'AR 試戴', '開啟相機後即可即時試戴');
     }
   }
@@ -818,44 +846,97 @@ export class ModeController {
 
     if (!state.modelLoaded || !landmarks) {
       this.controller.fadeOut();
-      this.commitFaceResult(hasFace ? AR_SESSION_STATES.TRACKING : AR_SESSION_STATES.NO_FACE, {
+      const didCommitImmediately = this.queueFaceResult(hasFace ? AR_SESSION_STATES.TRACKING : AR_SESSION_STATES.NO_FACE, {
         lastLandmarks: landmarks,
         hasFace,
         lastDebugData: null,
       });
-      this.updateTrackingStatus();
-      this.updateDeveloperPanel();
+      this.scheduleTrackingFeedbackUpdate({ force: didCommitImmediately });
       return;
     }
 
     const lastDebugData = this.controller.updateFromLandmarks(landmarks, state.necklaceVisible);
     this.markCalibrationReady();
-    this.commitFaceResult(AR_SESSION_STATES.TRACKING, {
+    const didCommitImmediately = this.queueFaceResult(AR_SESSION_STATES.TRACKING, {
       lastLandmarks: landmarks,
       hasFace,
       lastDebugData,
     });
-    this.updateTrackingStatus();
-    this.updateDeveloperPanel();
+    this.scheduleTrackingFeedbackUpdate({ force: didCommitImmediately });
   }
 
   /**
    * @param {ArSessionStatus} nextStatus
    * @param {AppStatePatch} patch
-   * @returns {void}
+   * @returns {boolean}
+   */
+  queueFaceResult(nextStatus, patch) {
+    this.pendingFaceResult = { nextStatus, patch };
+    const state = this.getState();
+    const shouldCommitNow =
+      state.hasFace !== patch.hasFace ||
+      (!this.shouldPreserveWorkflowStatus(state) && state.sessionStatus !== nextStatus);
+
+    if (!shouldCommitNow) return false;
+    return this.flushPendingFaceResult();
+  }
+
+  /**
+   * @returns {boolean}
+   */
+  flushPendingFaceResult() {
+    if (!this.pendingFaceResult) return false;
+
+    const { nextStatus, patch } = this.pendingFaceResult;
+    this.pendingFaceResult = null;
+    return this.commitFaceResult(nextStatus, patch);
+  }
+
+  /**
+   * @param {ArSessionStatus} nextStatus
+   * @param {AppStatePatch} patch
+   * @returns {boolean}
    */
   commitFaceResult(nextStatus, patch) {
     const state = this.getState();
-    const shouldPreserveWorkflowStatus =
-      state.sessionStatus === AR_SESSION_STATES.CAPTURING ||
-      state.sessionStatus === AR_SESSION_STATES.SHARING;
+    const shouldPreserveWorkflowStatus = this.shouldPreserveWorkflowStatus(state);
+
+    if (this.isRedundantFaceResultCommit(state, nextStatus, patch, shouldPreserveWorkflowStatus)) {
+      return false;
+    }
 
     if (shouldPreserveWorkflowStatus) {
       this.appState.set(patch, 'face-results');
-      return;
+      return true;
     }
 
     this.appState.transitionSession(nextStatus, patch, 'face-results');
+    return true;
+  }
+
+  /**
+   * @param {AppStateSnapshot} state
+   * @returns {boolean}
+   */
+  shouldPreserveWorkflowStatus(state) {
+    return state.sessionStatus === AR_SESSION_STATES.CAPTURING || state.sessionStatus === AR_SESSION_STATES.SHARING;
+  }
+
+  /**
+   * @param {AppStateSnapshot} state
+   * @param {ArSessionStatus} nextStatus
+   * @param {AppStatePatch} patch
+   * @param {boolean} shouldPreserveWorkflowStatus
+   * @returns {boolean}
+   */
+  isRedundantFaceResultCommit(state, nextStatus, patch, shouldPreserveWorkflowStatus) {
+    const isSameStatus = shouldPreserveWorkflowStatus || state.sessionStatus === nextStatus;
+    return (
+      isSameStatus &&
+      state.hasFace === patch.hasFace &&
+      state.lastLandmarks === patch.lastLandmarks &&
+      state.lastDebugData === patch.lastDebugData
+    );
   }
 
   /**
@@ -874,6 +955,51 @@ export class ModeController {
     const state = this.getState();
     if (!state.cameraStarted || !state.debugEnabled) return;
 
+    this.scheduleTrackingFeedbackUpdate();
+  }
+
+  /**
+   * @param {{ force?: boolean }} [options]
+   * @returns {void}
+   */
+  scheduleTrackingFeedbackUpdate({ force = false } = {}) {
+    const state = this.getState();
+    if (!state.cameraStarted) return;
+
+    const now = performance.now();
+    const elapsed = now - this.lastTrackingFeedbackUpdateAt;
+
+    if (force || elapsed >= TRACKING_FEEDBACK_UPDATE_INTERVAL_MS) {
+      if (this.trackingFeedbackTimer !== null) {
+        window.clearTimeout(this.trackingFeedbackTimer);
+        this.trackingFeedbackTimer = null;
+      }
+      this.flushTrackingFeedback(now);
+      return;
+    }
+
+    if (this.trackingFeedbackTimer !== null) return;
+
+    this.trackingFeedbackTimer = window.setTimeout(() => {
+      this.trackingFeedbackTimer = null;
+      this.flushTrackingFeedback(performance.now());
+    }, TRACKING_FEEDBACK_UPDATE_INTERVAL_MS - elapsed);
+  }
+
+  /**
+   * @param {number} [now]
+   * @returns {void}
+   */
+  flushTrackingFeedback(now = performance.now()) {
+    const state = this.getState();
+    if (state.mode !== APP_MODES.AR || !state.cameraStarted) {
+      this.pendingFaceResult = null;
+      this.lastTrackingFeedbackUpdateAt = now;
+      return;
+    }
+
+    this.flushPendingFaceResult();
+    this.lastTrackingFeedbackUpdateAt = now;
     this.updateTrackingStatus();
     this.updateDeveloperPanel();
   }
@@ -883,6 +1009,7 @@ export class ModeController {
    */
   updateDeveloperPanel() {
     const state = this.getState();
+    if (!state.debugEnabled) return;
     this.ui.updateDeveloperPanel(this.feedbackService.createDeveloperPanelModel(state));
   }
 

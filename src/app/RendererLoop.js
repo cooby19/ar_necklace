@@ -46,6 +46,7 @@ export class RendererLoop {
       frameCount: 0,
       lastSampleAt: performance.now(),
     };
+    this.renderRequested = true;
   }
 
   /**
@@ -53,6 +54,7 @@ export class RendererLoop {
    */
   start() {
     if (this.frameHandle !== null) return;
+    this.requestRender();
     this.frameHandle = requestAnimationFrame(this.tick);
   }
 
@@ -76,20 +78,33 @@ export class RendererLoop {
     };
   }
 
+  /**
+   * @returns {void}
+   */
+  requestRender() {
+    this.renderRequested = true;
+  }
+
   /** @param {number} now */
   tick = (now) => {
     this.frameHandle = null;
     const state = this.getState();
     this.updateRenderFps(now);
 
-    if (state.mode === APP_MODES.SHOWCASE && state.modelLoaded) {
+    const shouldAnimateShowcase = state.mode === APP_MODES.SHOWCASE && state.modelLoaded;
+    const shouldRenderLiveAr = state.mode === APP_MODES.AR && state.cameraStarted;
+
+    if (shouldAnimateShowcase) {
       this.scene.updateShowcase(now);
     }
 
-    this.scene.render();
-    this.debugOverlay.render(state.lastLandmarks, state.lastDebugData);
+    if (this.renderRequested || shouldAnimateShowcase || shouldRenderLiveAr) {
+      this.scene.render();
+      this.renderRequested = false;
+    }
 
-    if (state.debugEnabled) {
+    if (state.mode === APP_MODES.AR && state.debugEnabled) {
+      this.debugOverlay.render(state.lastLandmarks, state.lastDebugData);
       this.onDebugFrame?.(this.getStats());
     }
 
