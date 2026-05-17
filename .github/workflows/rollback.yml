@@ -1,0 +1,92 @@
+name: Rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Hosting environment to roll back.
+        type: choice
+        options:
+          - production
+          - staging
+        default: production
+      cloudflare_deployment_id:
+        description: Cloudflare Pages deployment id to roll back to.
+        type: string
+        required: true
+      smoke_url:
+        description: URL to smoke test after rollback, for example https://example.com/.
+        type: string
+        required: true
+      expected_commit_sha:
+        description: Expected release commit SHA prefix after rollback.
+        type: string
+        required: false
+      expected_version:
+        description: Expected package version after rollback.
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    name: Rollback secret preflight
+    runs-on: ubuntu-latest
+    outputs:
+      cloudflare_enabled: ${{ steps.check.outputs.cloudflare_enabled }}
+    steps:
+      - name: Check Cloudflare secrets
+        id: check
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_PAGES_PROJECT: ${{ secrets.CLOUDFLARE_PAGES_PROJECT }}
+        run: |
+          if [ -n "$CLOUDFLARE_API_TOKEN" ] && [ -n "$CLOUDFLARE_ACCOUNT_ID" ] && [ -n "$CLOUDFLARE_PAGES_PROJECT" ]; then
+            echo "cloudflare_enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "cloudflare_enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::error::Cloudflare rollback secrets are not configured."
+          fi
+
+  rollback-cloudflare:
+    name: Roll back Cloudflare Pages deployment
+    runs-on: ubuntu-latest
+    needs: preflight
+    if: needs.preflight.outputs.cloudflare_enabled == 'true'
+    environment:
+      name: ${{ github.event.inputs.environment }}
+    steps:
+      - name: Roll back deployment
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_PAGES_PROJECT: ${{ secrets.CLOUDFLARE_PAGES_PROJECT }}
+          CLOUDFLARE_DEPLOYMENT_ID: ${{ github.event.inputs.cloudflare_deployment_id }}
+        run: |
+          curl --fail-with-body --request POST \
+            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/pages/projects/${CLOUDFLARE_PAGES_PROJECT}/deployments/${CLOUDFLARE_DEPLOYMENT_ID}/rollback" \
+            --header "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+            --header "Content-Type: application/json"
+
+  smoke-rollback:
+    name: Smoke rolled back deployment
+    runs-on: ubuntu-latest
+    needs: rollback-cloudflare
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Smoke deployment
+        env:
+          SMOKE_BASE_URL: ${{ github.event.inputs.smoke_url }}
+          EXPECTED_COMMIT_SHA: ${{ github.event.inputs.expected_commit_sha }}
+          EXPECTED_VERSION: ${{ github.event.inputs.expected_version }}
+        run: npm run smoke:release

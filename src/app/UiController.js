@@ -29,6 +29,7 @@ export class UiController {
       debugScale: queryRequired('#debugScale'),
       debugModelUrl: queryRequired('#debugModelUrl'),
       debugMaterialHits: queryRequired('#debugMaterialHits'),
+      debugReleaseVersion: queryRequired('#debugReleaseVersion'),
       livePill: queryRequired('.live-pill'),
       experienceColumn: queryRequired('.experience-column'),
       controls: queryRequired('.controls'),
@@ -694,6 +695,20 @@ export class UiController {
     this.elements.debugModelUrl.textContent = modelUrl || '--';
     this.elements.debugModelUrl.title = modelUrl || '';
     this.elements.debugMaterialHits.textContent = String(materialHitCount ?? 0);
+  }
+
+  setReleaseMetadata(metadata) {
+    const shortSha = metadata.commitSha ? metadata.commitSha.slice(0, 12) : 'unknown';
+    const releaseLabel = `v${metadata.version ?? '0.0.0'} · ${shortSha}`;
+    const releaseTitle = [
+      `version: ${metadata.version ?? 'unknown'}`,
+      `commit: ${metadata.commitSha ?? 'unknown'}`,
+      `buildTime: ${metadata.buildTime ?? 'unknown'}`,
+      `environment: ${metadata.environment ?? 'unknown'}`,
+    ].join('\n');
+
+    this.elements.debugReleaseVersion.textContent = releaseLabel;
+    this.elements.debugReleaseVersion.title = releaseTitle;
   }
 
   isDebugEnabled() {

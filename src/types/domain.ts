@@ -260,6 +260,13 @@ export interface DeveloperPanelModel {
   materialHitCount?: number;
 }
 
+export interface ReleaseMetadata {
+  version: string;
+  commitSha: string;
+  buildTime: string;
+  environment: string;
+}
+
 export type TrackingStatusKind = 'idle' | 'tracking' | 'error';
 
 export type StatusViewKind = TrackingStatusKind | 'loading';

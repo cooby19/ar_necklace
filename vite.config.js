@@ -1,8 +1,19 @@
 import { defineConfig } from 'vite';
+import { execFileSync } from 'node:child_process';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
 import { fileURLToPath, URL } from 'node:url';
+
+const rootDir = fileURLToPath(new URL('.', import.meta.url));
+const packageJson = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'));
+const releaseMetadata = createReleaseMetadata();
 
 export default defineConfig({
   base: './',
+  define: {
+    __APP_RELEASE_METADATA__: JSON.stringify(releaseMetadata),
+  },
+  plugins: [releaseMetadataPlugin(releaseMetadata)],
   resolve: {
     alias: [
       {
@@ -30,3 +41,35 @@ export default defineConfig({
     port: 5173,
   },
 });
+
+function createReleaseMetadata() {
+  return {
+    version: process.env.npm_package_version ?? packageJson.version,
+    commitSha: process.env.GITHUB_SHA ?? getGitCommitSha(),
+    buildTime: process.env.BUILD_TIME ?? new Date().toISOString(),
+    environment: process.env.DEPLOY_ENVIRONMENT ?? 'local',
+  };
+}
+
+function getGitCommitSha() {
+  try {
+    return execFileSync('git', ['rev-parse', '--short=12', 'HEAD'], {
+      cwd: rootDir,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+  } catch {
+    return 'unknown';
+  }
+}
+
+function releaseMetadataPlugin(metadata) {
+  return {
+    name: 'release-metadata',
+    writeBundle() {
+      const outputDir = path.join(rootDir, 'dist');
+      mkdirSync(outputDir, { recursive: true });
+      writeFileSync(path.join(outputDir, 'release.json'), `${JSON.stringify(metadata, null, 2)}\n`);
+    },
+  };
+}

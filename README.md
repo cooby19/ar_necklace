@@ -161,6 +161,7 @@ npm audit --omit=dev
 - `npm run test:a11y`：用 Playwright + axe-core 掃描 showcase 初始畫面與分享預覽狀態，不需要相機權限。
 - `npm run budget`：檢查 `dist/assets` 的 JS/CSS、`public/models/*.glb` 與 MediaPipe Face Mesh vendored 重要資產大小，需先執行 `npm run build`。
 - `npm run lighthouse`：用 build 後的 Vite preview 跑 Lighthouse showcase 頁面，門檻先採保守 baseline，需先執行 `npm run build`。
+- `npm run smoke:release`：對已部署 URL 檢查 `release.json`、build assets、GLB 與 MediaPipe 重要資產，需設定 `SMOKE_BASE_URL`。
 - `npm audit --omit=dev`：只檢查 production dependencies；CI 目前以 warning + report artifact 呈現既有 advisory。
 
 目前單元測試重點：
@@ -177,6 +178,17 @@ npm audit --omit=dev
 Playwright 視覺回歸測試會啟動本機 Vite dev server，檢查桌面、平板與手機 viewport 的 showcase shell 與分享預覽。CI 會先執行 `npx playwright install --with-deps chromium` 安裝 Chromium 與 Linux browser dependencies，失敗時上傳 `playwright-report/` 與 `test-results/` 方便比對。
 
 CI 的 npm audit 先以 production dependency 為範圍執行 `npm audit --omit=dev`；若現有 production advisory 尚未修復，會產出 audit report artifact 與 warning，避免 dev dependency 或既有 advisory 讓 PR gate 長期無法通過。
+
+## 部署與發布
+
+部署流程設計請見 [`docs/deployment.md`](docs/deployment.md)。目前 repo 內已提供：
+
+- build artifact：CI 會上傳 `ar-necklace-dist-${GITHUB_SHA}`，內容包含 `dist/release.json`。
+- release metadata：build 後可在 `release.json`、browser console、`window.__AR_NECKLACE_RELEASE__` 與 debug panel 看到 version、commit SHA、build time、environment。
+- `.github/workflows/deploy.yml`：Cloudflare Pages PR preview / staging / production skeleton。沒有 secrets 時部署 job 會跳過。
+- `.github/workflows/rollback.yml`：Cloudflare Pages rollback skeleton，rollback 後會以 `npm run smoke:release` 驗證版本與資產。
+
+正式啟用部署前，需在 GitHub repository secrets 設定 `CLOUDFLARE_API_TOKEN`、`CLOUDFLARE_ACCOUNT_ID`、`CLOUDFLARE_PAGES_PROJECT`、`STAGING_URL`、`PRODUCTION_URL`，並替 `production` environment 開啟 required reviewers。
 
 線上部署後建議對 GitHub Pages 做冒煙測試：
 

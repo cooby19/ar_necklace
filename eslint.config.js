@@ -22,11 +22,12 @@ export default [
       sourceType: 'module',
       globals: {
         ...globals.browser,
+        __APP_RELEASE_METADATA__: 'readonly',
       },
     },
     rules: {
       eqeqeq: ['error', 'always', { null: 'ignore' }],
-      'no-console': ['warn', { allow: ['warn', 'error'] }],
+      'no-console': ['warn', { allow: ['warn', 'error', 'info'] }],
       'no-unused-vars': [
         'error',
         {

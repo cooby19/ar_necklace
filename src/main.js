@@ -1,5 +1,6 @@
 import './styles/index.css';
 import { NECKLACES } from './config/necklaces.js';
+import { RELEASE_METADATA } from './config/release.js';
 import { AppState } from './app/AppState.js';
 import { CaptureService } from './app/CaptureService.js';
 import { UiController } from './app/UiController.js';
@@ -9,6 +10,9 @@ bootstrap();
 async function bootstrap() {
   const appState = new AppState({ necklaces: NECKLACES });
   const uiController = new UiController({ necklaces: NECKLACES });
+  uiController.setReleaseMetadata(RELEASE_METADATA);
+  exposeReleaseMetadata(RELEASE_METADATA);
+
   const captureService = new CaptureService({
     stageElement: uiController.elements.stage,
     videoElement: uiController.elements.video,
@@ -55,4 +59,9 @@ async function bootstrap() {
   } catch (error) {
     uiController.showError(`應用程式初始化失敗：${error.message ?? error}`);
   }
+}
+
+function exposeReleaseMetadata(metadata) {
+  window.__AR_NECKLACE_RELEASE__ = metadata;
+  console.info('[release]', metadata);
 }

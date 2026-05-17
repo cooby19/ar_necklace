@@ -52,6 +52,7 @@ const REQUIRED_SELECTORS = [
   '#debugScale',
   '#debugModelUrl',
   '#debugMaterialHits',
+  '#debugReleaseVersion',
   '.live-pill',
   '.experience-column',
   '.controls',

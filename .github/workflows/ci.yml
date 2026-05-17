@@ -137,7 +137,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Capture build time
+        id: release_meta
+        run: echo "build_time=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_OUTPUT"
+
       - name: Build
+        env:
+          BUILD_TIME: ${{ steps.release_meta.outputs.build_time }}
+          DEPLOY_ENVIRONMENT: ci
         run: npm run build
 
       - name: Bundle budget
@@ -156,3 +163,11 @@ jobs:
           name: lighthouse-report
           path: lighthouse-report/
           if-no-files-found: ignore
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ar-necklace-dist-${{ github.sha }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 30
