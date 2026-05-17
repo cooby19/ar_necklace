@@ -12,103 +12,112 @@ const FOCUSABLE_SELECTOR = [
 export class UiController {
   constructor({ necklaces }) {
     this.necklaces = necklaces;
+    this.eventDisposers = [];
+    this.shareFocusReturnElement = null;
     this.elements = {
-      app: document.querySelector('#app'),
-      stage: document.querySelector('.stage'),
-      video: document.querySelector('#cameraVideo'),
-      threeCanvas: document.querySelector('#threeCanvas'),
-      debugCanvas: document.querySelector('#debugCanvas'),
-      developerPanel: document.querySelector('#developerPanel'),
-      debugFps: document.querySelector('#debugFps'),
-      debugInferenceMs: document.querySelector('#debugInferenceMs'),
-      debugFaceWidth: document.querySelector('#debugFaceWidth'),
-      debugYaw: document.querySelector('#debugYaw'),
-      debugScale: document.querySelector('#debugScale'),
-      debugModelUrl: document.querySelector('#debugModelUrl'),
-      debugMaterialHits: document.querySelector('#debugMaterialHits'),
-      livePill: document.querySelector('.live-pill'),
-      experienceColumn: document.querySelector('.experience-column'),
-      controls: document.querySelector('.controls'),
-      captureButton: document.querySelector('#captureButton'),
-      bottomSheetToggle: document.querySelector('#bottomSheetToggle'),
-      modeButtons: document.querySelectorAll('[data-mode]'),
-      panelTabs: document.querySelectorAll('[data-panel-tab]'),
-      controlPanels: document.querySelectorAll('[data-control-panel]'),
-      arSections: document.querySelectorAll('[data-ar-section]'),
-      startButton: document.querySelector('#startButton'),
-      switchCameraButton: document.querySelector('#switchCameraButton'),
-      stopCameraButton: document.querySelector('#stopCameraButton'),
-      necklaceToggle: document.querySelector('#necklaceToggle'),
-      debugToggle: document.querySelector('#debugToggle'),
-      necklaceCards: document.querySelector('#necklaceCards'),
-      necklaceSelect: document.querySelector('#necklaceSelect'),
-      colorSwatches: document.querySelector('#colorSwatches'),
-      colorHint: document.querySelector('#colorHint'),
-      colorMeaning: document.querySelector('#colorMeaning'),
-      meaningChip: document.querySelector('#meaningChip'),
-      meaningTitle: document.querySelector('#meaningTitle'),
-      meaningSummary: document.querySelector('#meaningSummary'),
-      meaningKeywords: document.querySelector('#meaningKeywords'),
-      verticalOffsetRange: document.querySelector('#verticalOffsetRange'),
-      verticalOffsetValue: document.querySelector('#verticalOffsetValue'),
-      scaleRange: document.querySelector('#scaleRange'),
-      scaleValue: document.querySelector('#scaleValue'),
-      rotationRange: document.querySelector('#rotationRange'),
-      rotationValue: document.querySelector('#rotationValue'),
-      calibrationHint: document.querySelector('#calibrationHint'),
-      saveCalibrationButton: document.querySelector('#saveCalibrationButton'),
-      resetTuningButton: document.querySelector('#resetTuningButton'),
-      shareSheet: document.querySelector('#shareSheet'),
-      shareCard: document.querySelector('.share-card'),
-      shareImage: document.querySelector('#shareImage'),
-      downloadCaptureButton: document.querySelector('#downloadCaptureButton'),
-      shareCaptureButton: document.querySelector('#shareCaptureButton'),
-      closeShareButtons: document.querySelectorAll('[data-close-share]'),
-      errorBox: document.querySelector('#errorBox'),
-      statusPanel: document.querySelector('.status-panel'),
-      trackingDot: document.querySelector('#trackingDot'),
-      trackingLabel: document.querySelector('#trackingLabel'),
-      trackingMetrics: document.querySelector('#trackingMetrics'),
+      app: queryRequired('#app'),
+      stage: queryRequired('.stage'),
+      video: queryRequired('#cameraVideo'),
+      threeCanvas: queryRequired('#threeCanvas'),
+      debugCanvas: queryRequired('#debugCanvas'),
+      developerPanel: queryRequired('#developerPanel'),
+      debugFps: queryRequired('#debugFps'),
+      debugInferenceMs: queryRequired('#debugInferenceMs'),
+      debugFaceWidth: queryRequired('#debugFaceWidth'),
+      debugYaw: queryRequired('#debugYaw'),
+      debugScale: queryRequired('#debugScale'),
+      debugModelUrl: queryRequired('#debugModelUrl'),
+      debugMaterialHits: queryRequired('#debugMaterialHits'),
+      livePill: queryRequired('.live-pill'),
+      experienceColumn: queryRequired('.experience-column'),
+      controls: queryRequired('.controls'),
+      captureButton: queryRequired('#captureButton'),
+      bottomSheetToggle: queryRequired('#bottomSheetToggle'),
+      modeButtons: queryRequiredAll('[data-mode]'),
+      panelTabs: queryRequiredAll('[data-panel-tab]'),
+      controlPanels: queryRequiredAll('[data-control-panel]'),
+      arSections: queryRequiredAll('[data-ar-section]'),
+      startButton: queryRequired('#startButton'),
+      switchCameraButton: queryRequired('#switchCameraButton'),
+      stopCameraButton: queryRequired('#stopCameraButton'),
+      necklaceToggle: queryRequired('#necklaceToggle'),
+      debugToggle: queryRequired('#debugToggle'),
+      necklaceCards: queryRequired('#necklaceCards'),
+      necklaceSelect: queryRequired('#necklaceSelect'),
+      colorSwatches: queryRequired('#colorSwatches'),
+      colorHint: queryRequired('#colorHint'),
+      colorMeaning: queryRequired('#colorMeaning'),
+      meaningChip: queryRequired('#meaningChip'),
+      meaningTitle: queryRequired('#meaningTitle'),
+      meaningSummary: queryRequired('#meaningSummary'),
+      meaningKeywords: queryRequired('#meaningKeywords'),
+      verticalOffsetRange: queryRequired('#verticalOffsetRange'),
+      verticalOffsetValue: queryRequired('#verticalOffsetValue'),
+      scaleRange: queryRequired('#scaleRange'),
+      scaleValue: queryRequired('#scaleValue'),
+      rotationRange: queryRequired('#rotationRange'),
+      rotationValue: queryRequired('#rotationValue'),
+      calibrationHint: queryRequired('#calibrationHint'),
+      saveCalibrationButton: queryRequired('#saveCalibrationButton'),
+      resetTuningButton: queryRequired('#resetTuningButton'),
+      shareSheet: queryRequired('#shareSheet'),
+      shareCard: queryRequired('.share-card'),
+      shareImage: queryRequired('#shareImage'),
+      downloadCaptureButton: queryRequired('#downloadCaptureButton'),
+      shareCaptureButton: queryRequired('#shareCaptureButton'),
+      closeShareButtons: queryRequiredAll('[data-close-share]'),
+      errorBox: queryRequired('#errorBox'),
+      statusPanel: queryRequired('.status-panel'),
+      trackingDot: queryRequired('#trackingDot'),
+      trackingLabel: queryRequired('#trackingLabel'),
+      trackingMetrics: queryRequired('#trackingMetrics'),
     };
   }
 
   bind(handlers) {
+    this.destroy();
+    const listen = (target, eventName, handler, options) => {
+      const dispose = on(target, eventName, handler, options);
+      this.eventDisposers.push(dispose);
+      return dispose;
+    };
+
     this.elements.modeButtons.forEach((button) => {
-      button.addEventListener('click', () => handlers.onModeSelect?.(button.dataset.mode));
+      listen(button, 'click', () => handlers.onModeSelect?.(button.dataset.mode));
     });
 
     this.elements.panelTabs.forEach((button) => {
-      button.addEventListener('click', () => handlers.onPanelSelect?.(button.dataset.panelTab));
+      listen(button, 'click', () => handlers.onPanelSelect?.(button.dataset.panelTab));
     });
 
-    this.elements.bottomSheetToggle.addEventListener('click', () => handlers.onBottomSheetToggle?.());
+    listen(this.elements.bottomSheetToggle, 'click', () => handlers.onBottomSheetToggle?.());
 
-    this.elements.threeCanvas.addEventListener('pointerdown', (event) => handlers.onShowcasePointerDown?.(event));
-    this.elements.threeCanvas.addEventListener('pointermove', (event) => handlers.onShowcasePointerMove?.(event));
-    this.elements.threeCanvas.addEventListener('pointerup', (event) => handlers.onShowcasePointerUp?.(event));
-    this.elements.threeCanvas.addEventListener('pointercancel', (event) => handlers.onShowcasePointerUp?.(event));
-    this.elements.threeCanvas.addEventListener('pointerleave', (event) => handlers.onShowcasePointerUp?.(event));
+    listen(this.elements.threeCanvas, 'pointerdown', (event) => handlers.onShowcasePointerDown?.(event));
+    listen(this.elements.threeCanvas, 'pointermove', (event) => handlers.onShowcasePointerMove?.(event));
+    listen(this.elements.threeCanvas, 'pointerup', (event) => handlers.onShowcasePointerUp?.(event));
+    listen(this.elements.threeCanvas, 'pointercancel', (event) => handlers.onShowcasePointerUp?.(event));
+    listen(this.elements.threeCanvas, 'pointerleave', (event) => handlers.onShowcasePointerUp?.(event));
 
-    this.elements.startButton.addEventListener('click', () => handlers.onStartCamera?.());
-    this.elements.switchCameraButton.addEventListener('click', () => handlers.onSwitchCamera?.());
-    this.elements.stopCameraButton.addEventListener('click', () => handlers.onStopCamera?.());
-    this.elements.captureButton.addEventListener('click', () => handlers.onCapture?.());
+    listen(this.elements.startButton, 'click', () => handlers.onStartCamera?.());
+    listen(this.elements.switchCameraButton, 'click', () => handlers.onSwitchCamera?.());
+    listen(this.elements.stopCameraButton, 'click', () => handlers.onStopCamera?.());
+    listen(this.elements.captureButton, 'click', () => handlers.onCapture?.());
 
-    this.elements.debugToggle.addEventListener('change', () => {
+    listen(this.elements.debugToggle, 'change', () => {
       handlers.onDebugToggle?.(this.elements.debugToggle.checked);
     });
 
-    this.elements.necklaceToggle.addEventListener('change', () => {
+    listen(this.elements.necklaceToggle, 'change', () => {
       handlers.onNecklaceToggle?.(this.elements.necklaceToggle.checked);
     });
 
-    this.elements.necklaceCards.addEventListener('click', (event) => {
+    listen(this.elements.necklaceCards, 'click', (event) => {
       const card = event.target.closest('[data-necklace-id]');
       if (!card) return;
       handlers.onNecklaceSelect?.(card.dataset.necklaceId);
     });
 
-    this.elements.necklaceCards.addEventListener('keydown', (event) => {
+    listen(this.elements.necklaceCards, 'keydown', (event) => {
       const card = event.target.closest('[data-necklace-id]');
       if (!card) return;
 
@@ -119,17 +128,17 @@ export class UiController {
       });
     });
 
-    this.elements.necklaceSelect.addEventListener('change', () => {
+    listen(this.elements.necklaceSelect, 'change', () => {
       handlers.onNecklaceSelect?.(this.elements.necklaceSelect.value);
     });
 
-    this.elements.colorSwatches.addEventListener('click', (event) => {
+    listen(this.elements.colorSwatches, 'click', (event) => {
       const swatch = event.target.closest('[data-color-id]');
       if (!swatch || swatch.disabled) return;
       handlers.onColorSelect?.(swatch.dataset.colorId, swatch.dataset.colorTargetId);
     });
 
-    this.elements.colorSwatches.addEventListener('keydown', (event) => {
+    listen(this.elements.colorSwatches, 'keydown', (event) => {
       const swatch = event.target.closest('[data-color-id]');
       if (!swatch || swatch.disabled) return;
 
@@ -144,19 +153,19 @@ export class UiController {
       });
     });
 
-    this.elements.verticalOffsetRange.addEventListener('input', () => handlers.onTuningInput?.());
-    this.elements.scaleRange.addEventListener('input', () => handlers.onTuningInput?.());
-    this.elements.rotationRange.addEventListener('input', () => handlers.onTuningInput?.());
-    this.elements.saveCalibrationButton.addEventListener('click', () => handlers.onSaveCalibration?.());
-    this.elements.resetTuningButton.addEventListener('click', () => handlers.onResetCalibration?.());
-    this.elements.downloadCaptureButton.addEventListener('click', () => handlers.onDownloadCapture?.());
-    this.elements.shareCaptureButton.addEventListener('click', () => handlers.onShareCapture?.());
+    listen(this.elements.verticalOffsetRange, 'input', () => handlers.onTuningInput?.());
+    listen(this.elements.scaleRange, 'input', () => handlers.onTuningInput?.());
+    listen(this.elements.rotationRange, 'input', () => handlers.onTuningInput?.());
+    listen(this.elements.saveCalibrationButton, 'click', () => handlers.onSaveCalibration?.());
+    listen(this.elements.resetTuningButton, 'click', () => handlers.onResetCalibration?.());
+    listen(this.elements.downloadCaptureButton, 'click', () => handlers.onDownloadCapture?.());
+    listen(this.elements.shareCaptureButton, 'click', () => handlers.onShareCapture?.());
 
     this.elements.closeShareButtons.forEach((button) => {
-      button.addEventListener('click', () => handlers.onCloseShareSheet?.());
+      listen(button, 'click', () => handlers.onCloseShareSheet?.());
     });
 
-    document.addEventListener('keydown', (event) => {
+    listen(document, 'keydown', (event) => {
       if (this.elements.shareSheet.hidden) return;
 
       if (event.key === 'Escape') {
@@ -170,10 +179,15 @@ export class UiController {
       }
     });
 
-    document.addEventListener('focusin', (event) => {
+    listen(document, 'focusin', (event) => {
       if (this.elements.shareSheet.hidden || this.elements.shareCard.contains(event.target)) return;
       this.focusFirstShareSheetControl();
     });
+  }
+
+  destroy() {
+    const disposers = this.eventDisposers.splice(0);
+    disposers.forEach((dispose) => dispose());
   }
 
   populateNecklaceSelect(selectedNecklaceId) {
@@ -701,6 +715,27 @@ export class UiController {
     this.elements.errorBox.hidden = true;
     this.elements.errorBox.textContent = '';
   }
+}
+
+function queryRequired(selector, root = document) {
+  const element = root.querySelector(selector);
+  if (!element) {
+    throw new Error(`Missing required UI element: ${selector}`);
+  }
+  return element;
+}
+
+function queryRequiredAll(selector, root = document) {
+  const elements = [...root.querySelectorAll(selector)];
+  if (!elements.length) {
+    throw new Error(`Missing required UI element: ${selector}`);
+  }
+  return elements;
+}
+
+function on(target, eventName, handler, options) {
+  target.addEventListener(eventName, handler, options);
+  return () => target.removeEventListener(eventName, handler, options);
 }
 
 function getColorOption(necklace, colorId) {
