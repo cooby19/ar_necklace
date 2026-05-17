@@ -140,12 +140,28 @@ http://localhost:5173
 本專案使用 Vitest 補輕量單元測試，優先覆蓋不需要真實相機、MediaPipe 或 WebGL 的純邏輯。這些測試主要保護 ModeController 重構後拆出的 app services 與狀態轉換規則。
 
 ```bash
+npm run lint
 npm run typecheck
 npm test
 npm run build
 npm run test:visual
+npm run test:a11y
+npm run budget
+npm run lighthouse
 npm audit --omit=dev
 ```
+
+各命令用途：
+
+- `npm run lint`：使用 ESLint 檢查 browser ESM、Vite config、測試與 Node 腳本的常見 JavaScript 問題。
+- `npm run typecheck`：執行漸進式 TypeScript boundary 檢查。
+- `npm test`：執行 Vitest 單元測試。
+- `npm run build`：產出 production bundle 到 `dist/`。
+- `npm run test:visual`：用 Playwright/Chromium 比對 showcase 與分享預覽的桌面、平板、手機截圖。
+- `npm run test:a11y`：用 Playwright + axe-core 掃描 showcase 初始畫面與分享預覽狀態，不需要相機權限。
+- `npm run budget`：檢查 `dist/assets` 的 JS/CSS、`public/models/*.glb` 與 MediaPipe Face Mesh vendored 重要資產大小，需先執行 `npm run build`。
+- `npm run lighthouse`：用 build 後的 Vite preview 跑 Lighthouse showcase 頁面，門檻先採保守 baseline，需先執行 `npm run build`。
+- `npm audit --omit=dev`：只檢查 production dependencies；CI 目前以 warning + report artifact 呈現既有 advisory。
 
 目前單元測試重點：
 

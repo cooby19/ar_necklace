@@ -8,7 +8,7 @@ export default defineConfig({
   fullyParallel: true,
   workers: process.env.CI ? 1 : undefined,
   retries: process.env.CI ? 1 : 0,
-  reporter: [['list'], ['html', { open: 'never' }]],
+  reporter: [['list'], ['html', { open: 'never', outputFolder: 'playwright-report/visual' }]],
   expect: {
     toHaveScreenshot: {
       animations: 'disabled',
