@@ -8,6 +8,7 @@ const FOCUSABLE_SELECTOR = [
   'textarea:not([disabled])',
   '[tabindex]:not([tabindex="-1"])',
 ].join(',');
+const PREVIOUS_TABINDEX_ATTRIBUTE = 'data-share-previous-tabindex';
 
 export class UiController {
   constructor({ necklaces }) {
@@ -674,9 +675,7 @@ export class UiController {
   }
 
   getShareSheetFocusableElements() {
-    return [...this.elements.shareCard.querySelectorAll(FOCUSABLE_SELECTOR)].filter(
-      (element) => !element.disabled && element.tabIndex !== -1 && isElementVisible(element),
-    );
+    return getVisibleFocusableElements(this.elements.shareCard);
   }
 
   setDeveloperPanelVisible(isVisible) {
@@ -717,6 +716,7 @@ export class UiController {
   }
 }
 
+// DOM lookup and listener helpers.
 function queryRequired(selector, root = document) {
   const element = root.querySelector(selector);
   if (!element) {
@@ -738,20 +738,7 @@ function on(target, eventName, handler, options) {
   return () => target.removeEventListener(eventName, handler, options);
 }
 
-function getColorOption(necklace, colorId) {
-  const palette = necklace.colorCustomization?.palette ?? [];
-  return palette.find((colorOption) => colorOption.id === colorId);
-}
-
-function formatSignedNumber(value) {
-  if (value > 0) return `+${value}`;
-  return String(value);
-}
-
-function clamp(value, min, max) {
-  return Math.min(max, Math.max(min, value));
-}
-
+// Radio group keyboard helpers.
 function handleRadioKeydown(event, { currentItem, items, onSelect }) {
   if (!items.length) return;
 
@@ -795,28 +782,52 @@ function wrapIndex(index, length) {
   return (index + length) % length;
 }
 
+// Focus and background inertness helpers.
+function getVisibleFocusableElements(root) {
+  return [...root.querySelectorAll(FOCUSABLE_SELECTOR)].filter(isElementFocusable);
+}
+
+function isElementFocusable(element) {
+  return !element.disabled && element.tabIndex !== -1 && isElementVisible(element);
+}
+
 function isElementVisible(element) {
   return Boolean(element.offsetWidth || element.offsetHeight || element.getClientRects().length);
 }
 
 function setBackgroundFocusableState(root, isInert) {
-  root.querySelectorAll(`${FOCUSABLE_SELECTOR}, [data-share-previous-tabindex]`).forEach((element) => {
+  root.querySelectorAll(`${FOCUSABLE_SELECTOR}, [${PREVIOUS_TABINDEX_ATTRIBUTE}]`).forEach((element) => {
     if (isInert) {
-      if (!element.hasAttribute('data-share-previous-tabindex')) {
-        element.setAttribute('data-share-previous-tabindex', element.getAttribute('tabindex') ?? '');
+      if (!element.hasAttribute(PREVIOUS_TABINDEX_ATTRIBUTE)) {
+        element.setAttribute(PREVIOUS_TABINDEX_ATTRIBUTE, element.getAttribute('tabindex') ?? '');
       }
       element.tabIndex = -1;
       return;
     }
 
-    if (!element.hasAttribute('data-share-previous-tabindex')) return;
+    if (!element.hasAttribute(PREVIOUS_TABINDEX_ATTRIBUTE)) return;
 
-    const previousTabIndex = element.getAttribute('data-share-previous-tabindex');
+    const previousTabIndex = element.getAttribute(PREVIOUS_TABINDEX_ATTRIBUTE);
     if (previousTabIndex) {
       element.setAttribute('tabindex', previousTabIndex);
     } else {
       element.removeAttribute('tabindex');
     }
-    element.removeAttribute('data-share-previous-tabindex');
+    element.removeAttribute(PREVIOUS_TABINDEX_ATTRIBUTE);
   });
+}
+
+// Formatting and small data helpers.
+function getColorOption(necklace, colorId) {
+  const palette = necklace.colorCustomization?.palette ?? [];
+  return palette.find((colorOption) => colorOption.id === colorId);
+}
+
+function formatSignedNumber(value) {
+  if (value > 0) return `+${value}`;
+  return String(value);
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
 }
