@@ -4,8 +4,6 @@ import {
   DirectionalLight,
   Group,
   HemisphereLight,
-  MathUtils,
-  MeshBasicMaterial,
   OrthographicCamera,
   PMREMGenerator,
   PointLight,
@@ -15,40 +13,11 @@ import {
   WebGLRenderer,
 } from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { GlbAssetLoader } from './GlbAssetLoader.js';
+import { MaterialCustomizationEngine } from './MaterialCustomizationEngine.js';
+import { ModelResourceDisposer } from './ModelResourceDisposer.js';
+import { OccluderProcessor } from './OccluderProcessor.js';
 import { observeStageSize } from '../utils/stageResize.js';
-
-const GEM_NAME_PATTERN = /(gem|gemstone|jewel|stone)/i;
-const MAX_GLB_BUFFER_CACHE_ENTRIES = 5;
-const OPACITY_UPDATE_EPSILON = 0.003;
-const MATERIAL_TEXTURE_KEYS = [
-  'alphaMap',
-  'anisotropyMap',
-  'aoMap',
-  'bumpMap',
-  'clearcoatMap',
-  'clearcoatNormalMap',
-  'clearcoatRoughnessMap',
-  'displacementMap',
-  'emissiveMap',
-  'envMap',
-  'gradientMap',
-  'iridescenceMap',
-  'iridescenceThicknessMap',
-  'lightMap',
-  'map',
-  'matcap',
-  'metalnessMap',
-  'normalMap',
-  'roughnessMap',
-  'sheenColorMap',
-  'sheenRoughnessMap',
-  'specularColorMap',
-  'specularIntensityMap',
-  'specularMap',
-  'thicknessMap',
-  'transmissionMap',
-];
 
 export class NecklaceScene {
   constructor({ canvas, stageElement, onError }) {
@@ -62,19 +31,19 @@ export class NecklaceScene {
       alpha: true,
       antialias: true,
     });
-    this.loader = new GLTFLoader();
     this.necklaceRoot = new Group();
     this.pmremGenerator = new PMREMGenerator(this.renderer);
     this.environmentMap = null;
     this.currentModel = null;
     this.modelConfig = null;
-    this.colorableMaterials = new Map();
-    this.opacityMaterials = [];
-    this.glbBufferCache = new Map();
+    this.assetLoader = new GlbAssetLoader();
+    this.resourceDisposer = new ModelResourceDisposer({
+      getEnvironmentMap: () => this.environmentMap,
+    });
+    this.occluderProcessor = new OccluderProcessor();
+    this.materialCustomization = new MaterialCustomizationEngine();
     this.activeModelLoad = null;
     this.modelLoadSequence = 0;
-    this.opacity = 0;
-    this.appliedOpacity = 0;
     this.showcase = {
       enabled: false,
       isDragging: false,
@@ -129,26 +98,21 @@ export class NecklaceScene {
       this.disposeCurrentModel();
       this.necklaceRoot.clear();
       this.currentModel = null;
-      this.colorableMaterials.clear();
-      this.opacityMaterials = [];
-      this.opacity = 0;
-      this.appliedOpacity = 0;
+      this.materialCustomization.reset();
       this.showcase.lastTime = 0;
 
-      const loadStartedAt = performance.now();
-      const glbBuffer = await this.fetchGlbFile(config.url, this.activeModelLoad.signal);
-      this.assertModelLoadCurrent(loadId);
-      const fetchCompletedAt = performance.now();
-      const gltf = await this.parseGlbFile(glbBuffer.slice(0), config.url);
+      const { gltf, timings } = await this.assetLoader.loadGlb(config.url, this.activeModelLoad.signal, {
+        onFetchComplete: () => this.assertModelLoadCurrent(loadId),
+      });
       nextModel = gltf.scene;
       this.assertModelLoadCurrent(loadId);
-      const parseCompletedAt = performance.now();
+      const prepareStartedAt = performance.now();
       const model = nextModel;
-      this.markOccluderParts(model);
+      this.occluderProcessor.process(model, config.occluderParts);
       this.prepareModel(model);
-      this.prepareGemMaterials(model);
-      this.collectOpacityMaterials(model);
-      this.collectColorableMaterials(model);
+      this.materialCustomization.prepareGemMaterials(model);
+      this.materialCustomization.collectOpacityMaterials(model);
+      this.materialCustomization.collectColorableMaterials(model, config.colorCustomization?.targets ?? []);
       const prepareCompletedAt = performance.now();
       this.currentModel = model;
       this.necklaceRoot.add(model);
@@ -156,11 +120,11 @@ export class NecklaceScene {
       this.setVisible(false);
       this.finishModelLoad(loadId);
       nextModel = null;
-      this.logLoadTimings(config, {
-        fetchMs: fetchCompletedAt - loadStartedAt,
-        parseMs: parseCompletedAt - fetchCompletedAt,
-        prepareMs: prepareCompletedAt - parseCompletedAt,
-        totalMs: prepareCompletedAt - loadStartedAt,
+      this.assetLoader.logLoadTimings(config, {
+        fetchMs: timings.fetchMs,
+        parseMs: timings.parseMs,
+        prepareMs: prepareCompletedAt - prepareStartedAt,
+        totalMs: timings.totalAssetMs + (prepareCompletedAt - prepareStartedAt),
       });
       return model;
     } catch (error) {
@@ -169,7 +133,7 @@ export class NecklaceScene {
         if (this.currentModel === nextModel) {
           this.currentModel = null;
         }
-        this.disposeObject3DResources(nextModel);
+        this.resourceDisposer.disposeObject3DResources(nextModel);
       }
       this.finishModelLoad(loadId);
       throw error;
@@ -178,79 +142,7 @@ export class NecklaceScene {
 
   disposeCurrentModel() {
     if (!this.currentModel) return;
-    this.disposeObject3DResources(this.currentModel);
-  }
-
-  disposeObject3DResources(root) {
-    const disposedGeometries = new Set();
-    const disposedMaterials = new Set();
-    const disposedTextures = new Set();
-
-    root.traverse((child) => {
-      if (!child.isMesh) return;
-
-      this.disposeGeometry(child.geometry, disposedGeometries);
-      this.disposeMaterials(child.material, disposedMaterials, disposedTextures);
-      this.disposeMaterials(child.userData.originalOccluderMaterials, disposedMaterials, disposedTextures);
-      delete child.userData.originalOccluderMaterials;
-    });
-  }
-
-  disposeGeometry(geometry, disposedGeometries) {
-    if (!geometry || disposedGeometries.has(geometry)) return;
-    disposedGeometries.add(geometry);
-    geometry.dispose();
-  }
-
-  disposeMaterials(materialOrMaterials, disposedMaterials, disposedTextures) {
-    this.normalizeMaterialList(materialOrMaterials).forEach((material) => {
-      if (disposedMaterials.has(material)) return;
-      disposedMaterials.add(material);
-      this.disposeMaterialTextures(material, disposedTextures);
-      material.dispose();
-    });
-  }
-
-  normalizeMaterialList(materialOrMaterials) {
-    if (!materialOrMaterials) return [];
-    return Array.isArray(materialOrMaterials) ? materialOrMaterials.filter(Boolean) : [materialOrMaterials];
-  }
-
-  disposeMaterialTextures(material, disposedTextures) {
-    const visitedValues = new Set();
-    MATERIAL_TEXTURE_KEYS.forEach((key) => {
-      this.disposeTextureLike(material[key], disposedTextures, visitedValues);
-    });
-    Object.values(material).forEach((value) => {
-      this.disposeTextureLike(value, disposedTextures, visitedValues);
-    });
-  }
-
-  disposeTextureLike(value, disposedTextures, visitedValues, depth = 0) {
-    if (!value || typeof value !== 'object' || visitedValues.has(value)) return;
-    visitedValues.add(value);
-
-    if (value.isTexture && typeof value.dispose === 'function') {
-      if (value === this.environmentMap || disposedTextures.has(value)) return;
-      disposedTextures.add(value);
-      value.dispose();
-      return;
-    }
-
-    if (Array.isArray(value)) {
-      value.forEach((item) => this.disposeTextureLike(item, disposedTextures, visitedValues, depth + 1));
-      return;
-    }
-
-    if ('value' in value) {
-      this.disposeTextureLike(value.value, disposedTextures, visitedValues, depth + 1);
-      return;
-    }
-
-    if (depth >= 1) return;
-    Object.values(value).forEach((nestedValue) => {
-      this.disposeTextureLike(nestedValue, disposedTextures, visitedValues, depth + 1);
-    });
+    this.resourceDisposer.disposeObject3DResources(this.currentModel);
   }
 
   beginModelLoad(config) {
@@ -287,92 +179,6 @@ export class NecklaceScene {
     }
   }
 
-  async fetchGlbFile(url, signal) {
-    const cachedBuffer = this.getCachedGlbBuffer(url);
-    if (cachedBuffer) return cachedBuffer;
-
-    const cacheMode = import.meta.env.DEV ? 'no-store' : 'default';
-    const response = await fetch(url, { cache: cacheMode, signal });
-
-    if (!response.ok) {
-      throw new Error(`模型檔無法讀取，HTTP ${response.status}`);
-    }
-
-    const buffer = await response.arrayBuffer();
-    this.assertGlbFile(buffer, url, response.headers.get('content-type') ?? '');
-    this.setCachedGlbBuffer(url, buffer);
-    return buffer;
-  }
-
-  getCachedGlbBuffer(url) {
-    const buffer = this.glbBufferCache.get(url);
-    if (!buffer) return null;
-
-    this.glbBufferCache.delete(url);
-    this.glbBufferCache.set(url, buffer);
-    return buffer;
-  }
-
-  setCachedGlbBuffer(url, buffer) {
-    this.glbBufferCache.delete(url);
-    this.glbBufferCache.set(url, buffer);
-    this.trimGlbBufferCache();
-  }
-
-  trimGlbBufferCache() {
-    while (this.glbBufferCache.size > MAX_GLB_BUFFER_CACHE_ENTRIES) {
-      const oldestUrl = this.glbBufferCache.keys().next().value;
-      this.glbBufferCache.delete(oldestUrl);
-    }
-  }
-
-  logLoadTimings(config, timings) {
-    if (!import.meta.env.DEV) return;
-
-    console.debug('[NecklaceScene] GLB load timing', {
-      id: config.id,
-      url: config.url,
-      fetchMs: Math.round(timings.fetchMs),
-      parseMs: Math.round(timings.parseMs),
-      prepareMs: Math.round(timings.prepareMs),
-      totalMs: Math.round(timings.totalMs),
-    });
-  }
-
-  assertGlbFile(buffer, url, contentType) {
-    if (buffer.byteLength < 20) {
-      throw new Error(`模型檔太小，無法解析 GLB。請確認檔案位置是 ${url}`);
-    }
-
-    const view = new DataView(buffer);
-    const bytes = new Uint8Array(buffer, 0, 4);
-    const magic = String.fromCharCode(...bytes.slice(0, 4));
-
-    if (magic !== 'glTF') {
-      const looksLikeHtml = contentType.includes('text/html') || magic.startsWith('<');
-      const reason = looksLikeHtml ? '目前路徑回傳 HTML，通常代表檔案不存在或 URL 錯誤' : '檔案標頭不是 GLB';
-      throw new Error(`${reason}。請確認檔案位置是 ${url}`);
-    }
-
-    const version = view.getUint32(4, true);
-    const declaredLength = view.getUint32(8, true);
-
-    if (version !== 2) {
-      throw new Error(`GLB 版本 ${version} 不支援，請使用 glTF 2.0 匯出的 .glb。`);
-    }
-
-    if (declaredLength !== buffer.byteLength) {
-      throw new Error(
-        `GLB 檔案長度不完整或已損毀，標頭宣告 ${declaredLength} bytes，實際讀到 ${buffer.byteLength} bytes。`,
-      );
-    }
-  }
-
-  parseGlbFile(buffer, url) {
-    const assetBasePath = url.slice(0, url.lastIndexOf('/') + 1);
-    return this.loader.parseAsync(buffer, assetBasePath);
-  }
-
   prepareModel(model) {
     const box = new Box3().setFromObject(model);
     const size = box.getSize(new Vector3());
@@ -394,7 +200,6 @@ export class NecklaceScene {
       child.frustumCulled = false;
 
       if (child.userData.isDepthOccluder) {
-        this.prepareDepthOccluder(child);
         return;
       }
 
@@ -409,216 +214,20 @@ export class NecklaceScene {
     });
   }
 
-  prepareGemMaterials(model) {
-    const materialUseCounts = this.countMaterialUsage(model);
-
-    model.traverse((child) => {
-      if (!this.isGemMesh(child) || child.userData.isDepthOccluder) return;
-
-      const materials = Array.isArray(child.material) ? child.material : [child.material];
-      const tunedMaterials = materials.map((material) => {
-        if (!material) return material;
-
-        const gemMaterial = materialUseCounts.get(material.uuid) > 1 ? material.clone() : material;
-        this.applyGemMaterialTuning(gemMaterial);
-        return gemMaterial;
-      });
-
-      child.material = Array.isArray(child.material) ? tunedMaterials : tunedMaterials[0];
-      child.renderOrder = 2;
-    });
-  }
-
-  countMaterialUsage(model) {
-    const counts = new Map();
-
-    model.traverse((child) => {
-      if (!child.isMesh || !child.material) return;
-      const materials = Array.isArray(child.material) ? child.material : [child.material];
-      materials.forEach((material) => {
-        if (!material) return;
-        counts.set(material.uuid, (counts.get(material.uuid) ?? 0) + 1);
-      });
-    });
-
-    return counts;
-  }
-
-  isGemMesh(mesh) {
-    if (!mesh.isMesh || !mesh.material) return false;
-
-    const materialNames = (Array.isArray(mesh.material) ? mesh.material : [mesh.material])
-      .map((material) => material?.name)
-      .filter(Boolean)
-      .join(' ');
-    const names = [mesh.name, mesh.geometry?.name, materialNames].filter(Boolean).join(' ');
-    return GEM_NAME_PATTERN.test(names);
-  }
-
-  applyGemMaterialTuning(material) {
-    material.userData = {
-      ...material.userData,
-      isGemMaterial: true,
-    };
-
-    if ('envMapIntensity' in material) {
-      material.envMapIntensity = Math.max(material.envMapIntensity ?? 1, 2.4);
-    }
-
-    if ('roughness' in material) {
-      material.roughness = MathUtils.clamp(material.roughness ?? 0.16, 0.08, 0.24);
-    }
-
-    if (material.normalScale?.isVector2) {
-      if (!material.userData.gemBaseNormalScale) {
-        material.userData.gemBaseNormalScale = material.normalScale.clone();
-      }
-      material.normalScale.copy(material.userData.gemBaseNormalScale).multiplyScalar(1.35);
-    }
-
-    if ('reflectivity' in material) {
-      material.reflectivity = Math.max(material.reflectivity ?? 0.5, 0.72);
-    }
-
-    if ('ior' in material) {
-      material.ior = MathUtils.clamp(material.ior ?? 1.5, 1.5, 1.72);
-    }
-
-    if ('transmission' in material) {
-      material.transmission = Math.min(material.transmission ?? 0, 0.08);
-    }
-
-    material.needsUpdate = true;
-  }
-
-  markOccluderParts(model) {
-    const occluderParts = this.modelConfig?.occluderParts;
-    if (!occluderParts?.nameIncludes?.length) return;
-
-    model.traverse((child) => {
-      if (child === model) return;
-      if (this.shouldMatchPart(child, occluderParts)) {
-        child.userData.isDepthOccluder = true;
-      }
-    });
-  }
-
-  shouldMatchPart(object, partConfig) {
-    const names = [
-      object.name,
-      object.isMesh ? object.geometry?.name : '',
-      object.isMesh && object.material
-        ? (Array.isArray(object.material) ? object.material : [object.material])
-            .map((material) => material.name)
-            .join(' ')
-        : '',
-    ]
-      .filter(Boolean)
-      .join(' ')
-      .toLowerCase();
-
-    return partConfig.nameIncludes.some((keyword) => names.includes(keyword.toLowerCase()));
-  }
-
-  prepareDepthOccluder(mesh) {
-    if (!mesh.userData.originalOccluderMaterials) {
-      mesh.userData.originalOccluderMaterials = this.normalizeMaterialList(mesh.material);
-    }
-
-    mesh.renderOrder = 0;
-    mesh.material = new MeshBasicMaterial({
-      colorWrite: false,
-      depthWrite: true,
-      depthTest: true,
-      transparent: false,
-    });
-    mesh.material.needsUpdate = true;
-  }
-
-  collectColorableMaterials(model) {
-    const targets = this.modelConfig?.colorCustomization?.targets ?? [];
-    if (!targets.length) return;
-
-    const matchedMaterialsByTarget = new Map();
-    const visited = new Set();
-
-    model.traverse((child) => {
-      if (!child.isMesh || !child.material || child.userData.isDepthOccluder) return;
-      const materials = Array.isArray(child.material) ? child.material : [child.material];
-
-      materials.forEach((material) => {
-        if (!material?.color?.isColor || visited.has(material.uuid)) return;
-        visited.add(material.uuid);
-
-        targets.forEach((target) => {
-          if (!this.materialMatchesTarget(material, target)) return;
-          const targetMaterials = matchedMaterialsByTarget.get(target.id) ?? [];
-          targetMaterials.push(material);
-          matchedMaterialsByTarget.set(target.id, targetMaterials);
-        });
-      });
-    });
-
-    matchedMaterialsByTarget.forEach((materials, targetId) => {
-      this.colorableMaterials.set(targetId, materials);
-    });
-  }
-
-  collectOpacityMaterials(model) {
-    const visited = new Set();
-    const opacityMaterials = [];
-
-    model.traverse((child) => {
-      if (!child.isMesh || !child.material || child.userData.isDepthOccluder) return;
-      const materials = Array.isArray(child.material) ? child.material : [child.material];
-
-      materials.forEach((material) => {
-        if (!material || visited.has(material.uuid)) return;
-        visited.add(material.uuid);
-        opacityMaterials.push(material);
-      });
-    });
-
-    this.opacityMaterials = opacityMaterials;
-  }
-
-  materialMatchesTarget(material, target) {
-    const materialName = (material.name ?? '').toLowerCase();
-    return target.materialNameIncludes?.some((keyword) => materialName.includes(keyword.toLowerCase()));
-  }
-
   getColorableTargets() {
-    return [...this.colorableMaterials.keys()];
+    return this.materialCustomization.getColorableTargets();
   }
 
   hasColorableMaterials() {
-    return this.colorableMaterials.size > 0;
+    return this.materialCustomization.hasColorableMaterials();
   }
 
   getColorableMaterialCount() {
-    const materials = [...this.colorableMaterials.values()].flat();
-    return new Set(materials.map((material) => material.uuid)).size;
+    return this.materialCustomization.getColorableMaterialCount();
   }
 
   applyColor(target, color) {
-    const materials = this.resolveColorableMaterials(target);
-    if (!materials.length) return false;
-
-    materials.forEach((material) => {
-      material.color.set(color);
-      material.needsUpdate = true;
-    });
-
-    return true;
-  }
-
-  resolveColorableMaterials(target) {
-    if (target === 'all') {
-      const materials = [...this.colorableMaterials.values()].flat();
-      return [...new Map(materials.map((material) => [material.uuid, material])).values()];
-    }
-
-    return this.colorableMaterials.get(target) ?? [];
+    return this.materialCustomization.applyColor(target, color);
   }
 
   applyAssetTransform() {
@@ -692,16 +301,8 @@ export class NecklaceScene {
   }
 
   setOpacity(opacity) {
-    const nextOpacity = MathUtils.clamp(opacity, 0, 1);
-    this.opacity = nextOpacity;
+    const nextOpacity = this.materialCustomization.setOpacity(opacity);
     this.necklaceRoot.visible = nextOpacity > 0.015;
-
-    if (Math.abs(nextOpacity - this.appliedOpacity) < OPACITY_UPDATE_EPSILON) return;
-
-    this.opacityMaterials.forEach((material) => {
-      material.opacity = nextOpacity;
-    });
-    this.appliedOpacity = nextOpacity;
   }
 
   updateTransform({ position, scale, rotationY, rotationZ }) {
@@ -770,9 +371,8 @@ export class NecklaceScene {
     this.disposeCurrentModel();
     this.necklaceRoot.clear();
     this.currentModel = null;
-    this.colorableMaterials.clear();
-    this.opacityMaterials = [];
-    this.glbBufferCache.clear();
+    this.materialCustomization.reset();
+    this.assetLoader.clearCache();
     if (this.scene) {
       this.scene.environment = null;
     }
