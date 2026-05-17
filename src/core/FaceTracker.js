@@ -157,6 +157,20 @@ export class FaceTracker {
   /**
    * @returns {void}
    */
+  pause() {
+    this.stop();
+  }
+
+  /**
+   * @returns {Promise<void>}
+   */
+  async resume() {
+    await this.start();
+  }
+
+  /**
+   * @returns {void}
+   */
   scheduleNextFrame() {
     if (!this.isRunning) return;
 

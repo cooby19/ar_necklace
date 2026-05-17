@@ -141,6 +141,21 @@ export class ArSessionService {
   /**
    * @returns {void}
    */
+  pauseTracking() {
+    this.faceTracker.pause();
+  }
+
+  /**
+   * @returns {Promise<void>}
+   */
+  async resumeTracking() {
+    if (!this.camera.isActive()) return;
+    await this.faceTracker.resume();
+  }
+
+  /**
+   * @returns {void}
+   */
   stop() {
     this.camera.stop();
     this.faceTracker.stop();

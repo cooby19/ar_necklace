@@ -120,9 +120,6 @@ export class AppState {
       cameraFacingMode: CAMERA_FACING_MODES.USER,
       isSwitchingCamera: false,
       modelLoaded: false,
-      hasFace: false,
-      lastLandmarks: null,
-      lastDebugData: null,
       selectedNecklace: defaultNecklace,
       selectedColorId: defaultNecklace?.colorCustomization?.defaultColor ?? '',
       selectedColorIdsByTarget: createDefaultColorSelection(defaultNecklace),
@@ -319,44 +316,27 @@ export function createSessionPatch(nextStatus, patch = {}) {
       ...nextPatch,
       cameraStarted: false,
       isSwitchingCamera: false,
-      hasFace: false,
-      lastLandmarks: null,
-      lastDebugData: null,
     };
   }
 
   if (nextStatus === AR_SESSION_STATES.CAMERA_STARTING) {
     return {
       ...nextPatch,
-      hasFace: false,
-      lastLandmarks: null,
-      lastDebugData: null,
     };
   }
 
   if (nextStatus === AR_SESSION_STATES.NO_FACE) {
-    return {
-      ...nextPatch,
-      hasFace: false,
-      lastLandmarks: null,
-      lastDebugData: null,
-    };
+    return nextPatch;
   }
 
   if (nextStatus === AR_SESSION_STATES.TRACKING) {
-    return {
-      ...nextPatch,
-      hasFace: true,
-    };
+    return nextPatch;
   }
 
   if (nextStatus === AR_SESSION_STATES.ERROR && nextPatch.cameraStarted === false) {
     return {
       ...nextPatch,
       isSwitchingCamera: false,
-      hasFace: false,
-      lastLandmarks: null,
-      lastDebugData: null,
     };
   }
 

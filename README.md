@@ -34,6 +34,7 @@
     │   ├── ModelCatalogService.js
     │   ├── ModelCatalogService.test.js
     │   ├── ModeController.js
+    │   ├── RealtimeTrackingStore.js
     │   ├── RendererLoop.js
     │   ├── ShareWorkflow.js
     │   ├── ShareWorkflow.test.js
@@ -70,17 +71,19 @@ UiController intent
   -> ModeController
   -> src/app/*Service 或 *Workflow
   -> src/core/*、NecklaceScene、FaceTracker、CaptureService
-  -> AppState + UiController sync
+  -> AppState durable state + RealtimeTrackingStore sampled state
+  -> UiController sync
 ```
 
 目前 app services 的責任如下：
 
 - `ArSessionService`：包裝 `CameraStream` 與 `FaceTracker`，管理 start、stop、switch camera、selfie mode 與 session reset。
 - `ModelCatalogService`：管理項鍊款式查找、模型載入序列、可換色 target、預設色票與 `NecklaceScene.applyColor()` 流程。
-- `RendererLoop`：管理 `requestAnimationFrame`、render FPS、showcase update、Three.js render 與 debug overlay render。
+- `RealtimeTrackingStore`：保存每幀 landmarks、debugData、hasFace、frame sequence、FaceTracker stats 與 render stats，不觸發 DOM 全量同步。
+- `RendererLoop`：管理 dirty render、AR live RAF、showcase 自轉 RAF、background pause、render FPS、Three.js render 與 debug overlay render。
 - `CalibrationService`：管理 `WearCalibration`、拖曳校準、調參 normalize、save/reset/load 與校準提示狀態。
 - `ShareWorkflow`：管理截圖前置檢查、capture、download、native share fallback 與分享狀態資料。
-- `TrackingFeedbackService`：組裝 FaceTracker stats、render FPS、FaceQualityAdvisor advice、developer panel 與 debug status 文字。
+- `TrackingFeedbackService`：從節流後的 realtime snapshot 組裝 FaceTracker stats、render FPS、FaceQualityAdvisor advice、developer panel 與 debug status 文字。
 
 ## 漸進式 TypeScript 狀態
 
@@ -95,7 +98,7 @@ UiController intent
 
 - `AppState` 與 AR session lifecycle。
 - config schema：`tuning`、`necklaces`。
-- MediaPipe results、FaceTracker、ArSessionService、ModeController、NecklaceController、landmark metrics 的資料流。
+- MediaPipe results、RealtimeTrackingStore、FaceTracker、ArSessionService、ModeController、NecklaceController、landmark metrics 的資料流。
 - model/color、calibration、share、tracking feedback、renderer loop、camera stream、debug overlay、capture service。
 - pure logic：landmarks、Smoother、WearCalibration、FaceQualityAdvisor。
 
@@ -107,13 +110,15 @@ UiController intent
 
 目前不建議打開全域 `checkJs`，也不建議直接把 `UiController` 或 `NecklaceScene` 整包轉成 TypeScript。維護時優先持續保護 runtime 資料形狀容易錯接的 service boundary。
 
-`AppState` 保留一般 UI 狀態與資料，但 AR session lifecycle 另有輕量狀態欄位 `sessionStatus`。合法轉換大致為：
+`AppState` 保留 durable UI state，例如 mode、sessionStatus、cameraStarted、selectedNecklace、debugEnabled、capture/share 狀態與校準調參。每幀 landmarks、debugData、hasFace、frame sequence、tracker stats 與 render stats 放在 `RealtimeTrackingStore`。UI 只訂閱 `AppState` 以及節流後的 realtime snapshot，FaceMesh result 不再每幀觸發 DOM 同步。
+
+AR session lifecycle 以 `sessionStatus` 表達，合法轉換大致為：
 
 ```text
 showcase -> arIdle -> cameraStarting -> noFace <-> tracking -> capturing -> sharing
 ```
 
-`error` 可由各階段進入，使用者重新切換模式或啟動相機後再回到正常流程。`showcase`、`arIdle`、`cameraStarting`、`noFace` 會清掉過期的 landmarks/debug data，避免出現相機已關閉卻保留舊追蹤資料的狀態組合。
+`error` 可由各階段進入，使用者重新切換模式或啟動相機後再回到正常流程。離開相機、切換鏡頭或進入背景時會清空 `RealtimeTrackingStore` 的 live tracking data，避免相機已關閉卻保留舊追蹤資料。
 
 ## 啟動方式
 
@@ -142,7 +147,10 @@ npm run typecheck
 
 目前單元測試重點：
 
-- `AppState`：AR session 合法/不合法 transition，以及 `showcase`、`arIdle`、`cameraStarting`、`noFace` 對過期 landmarks/debug data 的清理。
+- `AppState`：AR session 合法/不合法 transition，以及 durable UI state cleanup。
+- `RealtimeTrackingStore`：每幀資料、debugData、frame sequence、tracker stats 與 render stats。
+- `RendererLoop`：dirty idle render、AR live RAF、background pause/resume 的模式切換。
+- `ModeController`：FaceMesh result 寫入 realtime store，且只在 `noFace`/`tracking` 實際變化時 transition。
 - `ModelCatalogService`：預設顏色選擇、換色 target fallback、matched target label 與套色呼叫。
 - `CalibrationService`：調參 normalize、save/load/reset hint、localStorage 可用與不可用情境。
 - `ShareWorkflow`：截圖前置阻擋條件，包含相機未開、沒有目前影格、未偵測到臉與項鍊隱藏。

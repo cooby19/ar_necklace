@@ -88,6 +88,13 @@ export class CameraStream {
   }
 
   /**
+   * @returns {boolean}
+   */
+  isActive() {
+    return Boolean(this.stream?.getVideoTracks()?.some((track) => track.readyState === 'live'));
+  }
+
+  /**
    * @returns {void}
    */
   stop() {

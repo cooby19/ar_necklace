@@ -5,6 +5,7 @@
 /** @typedef {import('../types/domain').FaceLandmarkList} FaceLandmarkList */
 /** @typedef {import('../types/domain').FaceTrackingAdvice} FaceTrackingAdvice */
 /** @typedef {import('../types/domain').NecklaceDebugData} NecklaceDebugData */
+/** @typedef {import('../types/domain').RealtimeTrackingSnapshot} RealtimeTrackingSnapshot */
 /** @typedef {import('../types/domain').RenderStats} RenderStats */
 /** @typedef {import('../types/domain').TrackerStats} TrackerStats */
 /** @typedef {import('../types/domain').WorkflowStatusView} WorkflowStatusView */
@@ -46,11 +47,12 @@ export class TrackingFeedbackService {
 
   /**
    * @param {AppStateSnapshot} state
+   * @param {RealtimeTrackingSnapshot} realtime
    * @returns {DeveloperPanelModel}
    */
-  createDeveloperPanelModel(state) {
+  createDeveloperPanelModel(state, realtime) {
     return {
-      debugData: state.lastDebugData,
+      debugData: realtime.debugData,
       stats: {
         ...this.getTrackerStats(),
         renderFps: this.getRenderStats().fps,
@@ -62,19 +64,20 @@ export class TrackingFeedbackService {
 
   /**
    * @param {AppStateSnapshot} state
+   * @param {RealtimeTrackingSnapshot} realtime
    * @returns {WorkflowStatusView | null}
    */
-  createTrackingStatus(state) {
+  createTrackingStatus(state, realtime) {
     if (!state.cameraStarted) return null;
 
     const inferenceStats = this.formatInferenceStats();
     const advice = this.faceQualityAdvisor.getAdvice({
-      landmarks: state.lastLandmarks,
-      debugData: state.lastDebugData,
+      landmarks: realtime.latestLandmarks,
+      debugData: realtime.debugData,
     });
-    const message = this.formatAdviceMessage(advice, inferenceStats, state);
+    const message = this.formatAdviceMessage(advice, inferenceStats, state, realtime);
 
-    if (!state.hasFace || !state.lastDebugData) {
+    if (!realtime.hasFace || !realtime.debugData) {
       return {
         kind: advice.kind,
         label: advice.label,
@@ -82,7 +85,7 @@ export class TrackingFeedbackService {
       };
     }
 
-    const data = state.lastDebugData;
+    const data = realtime.debugData;
     return {
       kind: advice.kind,
       label: advice.label,
@@ -96,14 +99,15 @@ export class TrackingFeedbackService {
    * @param {FaceTrackingAdvice} advice
    * @param {string} inferenceStats
    * @param {AppStateSnapshot} state
+   * @param {RealtimeTrackingSnapshot} realtime
    * @returns {string}
    */
-  formatAdviceMessage(advice, inferenceStats, state) {
+  formatAdviceMessage(advice, inferenceStats, state, realtime) {
     let message = advice.message;
 
     if (
       advice.id === 'ok' &&
-      state.lastDebugData &&
+      realtime.debugData &&
       !this.calibrationService.hasCalibration(state.selectedNecklace.id)
     ) {
       message = '可拖曳項鍊微調，完成後按「儲存校準」';

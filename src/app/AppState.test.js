@@ -27,60 +27,43 @@ describe('AppState AR session lifecycle', () => {
     [AR_SESSION_STATES.AR_IDLE, { cameraStarted: false, isSwitchingCamera: false }],
     [AR_SESSION_STATES.CAMERA_STARTING, {}],
     [AR_SESSION_STATES.NO_FACE, {}],
-  ])('cleans stale tracking data when entering %s', (nextStatus, expectedPatch) => {
+  ])('keeps session patches limited to durable UI state when entering %s', (nextStatus, expectedPatch) => {
     expect(
       createSessionPatch(nextStatus, {
         cameraStarted: true,
         isSwitchingCamera: true,
-        hasFace: true,
-        lastLandmarks: [{ x: 0.5 }],
-        lastDebugData: { scale: 1.2 },
       }),
     ).toMatchObject({
       sessionStatus: nextStatus,
-      hasFace: false,
-      lastLandmarks: null,
-      lastDebugData: null,
       ...expectedPatch,
     });
   });
 
-  it('applies cleanup through real transitions and ignores invalid transitions', () => {
+  it('applies durable session cleanup through real transitions and ignores invalid transitions', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const appState = new AppState({ necklaces: NECKLACES });
 
     appState.set({
       mode: APP_MODES.AR,
       cameraStarted: true,
-      hasFace: true,
-      lastLandmarks: [{ x: 0.4 }],
-      lastDebugData: { scale: 1 },
     });
 
     const invalidSnapshot = appState.transitionSession(AR_SESSION_STATES.CAPTURING);
     expect(invalidSnapshot.sessionStatus).toBe(AR_SESSION_STATES.SHOWCASE);
-    expect(invalidSnapshot.lastLandmarks).toEqual([{ x: 0.4 }]);
     expect(warn).toHaveBeenCalledOnce();
 
     appState.transitionSession(AR_SESSION_STATES.AR_IDLE);
     expect(appState.getSnapshot()).toMatchObject({
       sessionStatus: AR_SESSION_STATES.AR_IDLE,
       cameraStarted: false,
-      hasFace: false,
-      lastLandmarks: null,
-      lastDebugData: null,
     });
 
     appState.transitionSession(AR_SESSION_STATES.CAMERA_STARTING, {
-      hasFace: true,
-      lastLandmarks: [{ x: 0.2 }],
-      lastDebugData: { yaw: 0.1 },
+      cameraStarted: true,
     });
     expect(appState.getSnapshot()).toMatchObject({
       sessionStatus: AR_SESSION_STATES.CAMERA_STARTING,
-      hasFace: false,
-      lastLandmarks: null,
-      lastDebugData: null,
+      cameraStarted: true,
     });
 
     warn.mockRestore();

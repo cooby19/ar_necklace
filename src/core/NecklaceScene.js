@@ -61,8 +61,6 @@ export class NecklaceScene {
       canvas,
       alpha: true,
       antialias: true,
-      // TODO: Validate removing this after renderForCapture() on iOS Safari, Android Chrome, and desktop Chrome.
-      preserveDrawingBuffer: true,
     });
     this.loader = new GLTFLoader();
     this.necklaceRoot = new Group();

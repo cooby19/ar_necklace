@@ -9,6 +9,7 @@ import {
 } from './AppState.js';
 import { CalibrationService } from './CalibrationService.js';
 import { ModelCatalogService } from './ModelCatalogService.js';
+import { RealtimeTrackingStore, createIdleTrackerStats } from './RealtimeTrackingStore.js';
 import { RendererLoop } from './RendererLoop.js';
 import { ShareWorkflow } from './ShareWorkflow.js';
 import { TrackingFeedbackService } from './TrackingFeedbackService.js';
@@ -30,6 +31,7 @@ const TRACKING_FEEDBACK_UPDATE_INTERVAL_MS = 350;
 /** @typedef {import('../types/domain').FaceMeshResults} FaceMeshResults */
 /** @typedef {import('../types/domain').NecklaceConfig} NecklaceConfig */
 /** @typedef {import('../types/domain').NecklaceDebugData} NecklaceDebugData */
+/** @typedef {import('../types/domain').RealtimeTrackingSnapshot} RealtimeTrackingSnapshot */
 /** @typedef {import('../types/domain').RenderStats} RenderStats */
 /** @typedef {import('../types/domain').TrackerStats} TrackerStats */
 /** @typedef {import('../types/domain').WearAdjustmentPatch} WearAdjustmentPatch */
@@ -169,6 +171,7 @@ const TRACKING_FEEDBACK_UPDATE_INTERVAL_MS = 350;
  *   uiController: UiControllerPort,
  *   captureService: CaptureServicePort,
  *   necklaces: readonly NecklaceConfig[],
+ *   realtimeStore?: RealtimeTrackingStore,
  * }} ModeControllerOptions
  */
 
@@ -176,10 +179,11 @@ export class ModeController {
   /**
    * @param {ModeControllerOptions} options
    */
-  constructor({ appState, uiController, captureService, necklaces }) {
+  constructor({ appState, uiController, captureService, necklaces, realtimeStore }) {
     this.appState = appState;
     this.ui = uiController;
     this.necklaces = necklaces;
+    this.realtimeStore = realtimeStore ?? new RealtimeTrackingStore();
 
     /** @type {NecklaceSceneModePort} */
     this.scene = /** @type {NecklaceSceneModePort} */ (new NecklaceScene({
@@ -215,21 +219,25 @@ export class ModeController {
       scene: this.scene,
       debugOverlay: this.debugOverlay,
       getState: () => this.getState(),
-      onDebugFrame: () => this.scheduleTrackingFeedbackUpdate(),
+      getRealtimeSnapshot: () => this.realtimeStore.getSnapshot(),
+      onStatsUpdate: (stats) => {
+        this.realtimeStore.setRenderStats(stats);
+        this.scheduleTrackingFeedbackUpdate();
+      },
     });
     this.feedbackService = new TrackingFeedbackService({
       faceQualityAdvisor: this.faceQualityAdvisor,
-      getTrackerStats: () => this.sessionService?.getStats() ?? createIdleTrackerStats(),
-      getRenderStats: () => this.rendererLoop.getStats(),
+      getTrackerStats: () => this.realtimeStore.getSnapshot().trackerStats,
+      getRenderStats: () => this.realtimeStore.getSnapshot().renderStats,
       modelCatalog: this.modelCatalog,
       calibrationService: this.calibrationService,
     });
-    /** @type {{ nextStatus: ArSessionStatus, patch: AppStatePatch } | null} */
-    this.pendingFaceResult = null;
     /** @type {number | null} */
     this.trackingFeedbackTimer = null;
     this.lastTrackingFeedbackUpdateAt = 0;
     this.capturePreviewUrl = '';
+    /** @type {(() => void)[]} */
+    this.lifecycleDisposers = [];
   }
 
   /**
@@ -249,6 +257,7 @@ export class ModeController {
     this.syncColorAvailability();
     this.syncModeEffects();
     this.loadSelectedNecklace();
+    this.bindPageLifecycle();
     this.rendererLoop.start();
   }
 
@@ -366,7 +375,8 @@ export class ModeController {
    */
   handleCalibrationPointerDown(event) {
     const state = this.getState();
-    if (!this.calibrationService.startDrag(event, state)) return;
+    const realtime = this.realtimeStore.getSnapshot();
+    if (!this.calibrationService.startDrag(event, { ...state, hasFace: realtime.hasFace })) return;
 
     this.ui.setCalibrationDragging(true);
   }
@@ -404,12 +414,14 @@ export class ModeController {
     this.ui.elements.switchCameraButton.disabled = true;
     this.ui.elements.stopCameraButton.disabled = true;
     this.ui.setStartButtonLabel('啟動中...');
+    this.realtimeStore.clearTracking();
     this.controller.fadeOut();
     this.appState.transitionSession(AR_SESSION_STATES.CAMERA_STARTING, {}, 'camera-start-request');
 
     try {
       const sessionService = await this.getSessionService();
       const session = await sessionService.start(this.appState.get('cameraFacingMode'));
+      this.rendererLoop.resume();
       this.scene.resize();
       this.debugOverlay.resize();
       this.appState.transitionSession(
@@ -459,6 +471,7 @@ export class ModeController {
     const nextFacingMode = getNextFacingMode(previousFacingMode);
 
     this.ui.clearError();
+    this.realtimeStore.clearTracking();
     this.appState.transitionSession(
       AR_SESSION_STATES.CAMERA_STARTING,
       { isSwitchingCamera: true },
@@ -517,6 +530,8 @@ export class ModeController {
    */
   stopCameraSession({ nextStatus = AR_SESSION_STATES.AR_IDLE, eventName = 'camera-stop' } = {}) {
     this.sessionService?.stop();
+    this.realtimeStore.clearTracking();
+    this.realtimeStore.setTrackerStats(createIdleTrackerStats());
     this.controller.reset();
     this.calibrationService.cancelDrag();
     this.ui.setCalibrationDragging(false);
@@ -541,7 +556,9 @@ export class ModeController {
   async handleCapture() {
     this.ui.clearError();
     const state = this.getState();
-    const blocker = this.shareWorkflow.getCaptureBlocker(state, {
+    const realtime = this.realtimeStore.getSnapshot();
+    const captureState = { ...state, hasFace: realtime.hasFace };
+    const blocker = this.shareWorkflow.getCaptureBlocker(captureState, {
       hasCurrentVideoFrame: this.ui.hasCurrentVideoFrame(),
     });
 
@@ -555,7 +572,7 @@ export class ModeController {
     this.appState.transitionSession(AR_SESSION_STATES.CAPTURING, {}, 'capture-start');
 
     try {
-      const result = await this.shareWorkflow.capture(state);
+      const result = await this.shareWorkflow.capture(captureState);
       this.appState.transitionSession(
         AR_SESSION_STATES.SHARING,
         {
@@ -669,6 +686,7 @@ export class ModeController {
 
     this.appState.set(selection.patch, 'color-select');
     this.modelCatalog.applySelectedColors(this.getState(), selection.targetIds);
+    this.rendererLoop.requestRender();
   }
 
   /**
@@ -692,6 +710,7 @@ export class ModeController {
     if (!isVisible) {
       this.controller.fadeOut();
     }
+    this.rendererLoop.requestRender();
   }
 
   /**
@@ -759,6 +778,7 @@ export class ModeController {
 
     this.appState.set({ adjustments: normalizedAdjustments }, eventName);
     this.controller.setAdjustments(normalizedAdjustments);
+    this.rendererLoop.requestRender();
   }
 
   /**
@@ -793,6 +813,7 @@ export class ModeController {
       this.modelCatalog.applySelectedColors(this.getState());
       this.syncColorAvailability();
       this.syncModeEffects();
+      this.rendererLoop.requestRender();
     } catch (error) {
       if (isAbortError(error)) return;
 
@@ -816,6 +837,7 @@ export class ModeController {
 
     if (isShowcase) {
       this.scene.setShowcaseMode(state.modelLoaded);
+      this.rendererLoop.requestRender();
       this.ui.setStatus(
         state.modelLoaded ? 'tracking' : 'loading',
         state.modelLoaded ? '模型展示' : '模型載入中',
@@ -843,74 +865,39 @@ export class ModeController {
 
     const landmarks = results.multiFaceLandmarks?.[0] ?? null;
     const hasFace = Boolean(landmarks);
+    /** @type {NecklaceDebugData | null} */
+    let debugData = null;
 
     if (!state.modelLoaded || !landmarks) {
       this.controller.fadeOut();
-      const didCommitImmediately = this.queueFaceResult(hasFace ? AR_SESSION_STATES.TRACKING : AR_SESSION_STATES.NO_FACE, {
-        lastLandmarks: landmarks,
-        hasFace,
-        lastDebugData: null,
-      });
-      this.scheduleTrackingFeedbackUpdate({ force: didCommitImmediately });
-      return;
+    } else {
+      debugData = this.controller.updateFromLandmarks(landmarks, state.necklaceVisible);
+      this.markCalibrationReady();
     }
 
-    const lastDebugData = this.controller.updateFromLandmarks(landmarks, state.necklaceVisible);
-    this.markCalibrationReady();
-    const didCommitImmediately = this.queueFaceResult(AR_SESSION_STATES.TRACKING, {
-      lastLandmarks: landmarks,
+    this.realtimeStore.updateFrame({
+      landmarks,
       hasFace,
-      lastDebugData,
+      debugData,
     });
-    this.scheduleTrackingFeedbackUpdate({ force: didCommitImmediately });
+    this.rendererLoop.requestRender();
+
+    const didTransition = this.transitionLiveFaceStatus(
+      hasFace ? AR_SESSION_STATES.TRACKING : AR_SESSION_STATES.NO_FACE,
+    );
+    this.scheduleTrackingFeedbackUpdate({ force: didTransition });
   }
 
   /**
    * @param {ArSessionStatus} nextStatus
-   * @param {AppStatePatch} patch
    * @returns {boolean}
    */
-  queueFaceResult(nextStatus, patch) {
-    this.pendingFaceResult = { nextStatus, patch };
+  transitionLiveFaceStatus(nextStatus) {
     const state = this.getState();
-    const shouldCommitNow =
-      state.hasFace !== patch.hasFace ||
-      (!this.shouldPreserveWorkflowStatus(state) && state.sessionStatus !== nextStatus);
+    if (this.shouldPreserveWorkflowStatus(state)) return false;
+    if (state.sessionStatus === nextStatus) return false;
 
-    if (!shouldCommitNow) return false;
-    return this.flushPendingFaceResult();
-  }
-
-  /**
-   * @returns {boolean}
-   */
-  flushPendingFaceResult() {
-    if (!this.pendingFaceResult) return false;
-
-    const { nextStatus, patch } = this.pendingFaceResult;
-    this.pendingFaceResult = null;
-    return this.commitFaceResult(nextStatus, patch);
-  }
-
-  /**
-   * @param {ArSessionStatus} nextStatus
-   * @param {AppStatePatch} patch
-   * @returns {boolean}
-   */
-  commitFaceResult(nextStatus, patch) {
-    const state = this.getState();
-    const shouldPreserveWorkflowStatus = this.shouldPreserveWorkflowStatus(state);
-
-    if (this.isRedundantFaceResultCommit(state, nextStatus, patch, shouldPreserveWorkflowStatus)) {
-      return false;
-    }
-
-    if (shouldPreserveWorkflowStatus) {
-      this.appState.set(patch, 'face-results');
-      return true;
-    }
-
-    this.appState.transitionSession(nextStatus, patch, 'face-results');
+    this.appState.transitionSession(nextStatus, {}, 'face-results');
     return true;
   }
 
@@ -923,23 +910,6 @@ export class ModeController {
   }
 
   /**
-   * @param {AppStateSnapshot} state
-   * @param {ArSessionStatus} nextStatus
-   * @param {AppStatePatch} patch
-   * @param {boolean} shouldPreserveWorkflowStatus
-   * @returns {boolean}
-   */
-  isRedundantFaceResultCommit(state, nextStatus, patch, shouldPreserveWorkflowStatus) {
-    const isSameStatus = shouldPreserveWorkflowStatus || state.sessionStatus === nextStatus;
-    return (
-      isSameStatus &&
-      state.hasFace === patch.hasFace &&
-      state.lastLandmarks === patch.lastLandmarks &&
-      state.lastDebugData === patch.lastDebugData
-    );
-  }
-
-  /**
    * @returns {void}
    */
   markCalibrationReady() {
@@ -949,9 +919,11 @@ export class ModeController {
   }
 
   /**
+   * @param {TrackerStats} stats
    * @returns {void}
    */
-  handleFaceTrackerStats() {
+  handleFaceTrackerStats(stats) {
+    this.realtimeStore.setTrackerStats(stats);
     const state = this.getState();
     if (!state.cameraStarted || !state.debugEnabled) return;
 
@@ -993,12 +965,10 @@ export class ModeController {
   flushTrackingFeedback(now = performance.now()) {
     const state = this.getState();
     if (state.mode !== APP_MODES.AR || !state.cameraStarted) {
-      this.pendingFaceResult = null;
       this.lastTrackingFeedbackUpdateAt = now;
       return;
     }
 
-    this.flushPendingFaceResult();
     this.lastTrackingFeedbackUpdateAt = now;
     this.updateTrackingStatus();
     this.updateDeveloperPanel();
@@ -1010,7 +980,9 @@ export class ModeController {
   updateDeveloperPanel() {
     const state = this.getState();
     if (!state.debugEnabled) return;
-    this.ui.updateDeveloperPanel(this.feedbackService.createDeveloperPanelModel(state));
+    this.ui.updateDeveloperPanel(
+      this.feedbackService.createDeveloperPanelModel(state, this.realtimeStore.getSnapshot()),
+    );
   }
 
   /**
@@ -1018,7 +990,7 @@ export class ModeController {
    */
   updateTrackingStatus() {
     const state = this.getState();
-    const statusView = this.feedbackService.createTrackingStatus(state);
+    const statusView = this.feedbackService.createTrackingStatus(state, this.realtimeStore.getSnapshot());
     this.applyStatusView(statusView);
   }
 
@@ -1042,11 +1014,12 @@ export class ModeController {
 
   /**
    * @param {AppStateSnapshot} state
+   * @param {RealtimeTrackingSnapshot} [realtime]
    * @returns {ArSessionStatus}
    */
-  getLiveSessionStatus(state) {
+  getLiveSessionStatus(state, realtime = this.realtimeStore.getSnapshot()) {
     if (!state.cameraStarted) return AR_SESSION_STATES.AR_IDLE;
-    return state.hasFace ? AR_SESSION_STATES.TRACKING : AR_SESSION_STATES.NO_FACE;
+    return realtime.hasFace ? AR_SESSION_STATES.TRACKING : AR_SESSION_STATES.NO_FACE;
   }
 
   /**
@@ -1068,6 +1041,58 @@ export class ModeController {
   }
 
   /**
+   * @returns {void}
+   */
+  bindPageLifecycle() {
+    if (this.lifecycleDisposers.length) return;
+
+    const onVisibilityChange = () => {
+      if (document.hidden) {
+        this.handlePageHidden();
+        return;
+      }
+
+      this.handlePageVisible();
+    };
+    const onPageHide = () => this.handlePageHidden();
+    const onPageShow = () => this.handlePageVisible();
+
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    window.addEventListener('pagehide', onPageHide);
+    window.addEventListener('pageshow', onPageShow);
+
+    this.lifecycleDisposers.push(
+      () => document.removeEventListener('visibilitychange', onVisibilityChange),
+      () => window.removeEventListener('pagehide', onPageHide),
+      () => window.removeEventListener('pageshow', onPageShow),
+    );
+  }
+
+  /**
+   * @returns {void}
+   */
+  handlePageHidden() {
+    this.rendererLoop.pause();
+    this.sessionService?.pauseTracking();
+    this.realtimeStore.clearTracking();
+    this.controller.fadeOut();
+  }
+
+  /**
+   * @returns {void}
+   */
+  handlePageVisible() {
+    this.rendererLoop.resume();
+    this.rendererLoop.requestRender();
+
+    if (!this.appState.get('cameraStarted')) return;
+
+    this.sessionService?.resumeTracking().catch((error) => {
+      this.showError(`Face Mesh 恢復偵測失敗：${formatUnknownError(error)}`);
+    });
+  }
+
+  /**
    * @returns {Promise<ArSessionService>}
    */
   async getSessionService() {
@@ -1080,7 +1105,7 @@ export class ModeController {
             videoElement: this.ui.elements.video,
             onResults: (results) => this.handleFaceResults(results),
             onError: (error) => this.showError(`Face Mesh 偵測發生錯誤：${formatUnknownError(error)}`),
-            onStatsUpdate: () => this.handleFaceTrackerStats(),
+            onStatsUpdate: (stats) => this.handleFaceTrackerStats(stats),
           });
           this.sessionService = service;
           return service;
@@ -1147,19 +1172,4 @@ function getNextFacingMode(facingMode) {
   return facingMode === CAMERA_FACING_MODES.USER
     ? CAMERA_FACING_MODES.ENVIRONMENT
     : CAMERA_FACING_MODES.USER;
-}
-
-/**
- * @returns {TrackerStats}
- */
-function createIdleTrackerStats() {
-  return {
-    currentFps: 0,
-    targetFps: 0,
-    averageInferenceMs: 0,
-    lastInferenceMs: 0,
-    skippedFrameCount: 0,
-    inferenceCount: 0,
-    schedulerType: 'raf',
-  };
 }

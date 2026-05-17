@@ -192,9 +192,6 @@ export interface AppStateSnapshot {
   cameraFacingMode: CameraFacingMode;
   isSwitchingCamera: boolean;
   modelLoaded: boolean;
-  hasFace: boolean;
-  lastLandmarks: FaceLandmarkList | null;
-  lastDebugData: NecklaceDebugData | null;
   selectedNecklace: NecklaceConfig;
   selectedColorId: string;
   selectedColorIdsByTarget: ColorSelectionByTarget;
@@ -229,10 +226,31 @@ export interface TrackerStats {
   schedulerType: 'raf' | 'video-frame';
 }
 
+export type RenderSchedulerMode = 'idle' | 'showcase' | 'ar-live' | 'paused';
+
 export interface RenderStats {
   fps: number;
   frameCount: number;
   lastSampleAt: number;
+  schedulerMode: RenderSchedulerMode;
+  isRunning: boolean;
+  isPaused: boolean;
+}
+
+export interface RealtimeTrackingSnapshot {
+  hasFace: boolean;
+  latestLandmarks: FaceLandmarkList | null;
+  debugData: NecklaceDebugData | null;
+  frameSequence: number;
+  trackerStats: TrackerStats;
+  renderStats: RenderStats;
+  updatedAt: number;
+}
+
+export interface RealtimeTrackingFramePatch {
+  hasFace?: boolean;
+  landmarks?: FaceLandmarkList | null;
+  debugData?: NecklaceDebugData | null;
 }
 
 export interface DeveloperPanelModel {
