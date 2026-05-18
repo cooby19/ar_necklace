@@ -2,36 +2,10 @@
 
 /** @typedef {import('../types/domain').AppStateSnapshot} AppStateSnapshot */
 /** @typedef {import('../types/domain').DeveloperPanelModel} DeveloperPanelModel */
-/** @typedef {import('../types/domain').FaceLandmarkList} FaceLandmarkList */
 /** @typedef {import('../types/domain').FaceTrackingAdvice} FaceTrackingAdvice */
-/** @typedef {import('../types/domain').NecklaceDebugData} NecklaceDebugData */
 /** @typedef {import('../types/domain').RealtimeTrackingSnapshot} RealtimeTrackingSnapshot */
-/** @typedef {import('../types/domain').RenderStats} RenderStats */
-/** @typedef {import('../types/domain').TrackerStats} TrackerStats */
 /** @typedef {import('../types/domain').WorkflowStatusView} WorkflowStatusView */
-
-/**
- * @typedef {{
- *   getAdvice: (input: {
- *     landmarks?: FaceLandmarkList | null,
- *     debugData?: NecklaceDebugData | null,
- *     now?: number,
- *   }) => FaceTrackingAdvice,
- * }} FaceQualityAdvisorPort
- */
-
-/** @typedef {{ getColorableMaterialCount: () => number }} TrackingModelCatalogPort */
-/** @typedef {{ hasCalibration: (necklaceId: string) => boolean }} TrackingCalibrationPort */
-
-/**
- * @typedef {{
- *   faceQualityAdvisor: FaceQualityAdvisorPort,
- *   getTrackerStats: () => TrackerStats,
- *   getRenderStats: () => RenderStats,
- *   modelCatalog: TrackingModelCatalogPort,
- *   calibrationService: TrackingCalibrationPort,
- * }} TrackingFeedbackOptions
- */
+/** @typedef {import('../types/app-ports').TrackingFeedbackOptions} TrackingFeedbackOptions */
 
 export class TrackingFeedbackService {
   /**

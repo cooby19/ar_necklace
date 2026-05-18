@@ -3,32 +3,10 @@
 import { isSelfieCamera } from './AppState.js';
 
 /** @typedef {import('../types/domain').CameraFacingMode} CameraFacingMode */
-
-/**
- * @typedef {{
- *   kind: 'idle' | 'tracking' | 'error',
- *   label: string,
- *   metrics: string,
- * }} WorkflowStatusView
- */
-
-/**
- * @typedef {{
- *   url: string,
- *   dataUrl: string,
- *   blob: Blob,
- * }} CaptureResult
- */
-
-/**
- * @typedef {{
- *   createCapture: (options: { mirrored: boolean }) => Promise<CaptureResult>,
- *   download: (capture: { blob?: Blob | null, url?: string, dataUrl?: string } | string) => void,
- *   share: (blob: Blob) => Promise<{ status: 'shared' | 'unsupported' | 'aborted' | 'empty' }>,
- * }} CaptureServicePort
- */
-
-/** @typedef {{ renderForCapture: () => void }} CaptureScenePort */
+/** @typedef {import('../types/domain').CaptureResult} CaptureResult */
+/** @typedef {import('../types/domain').WorkflowStatusView} WorkflowStatusView */
+/** @typedef {import('../types/app-ports').CaptureServicePort} CaptureServicePort */
+/** @typedef {import('../types/scene-ports').CaptureScenePort} CaptureScenePort */
 
 /**
  * @typedef {{
