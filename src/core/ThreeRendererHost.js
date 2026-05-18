@@ -1,3 +1,5 @@
+// @ts-check
+
 import {
   ACESFilmicToneMapping,
   DirectionalLight,
@@ -12,7 +14,26 @@ import {
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { observeStageSize } from '../utils/stageResize.js';
 
+/** @typedef {import('three').OrthographicCamera} ThreeOrthographicCamera */
+/** @typedef {import('three').PMREMGenerator} ThreePmremGenerator */
+/** @typedef {import('three').Scene} ThreeScene */
+/** @typedef {import('three').Texture} ThreeTexture */
+/** @typedef {import('three').WebGLRenderer} ThreeWebGLRenderer */
+/** @typedef {import('../types/scene-ports').StageSize} StageSize */
+
 export class ThreeRendererHost {
+  /**
+   * @param {{
+   *   canvas: HTMLCanvasElement,
+   *   stageElement: HTMLElement,
+   *   scene?: ThreeScene,
+   *   camera?: ThreeOrthographicCamera,
+   *   rendererFactory?: (canvas: HTMLCanvasElement) => ThreeWebGLRenderer,
+   *   pmremGeneratorFactory?: (renderer: ThreeWebGLRenderer) => ThreePmremGenerator,
+   *   roomEnvironmentFactory?: (renderer: ThreeWebGLRenderer) => RoomEnvironment,
+   *   observeStageSizeFn?: (element: HTMLElement, onResize: () => void) => () => void,
+   * }} options
+   */
   constructor({
     canvas,
     stageElement,
@@ -25,17 +46,21 @@ export class ThreeRendererHost {
         antialias: true,
       }),
     pmremGeneratorFactory = (renderer) => new PMREMGenerator(renderer),
-    roomEnvironmentFactory = (renderer) => new RoomEnvironment(renderer),
+    roomEnvironmentFactory = () => new RoomEnvironment(),
     observeStageSizeFn = observeStageSize,
   }) {
     this.canvas = canvas;
     this.stageElement = stageElement;
     this.scene = scene;
     this.camera = camera;
+    /** @type {ThreeWebGLRenderer | null} */
     this.renderer = rendererFactory(canvas);
+    /** @type {ThreePmremGenerator | null} */
     this.pmremGenerator = pmremGeneratorFactory(this.renderer);
     this.roomEnvironmentFactory = roomEnvironmentFactory;
+    /** @type {ThreeTexture | null} */
     this.environmentMap = null;
+    /** @type {(() => void) | null} */
     this.stopObservingStageSize = null;
 
     this.setupRenderer();
@@ -44,14 +69,22 @@ export class ThreeRendererHost {
     this.stopObservingStageSize = observeStageSizeFn(this.stageElement, this.resize);
   }
 
+  /**
+   * @returns {void}
+   */
   setupRenderer() {
+    if (!this.renderer) return;
     this.renderer.outputColorSpace = SRGBColorSpace;
     this.renderer.toneMapping = ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.08;
     this.renderer.setClearColor(0x000000, 0);
   }
 
+  /**
+   * @returns {void}
+   */
   setupEnvironment() {
+    if (!this.renderer || !this.pmremGenerator) return;
     const roomEnvironment = this.roomEnvironmentFactory(this.renderer);
     const environment = this.pmremGenerator.fromScene(roomEnvironment, 0.02);
     this.environmentMap = environment.texture;
@@ -60,6 +93,9 @@ export class ThreeRendererHost {
     roomEnvironment.dispose();
   }
 
+  /**
+   * @returns {void}
+   */
   setupLights() {
     const hemisphere = new HemisphereLight(0xffffff, 0x5d6680, 0.8);
     const key = new DirectionalLight(0xffffff, 2.25);
@@ -73,6 +109,9 @@ export class ThreeRendererHost {
     this.scene.add(hemisphere, key, warmFill, coolRim, sparkle);
   }
 
+  /**
+   * @returns {StageSize}
+   */
   getStageSize() {
     const rect = this.stageElement.getBoundingClientRect();
     return {
@@ -81,6 +120,9 @@ export class ThreeRendererHost {
     };
   }
 
+  /**
+   * @returns {void}
+   */
   resize = () => {
     if (!this.renderer || !this.camera) return;
 
@@ -98,11 +140,17 @@ export class ThreeRendererHost {
     this.camera.updateProjectionMatrix();
   };
 
+  /**
+   * @returns {void}
+   */
   render() {
     if (!this.renderer) return;
     this.renderer.render(this.scene, this.camera);
   }
 
+  /**
+   * @returns {void}
+   */
   dispose() {
     this.stopObservingStageSize?.();
     this.stopObservingStageSize = null;

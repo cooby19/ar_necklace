@@ -1,14 +1,42 @@
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import type {
+  GlbAssetLoadResult,
+  GlbAssetTimings,
+  GlbSceneAsset,
+  NecklaceAssetLoadTimings,
+} from '../types/scene-ports';
+import type { NecklaceConfig } from '../types/domain';
 
 export const MAX_GLB_BUFFER_CACHE_ENTRIES = 5;
 
+interface GlbAssetLoaderLogger {
+  debug(message?: unknown, ...optionalParams: unknown[]): void;
+}
+
+interface GlbAssetLoaderOptions {
+  loader?: Pick<GLTFLoader, 'parseAsync'>;
+  maxCacheEntries?: number;
+  isDev?: boolean;
+  logger?: GlbAssetLoaderLogger;
+}
+
+interface LoadGlbOptions {
+  onFetchComplete?: () => void;
+}
+
 export class GlbAssetLoader {
+  loader: Pick<GLTFLoader, 'parseAsync'>;
+  maxCacheEntries: number;
+  isDev: boolean;
+  logger: GlbAssetLoaderLogger;
+  glbBufferCache: Map<string, ArrayBuffer>;
+
   constructor({
     loader = new GLTFLoader(),
     maxCacheEntries = MAX_GLB_BUFFER_CACHE_ENTRIES,
     isDev = import.meta.env.DEV,
     logger = console,
-  } = {}) {
+  }: GlbAssetLoaderOptions = {}) {
     this.loader = loader;
     this.maxCacheEntries = maxCacheEntries;
     this.isDev = isDev;
@@ -16,7 +44,11 @@ export class GlbAssetLoader {
     this.glbBufferCache = new Map();
   }
 
-  async loadGlb(url, signal, { onFetchComplete } = {}) {
+  async loadGlb(
+    url: string,
+    signal: AbortSignal,
+    { onFetchComplete }: LoadGlbOptions = {},
+  ): Promise<GlbAssetLoadResult> {
     const loadStartedAt = performance.now();
     const glbBuffer = await this.fetchGlbFile(url, signal);
     onFetchComplete?.();
@@ -34,7 +66,7 @@ export class GlbAssetLoader {
     };
   }
 
-  async fetchGlbFile(url, signal) {
+  async fetchGlbFile(url: string, signal: AbortSignal): Promise<ArrayBuffer> {
     const cachedBuffer = this.getCachedGlbBuffer(url);
     if (cachedBuffer) return cachedBuffer;
 
@@ -51,7 +83,7 @@ export class GlbAssetLoader {
     return buffer;
   }
 
-  getCachedGlbBuffer(url) {
+  getCachedGlbBuffer(url: string): ArrayBuffer | null {
     const buffer = this.glbBufferCache.get(url);
     if (!buffer) return null;
 
@@ -60,24 +92,25 @@ export class GlbAssetLoader {
     return buffer;
   }
 
-  setCachedGlbBuffer(url, buffer) {
+  setCachedGlbBuffer(url: string, buffer: ArrayBuffer): void {
     this.glbBufferCache.delete(url);
     this.glbBufferCache.set(url, buffer);
     this.trimGlbBufferCache();
   }
 
-  trimGlbBufferCache() {
+  trimGlbBufferCache(): void {
     while (this.glbBufferCache.size > this.maxCacheEntries) {
       const oldestUrl = this.glbBufferCache.keys().next().value;
+      if (!oldestUrl) return;
       this.glbBufferCache.delete(oldestUrl);
     }
   }
 
-  clearCache() {
+  clearCache(): void {
     this.glbBufferCache.clear();
   }
 
-  logLoadTimings(config, timings) {
+  logLoadTimings(config: NecklaceConfig, timings: NecklaceAssetLoadTimings): void {
     if (!this.isDev) return;
 
     this.logger.debug('[NecklaceScene] GLB load timing', {
@@ -90,7 +123,7 @@ export class GlbAssetLoader {
     });
   }
 
-  assertGlbFile(buffer, url, contentType) {
+  assertGlbFile(buffer: ArrayBuffer, url: string, contentType: string): void {
     if (buffer.byteLength < 20) {
       throw new Error(`模型檔太小，無法解析 GLB。請確認檔案位置是 ${url}`);
     }
@@ -119,7 +152,7 @@ export class GlbAssetLoader {
     }
   }
 
-  parseGlbFile(buffer, url) {
+  parseGlbFile(buffer: ArrayBuffer, url: string): Promise<GlbSceneAsset> {
     const assetBasePath = url.slice(0, url.lastIndexOf('/') + 1);
     return this.loader.parseAsync(buffer, assetBasePath);
   }
