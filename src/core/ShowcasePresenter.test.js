@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { ShowcasePresenter } from './ShowcasePresenter.js';
+import { ShowcasePresenter } from './ShowcasePresenter';
 
 function createPresenter({ hasModel = true } = {}) {
   const placement = {

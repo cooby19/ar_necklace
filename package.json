@@ -27,6 +27,7 @@
     "@axe-core/playwright": "^4.11.3",
     "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.60.0",
+    "@types/three": "^0.165.0",
     "chrome-launcher": "^1.2.1",
     "eslint": "^10.4.0",
     "globals": "^17.6.0",

@@ -7,16 +7,8 @@ import { createDefaultColorSelection } from './AppState.js';
 /** @typedef {import('../types/domain').ColorOption} ColorOption */
 /** @typedef {import('../types/domain').ColorSelectionByTarget} ColorSelectionByTarget */
 /** @typedef {import('../types/domain').NecklaceConfig} NecklaceConfig */
-
-/**
- * @typedef {{
- *   loadNecklace: (necklace: NecklaceConfig) => Promise<unknown>,
- *   getColorableTargets: () => string[],
- *   hasColorableMaterials: () => boolean,
- *   getColorableMaterialCount: () => number,
- *   applyColor: (targetId: string, color: string) => boolean,
- * }} NecklaceSceneColorPort
- */
+/** @typedef {import('../types/scene-ports').NecklaceSceneColorPort} NecklaceSceneColorPort */
+/** @typedef {import('../types/ui-ports').ColorUiModel} ColorUiModel */
 
 /** @typedef {'stale' | 'loaded'} ModelLoadStatus */
 
@@ -44,23 +36,6 @@ import { createDefaultColorSelection } from './AppState.js';
  *   patch: AppStatePatch,
  *   targetIds: string[],
  * }} ColorSelectionResult
- */
-
-/**
- * @typedef {{
- *   swatches: {
- *     necklace: NecklaceConfig,
- *     selectedColorIdsByTarget: ColorSelectionByTarget,
- *     fallbackColorId: string,
- *     targetIds: string[],
- *   },
- *   availability: {
- *     necklace: NecklaceConfig,
- *     modelLoaded: boolean,
- *     hasColorableMaterials: boolean,
- *     targetLabels: string[],
- *   },
- * }} ColorUiModel
  */
 
 export class ModelCatalogService {

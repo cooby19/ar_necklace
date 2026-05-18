@@ -3,24 +3,11 @@
 import { APP_MODES } from './AppState.js';
 
 /** @typedef {import('../types/domain').AppStateSnapshot} AppStateSnapshot */
-/** @typedef {import('../types/domain').NecklaceDebugData} NecklaceDebugData */
-/** @typedef {import('../types/domain').FaceLandmarkList} FaceLandmarkList */
 /** @typedef {import('../types/domain').RealtimeTrackingSnapshot} RealtimeTrackingSnapshot */
 /** @typedef {import('../types/domain').RenderStats} RenderStats */
 /** @typedef {import('../types/domain').RenderSchedulerMode} RenderSchedulerMode */
-
-/**
- * @typedef {{
- *   updateShowcase: (now: number) => void,
- *   render: () => void,
- * }} RendererScenePort
- */
-
-/**
- * @typedef {{
- *   render: (landmarks: FaceLandmarkList | null, debugData: NecklaceDebugData | null) => void,
- * }} DebugOverlayPort
- */
+/** @typedef {import('../types/scene-ports').RendererScenePort} RendererScenePort */
+/** @typedef {import('../types/scene-ports').DebugOverlayPort} DebugOverlayPort */
 
 /**
  * @typedef {{

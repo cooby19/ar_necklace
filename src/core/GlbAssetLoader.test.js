@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { GlbAssetLoader } from './GlbAssetLoader.js';
+import { GlbAssetLoader } from './GlbAssetLoader';
 
 function createLoaderDouble() {
   return new GlbAssetLoader({

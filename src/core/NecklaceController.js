@@ -10,21 +10,7 @@ import { clamp, computeFaceMetrics, lerp } from '../utils/landmarks.js';
 /** @typedef {import('../types/domain').NecklaceDebugData} NecklaceDebugData */
 /** @typedef {import('../types/domain').WearAdjustmentPatch} WearAdjustmentPatch */
 /** @typedef {import('../types/domain').WearAdjustments} WearAdjustments */
-/** @typedef {Required<Pick<LandmarkPoint, 'x' | 'y' | 'z'>>} WorldPoint */
-
-/**
- * @typedef {{
- *   screenToWorld: (point: LandmarkPoint) => WorldPoint,
- *   normalizedSegmentToWorldLength: (start: LandmarkPoint, end: LandmarkPoint) => number,
- *   updateTransform: (transform: {
- *     position: WorldPoint,
- *     scale: number,
- *     rotationY: number,
- *     rotationZ: number,
- *   }) => void,
- *   setOpacity: (opacity: number) => void,
- * }} NecklaceSceneTrackingPort
- */
+/** @typedef {import('../types/scene-ports').NecklaceSceneTrackingPort} NecklaceSceneTrackingPort */
 
 export class NecklaceController {
   /**
