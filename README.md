@@ -147,6 +147,7 @@ npm run build
 npm run test:visual
 npm run test:a11y
 npm run budget
+npm run smoke
 npm run lighthouse
 npm audit --omit=dev
 ```
@@ -160,6 +161,7 @@ npm audit --omit=dev
 - `npm run test:visual`：用 Playwright/Chromium 比對 showcase 與分享預覽的桌面、平板、手機截圖。
 - `npm run test:a11y`：用 Playwright + axe-core 掃描 showcase 初始畫面與分享預覽狀態，不需要相機權限。
 - `npm run budget`：檢查 `dist/assets` 的 JS/CSS、`public/models/*.glb` 與 MediaPipe Face Mesh vendored 重要資產大小，需先執行 `npm run build`。
+- `npm run smoke`：build 後啟動 Vite preview，或在設定 `SMOKE_BASE_URL` 時檢查遠端部署；會驗證 JS/CSS、GLB header、MediaPipe vendor 檔、release/error-reporting metadata、showcase canvas 與不需相機權限的基本互動。
 - `npm run lighthouse`：用 build 後的 Vite preview 跑 Lighthouse showcase 頁面，門檻先採保守 baseline，需先執行 `npm run build`。
 - `npm run smoke:release`：對已部署 URL 檢查 `release.json`、build assets、GLB 與 MediaPipe 重要資產，需設定 `SMOKE_BASE_URL`。
 - `npm audit --omit=dev`：只檢查 production dependencies；CI 目前以 warning + report artifact 呈現既有 advisory。
@@ -185,6 +187,8 @@ CI 的 npm audit 先以 production dependency 為範圍執行 `npm audit --omit=
 
 - build artifact：CI 會上傳 `ar-necklace-dist-${GITHUB_SHA}`，內容包含 `dist/release.json`。
 - release metadata：build 後可在 `release.json`、browser console、`window.__AR_NECKLACE_RELEASE__` 與 debug panel 看到 version、commit SHA、build time、environment。
+- runtime safety：可選 `VITE_ERROR_REPORTING_DSN` 啟用 Sentry-compatible error reporting；未設定時不影響 build 或 app。上報會帶 release metadata，但不包含相機畫面、使用者影像或 Face Mesh landmarks。
+- headers/cache：`public/_headers` 提供 Cloudflare Pages / Netlify 可套用的 CSP、Permissions-Policy、cache-control 範本；GitHub Pages 不支援自訂 headers，僅適合 demo/fallback。
 - `.github/workflows/deploy.yml`：Cloudflare Pages PR preview / staging / production skeleton。沒有 secrets 時部署 job 會跳過。
 - `.github/workflows/rollback.yml`：Cloudflare Pages rollback skeleton，rollback 後會以 `npm run smoke:release` 驗證版本與資產。
 

@@ -3,15 +3,17 @@ import { NECKLACES } from './config/necklaces.js';
 import { RELEASE_METADATA } from './config/release.js';
 import { AppState } from './app/AppState.js';
 import { CaptureService } from './app/CaptureService.js';
+import { runtimeErrorReporter } from './telemetry/RuntimeErrorReporter.js';
 import { UiController } from './app/UiController.js';
 
+runtimeErrorReporter.installGlobalHandlers();
 bootstrap();
 
 async function bootstrap() {
   const appState = new AppState({ necklaces: NECKLACES });
   const uiController = new UiController({ necklaces: NECKLACES });
   uiController.setReleaseMetadata(RELEASE_METADATA);
-  exposeReleaseMetadata(RELEASE_METADATA);
+  exposeRuntimeMetadata(RELEASE_METADATA);
 
   const captureService = new CaptureService({
     stageElement: uiController.elements.stage,
@@ -57,11 +59,16 @@ async function bootstrap() {
 
     modeController.init();
   } catch (error) {
+    runtimeErrorReporter.captureError(error, {
+      eventType: 'app.bootstrap_failed',
+      feature: 'runtime',
+    });
     uiController.showError(`應用程式初始化失敗：${error.message ?? error}`);
   }
 }
 
-function exposeReleaseMetadata(metadata) {
+function exposeRuntimeMetadata(metadata) {
   window.__AR_NECKLACE_RELEASE__ = metadata;
+  window.__AR_NECKLACE_ERROR_REPORTING__ = runtimeErrorReporter.getPublicStatus();
   console.info('[release]', metadata);
 }

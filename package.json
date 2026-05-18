@@ -14,6 +14,7 @@
     "test:a11y": "playwright test --config playwright.a11y.config.js",
     "budget": "node scripts/check-bundle-budget.mjs",
     "lighthouse": "node scripts/run-lighthouse.mjs",
+    "smoke": "node scripts/smoke.mjs",
     "smoke:release": "node scripts/smoke-release.mjs",
     "typecheck": "tsc --noEmit"
   },

@@ -1,4 +1,5 @@
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { runtimeErrorReporter } from '../telemetry/RuntimeErrorReporter.js';
 
 export const MAX_GLB_BUFFER_CACHE_ENTRIES = 5;
 
@@ -18,20 +19,34 @@ export class GlbAssetLoader {
 
   async loadGlb(url, signal, { onFetchComplete } = {}) {
     const loadStartedAt = performance.now();
-    const glbBuffer = await this.fetchGlbFile(url, signal);
-    onFetchComplete?.();
-    const fetchCompletedAt = performance.now();
-    const gltf = await this.parseGlbFile(glbBuffer.slice(0), url);
-    const parseCompletedAt = performance.now();
+    try {
+      const glbBuffer = await this.fetchGlbFile(url, signal);
+      onFetchComplete?.();
+      const fetchCompletedAt = performance.now();
+      const gltf = await this.parseGlbFile(glbBuffer.slice(0), url);
+      const parseCompletedAt = performance.now();
 
-    return {
-      gltf,
-      timings: {
-        fetchMs: fetchCompletedAt - loadStartedAt,
-        parseMs: parseCompletedAt - fetchCompletedAt,
-        totalAssetMs: parseCompletedAt - loadStartedAt,
-      },
-    };
+      return {
+        gltf,
+        timings: {
+          fetchMs: fetchCompletedAt - loadStartedAt,
+          parseMs: parseCompletedAt - fetchCompletedAt,
+          totalAssetMs: parseCompletedAt - loadStartedAt,
+        },
+      };
+    } catch (error) {
+      if (!isAbortError(error)) {
+        runtimeErrorReporter.captureError(error, {
+          eventType: 'glb.load_failed',
+          feature: 'model',
+          extra: {
+            assetUrl: url,
+            elapsedMs: Math.round(performance.now() - loadStartedAt),
+          },
+        });
+      }
+      throw error;
+    }
   }
 
   async fetchGlbFile(url, signal) {
@@ -42,7 +57,17 @@ export class GlbAssetLoader {
     const response = await fetch(url, { cache: cacheMode, signal });
 
     if (!response.ok) {
-      throw new Error(`模型檔無法讀取，HTTP ${response.status}`);
+      const error = new Error(`模型檔無法讀取，HTTP ${response.status}`);
+      runtimeErrorReporter.captureError(error, {
+        eventType: 'asset.http_error',
+        feature: 'model',
+        extra: {
+          assetUrl: url,
+          status: response.status,
+          contentType: response.headers.get('content-type') ?? '',
+        },
+      });
+      throw error;
     }
 
     const buffer = await response.arrayBuffer();
@@ -123,4 +148,8 @@ export class GlbAssetLoader {
     const assetBasePath = url.slice(0, url.lastIndexOf('/') + 1);
     return this.loader.parseAsync(buffer, assetBasePath);
   }
+}
+
+function isAbortError(error) {
+  return Boolean(error && typeof error === 'object' && 'name' in error && error.name === 'AbortError');
 }

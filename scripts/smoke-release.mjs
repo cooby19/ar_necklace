@@ -10,9 +10,12 @@ const checks = [];
 
 await checkHtmlAndBuiltAssets();
 await checkReleaseMetadata();
-await checkPublicAsset('models/necklace.glb');
+await checkGlbAsset('models/necklace.glb');
+await checkPublicAsset('vendor/mediapipe/face_mesh/face_mesh.binarypb');
 await checkPublicAsset('vendor/mediapipe/face_mesh/face_mesh.js');
 await checkPublicAsset('vendor/mediapipe/face_mesh/face_mesh_solution_packed_assets.data');
+await checkPublicAsset('vendor/mediapipe/face_mesh/face_mesh_solution_packed_assets_loader.js');
+await checkPublicAsset('vendor/mediapipe/face_mesh/face_mesh_solution_simd_wasm_bin.js');
 await checkPublicAsset('vendor/mediapipe/face_mesh/face_mesh_solution_simd_wasm_bin.wasm');
 
 console.log(`Smoke checks passed for ${baseUrl}`);
@@ -57,6 +60,39 @@ async function checkReleaseMetadata() {
 async function checkPublicAsset(assetPath) {
   await assertHeadOrGet(new URL(assetPath, baseUrl));
   checks.push(`public asset reachable: ${assetPath}`);
+}
+
+async function checkGlbAsset(assetPath) {
+  const url = new URL(assetPath, baseUrl);
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`${url} returned HTTP ${response.status}.`);
+  }
+
+  const buffer = await response.arrayBuffer();
+  if (buffer.byteLength < 20) {
+    throw new Error(`${assetPath} is too small to be a valid GLB.`);
+  }
+
+  const bytes = new Uint8Array(buffer, 0, 12);
+  const magic = String.fromCharCode(...bytes.slice(0, 4));
+  const view = new DataView(buffer);
+  const version = view.getUint32(4, true);
+  const declaredLength = view.getUint32(8, true);
+
+  if (magic !== 'glTF') {
+    throw new Error(`${assetPath} has invalid GLB magic header: ${magic}.`);
+  }
+
+  if (version !== 2) {
+    throw new Error(`${assetPath} is GLB version ${version}; expected glTF 2.0.`);
+  }
+
+  if (declaredLength !== buffer.byteLength) {
+    throw new Error(`${assetPath} declared ${declaredLength} bytes but returned ${buffer.byteLength} bytes.`);
+  }
+
+  checks.push(`GLB header valid: ${assetPath}`);
 }
 
 async function fetchText(url) {

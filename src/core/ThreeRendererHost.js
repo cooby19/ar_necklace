@@ -11,6 +11,7 @@ import {
 } from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { observeStageSize } from '../utils/stageResize.js';
+import { runtimeErrorReporter } from '../telemetry/RuntimeErrorReporter.js';
 
 export class ThreeRendererHost {
   constructor({
@@ -32,16 +33,31 @@ export class ThreeRendererHost {
     this.stageElement = stageElement;
     this.scene = scene;
     this.camera = camera;
-    this.renderer = rendererFactory(canvas);
-    this.pmremGenerator = pmremGeneratorFactory(this.renderer);
     this.roomEnvironmentFactory = roomEnvironmentFactory;
+    this.renderer = null;
+    this.pmremGenerator = null;
     this.environmentMap = null;
     this.stopObservingStageSize = null;
 
-    this.setupRenderer();
-    this.setupEnvironment();
-    this.setupLights();
-    this.stopObservingStageSize = observeStageSizeFn(this.stageElement, this.resize);
+    try {
+      this.renderer = rendererFactory(canvas);
+      this.pmremGenerator = pmremGeneratorFactory(this.renderer);
+      this.setupRenderer();
+      this.setupEnvironment();
+      this.setupLights();
+      this.stopObservingStageSize = observeStageSizeFn(this.stageElement, this.resize);
+    } catch (error) {
+      runtimeErrorReporter.captureError(error, {
+        eventType: 'webgl.init_failed',
+        feature: 'webgl',
+        extra: {
+          canvasWidth: canvas.width,
+          canvasHeight: canvas.height,
+        },
+      });
+      this.dispose();
+      throw error;
+    }
   }
 
   setupRenderer() {

@@ -1,20 +1,20 @@
 # 部署與發布流程
 
-本文定義商業化前可接受的靜態前端部署流程。現階段 repo 已提供可落地的 artifact、metadata、smoke test、Cloudflare Pages workflow skeleton 與 rollback skeleton；正式部署前仍需在 GitHub repository secrets / environments 補齊 hosting credentials。
+本文定義商業化前可接受的靜態前端部署流程。現階段 repo 已提供可落地的 artifact、metadata、runtime error reporting、synthetic smoke、headers/cache 範本、Cloudflare Pages workflow skeleton 與 rollback skeleton；正式部署前仍需在 GitHub repository secrets / environments 補齊 hosting credentials。
 
 ## 目前限制與設計前提
 
 - 專案是純前端 Vite app，正式建置輸出在 `dist/`。
-- 相機、MediaPipe live tracking、iOS Safari 實機體驗不可作為 CI 必通條件；部署 smoke 只檢查 showcase 可載入、版本 metadata 與核心靜態資產。
+- 相機、MediaPipe live tracking、iOS Safari 實機體驗不可作為 CI 必通條件；部署 smoke 檢查 showcase 可載入、版本 metadata、核心靜態資產與不需真實相機的基本互動。
 - `vite.config.js` 保持 `base: './'`，確保 GitHub Pages 子路徑、Cloudflare Pages 根路徑、Netlify/Vercel preview URL 都能使用相對 build assets。
-- runtime 資產已透過 `import.meta.env.BASE_URL` 組出 `models/`、`thumbnails/` 與 MediaPipe vendor 路徑，避免 GitHub Pages 子路徑 404。
+- runtime 資產已透過 `import.meta.env.BASE_URL` 組出 `models/`、`thumbnails/` 與 MediaPipe vendor 路徑，並加上 release token query string，避免 GitHub Pages 子路徑 404，同時讓 GLB/WASM/data 可搭配 CDN cache。
 - GitHub Pages 目前保留為 fallback / demo channel，不在本次 workflow 直接替換；商業化 primary hosting 建議改由 Cloudflare Pages 或等價平台承接。
 
 ## 環境規劃
 
 | 環境 | 觸發 | 用途 | 部署條件 | 驗證 |
 | --- | --- | --- | --- | --- |
-| PR preview | Pull request opened / synchronized | 給 PM、設計、QA、客戶看單一 PR 改動 | CI build artifact 成功，且 hosting secrets 可用 | `npm run smoke:release` 檢查 preview URL |
+| PR preview | Pull request opened / synchronized | 給 PM、設計、QA、客戶看單一 PR 改動 | CI build artifact 成功，且 hosting secrets 可用 | `npm run smoke` 檢查 preview URL |
 | staging | push 到 `staging` branch，或手動 dispatch target=`staging` | 合併前/發布前的整體驗收環境 | lint/typecheck/unit/build/budget 成功 | staging URL 必須 smoke 通過 |
 | production | GitHub Release published，或手動 dispatch target=`production` | 正式公開環境 | 同一個 artifact 先部署 staging 並 smoke 通過 | production URL smoke 驗證 |
 
@@ -73,6 +73,45 @@ Production deploy 在 `.github/workflows/deploy.yml` 中明確依賴 `smoke-stag
 
 這些資料不包含 secret，可用於客服回報、QA 截圖、rollback 驗證與 artifact 對照。
 
+## Runtime error reporting
+
+Production 建議使用 Sentry 或同級服務。專案目前內建一個 Sentry envelope-compatible 的輕量 reporter，不把 SDK 或 secret 當成 build 必要條件。
+
+啟用方式：
+
+```bash
+VITE_ERROR_REPORTING_DSN=https://<public-key>@<org>.ingest.sentry.io/<project-id>
+VITE_ERROR_REPORTING_SAMPLE_RATE=1
+npm run build
+```
+
+未設定 `VITE_ERROR_REPORTING_DSN` 時，reporter 會保持 disabled，app 初始化、build、test、smoke 都不受影響。DSN 是 client public key，不是 server secret；正式環境仍應在 hosting secret / environment variable 管理。
+
+目前捕捉範圍：
+
+- 全域 JavaScript error。
+- `unhandledrejection`。
+- resource load error，例如 JS/CSS/image/script 載入失敗。
+- GLB fetch/header/parse 失敗與 HTTP status。
+- MediaPipe Face Mesh script 載入、初始化與推論錯誤。
+- WebGL renderer/environment 初始化錯誤。
+
+隱私邊界：
+
+- 不上傳 camera frame、canvas、使用者照片、share capture data URL、Blob。
+- 不上傳 MediaPipe landmarks、world landmarks、debugData 或原始 FaceMesh results。
+- event context 只保留 release metadata、錯誤訊息、stack、asset path/status、feature/event type 等維運必要資訊。
+
+每筆 error event 都會帶：
+
+- `release`: `web-ar-necklace@<package-version>+<commit-sha>`
+- `environment`: `preview | staging | production | ci | local`
+- `contexts.release`: version、commitSha、buildTime、environment
+
+瀏覽器端也會暴露不含 secret 的 `window.__AR_NECKLACE_ERROR_REPORTING__`，可和 `window.__AR_NECKLACE_RELEASE__` 一起用於客服截圖與 smoke debug。
+
+若改用完整 `@sentry/browser` SDK，請維持同樣隱私規則：不要啟用 Session Replay、不要附加 screenshots、不要把 breadcrumbs 塞入相機 frame 或 landmarks，並在 CSP `connect-src` 加上實際 ingest domain。
+
 ## CI artifact
 
 `.github/workflows/ci.yml` 的 build job 會上傳：
@@ -93,11 +132,11 @@ ar-necklace-dist-${GITHUB_SHA}
 
 1. Resolve target：依 event 決定 `preview` / `staging` / `production`。
 2. Secret preflight：沒有 secrets 時 deploy jobs 會跳過，不假裝部署成功。
-3. Build deploy artifact：執行 lint、typecheck、unit、build、budget，並上傳 `dist/` artifact。
+3. Build deploy artifact：執行 lint、typecheck、unit、build、budget、synthetic smoke，並上傳 `dist/` artifact。
 4. PR preview：用 Cloudflare Pages branch deploy `pr-<number>`。
 5. Staging：部署到 Cloudflare Pages `staging` branch，接著跑 smoke。
 6. Production：只有 staging smoke 成功後，才把同一份 artifact 部署 production。
-7. Production smoke：若有 `PRODUCTION_URL`，部署後檢查版本與資產。
+7. Production smoke：若有 `PRODUCTION_URL`，部署後跑遠端 synthetic smoke。
 
 需要設定的 GitHub Secrets：
 
@@ -138,12 +177,19 @@ ref=<commit SHA 或 tag>
 
 這會重建指定 ref，仍然先部署 staging 並 smoke，通過後才部署 production。
 
-## Smoke 驗證
+## Synthetic smoke 驗證
 
-部署 smoke 使用：
+本機或 CI artifact smoke 使用：
 
 ```bash
-SMOKE_BASE_URL=https://example.com/ npm run smoke:release
+npm run build
+npm run smoke
+```
+
+`npm run smoke` 會在沒有 `SMOKE_BASE_URL` 時啟動 Vite preview server，檢查 build 後的 `dist/`。若設定 `SMOKE_BASE_URL`，同一套 synthetic smoke 會直接檢查遠端部署 URL：
+
+```bash
+SMOKE_BASE_URL=https://example.com/ npm run smoke
 ```
 
 可選版本驗證：
@@ -152,16 +198,139 @@ SMOKE_BASE_URL=https://example.com/ npm run smoke:release
 SMOKE_BASE_URL=https://example.com/ \
 EXPECTED_COMMIT_SHA=<sha-prefix> \
 EXPECTED_VERSION=0.2.0 \
-npm run smoke:release
+npm run smoke
 ```
 
-目前檢查：
+`npm run smoke` 目前檢查：
 
 - `index.html` 可讀。
-- `dist/assets` 中 JS/CSS 可讀。
+- `index.html` 指向的 `assets/*.js` / `assets/*.css` 可讀，不是 404。
 - `release.json` 可讀且包含 `version`、`commitSha`、`buildTime`、`environment`。
-- `models/necklace.glb` 可讀。
-- MediaPipe `face_mesh.js`、packed assets data、SIMD wasm 可讀。
+- `window.__AR_NECKLACE_RELEASE__` 與 error reporting public status 已注入 runtime。
+- `models/necklace.glb` 可讀，且 GLB magic header、version、declared length 正確。
+- MediaPipe `face_mesh.js`、binarypb、packed data、loader JS、SIMD wasm JS、SIMD wasm 檔案可讀。
+- Showcase 初始頁載入，`#threeCanvas` 可見且尺寸合理。
+- 款式卡片、色票、Debug toggle 可基本互動。
+- Share sheet 可在不要求 camera permission 的測試狀態下開啟與關閉。
+
+部署後輕量 release smoke 仍保留：
+
+```bash
+SMOKE_BASE_URL=https://example.com/ npm run smoke:release
+```
+
+`smoke:release` 不啟動 browser，只做遠端 HTTP/release/asset 檢查，適合 rollback workflow、CDN 快速探測或瀏覽器環境暫時不可用時使用。
+
+CI/CD 串接：
+
+- CI build job 在 `npm run build` 與 `npm run budget` 後執行 `npm run smoke`。
+- Deploy build artifact job 也會先對 artifact 跑 `npm run smoke`，通過才上傳/部署。
+- PR preview、staging、production 部署後會以 `SMOKE_BASE_URL=<deployed-url> npm run smoke` 做遠端 synthetic smoke。
+- Rollback workflow 使用 `smoke:release` 驗證回退後的版本與核心 asset；若要做完整 UI smoke，可手動對 rollback URL 執行 `SMOKE_BASE_URL=<url> npm run smoke`。
+
+CI 不要求真實 camera permission。相機權限、Face Mesh 真實追蹤、前後鏡頭切換、iOS Safari 權限與效能仍是人工實機驗收項目。
+
+## Cache-control 與 asset CDN
+
+商業化 primary hosting 建議使用支援 edge cache 與 headers 的 Cloudflare Pages、Netlify、Vercel、Firebase Hosting 或 S3 + CloudFront。不要把 GitHub Pages 當成 production security/cache control 的唯一落點，因為 GitHub Pages 不支援自訂 response headers。
+
+目前 repo 提供 `public/_headers`，Vite build 時會複製到 `dist/_headers`。Cloudflare Pages 與 Netlify 會套用它：
+
+- `index.html` 與 `/`：`Cache-Control: no-cache, max-age=0, must-revalidate`，確保新部署能立即拿到最新 asset manifest。
+- `release.json`：`no-cache`，確保 smoke、客服與 rollback 查驗看到當前部署版本。
+- `assets/*`：Vite hashed JS/CSS，`public, max-age=31536000, immutable`。
+- `models/*` 與 `vendor/mediapipe/face_mesh/*`：runtime URL 會加 release token query string，例如 `?v=0.2.0-<sha>`，因此可搭配 `public, max-age=31536000, immutable`。
+
+CDN 策略：
+
+- 預設使用 same-origin hosting CDN，避免額外 CORS 與 CSP 複雜度。
+- Cloudflare Pages 預設會把 query string 納入 cache key；若使用其他 CDN，需確認 CDN cache key 包含 `v` query string。
+- 若某平台或企業 CDN 忽略 query string，請改用 release-prefixed 路徑或 hashed filenames，例如 `/runtime-assets/<sha>/models/necklace.glb`，或把 `models/*` / `vendor/*` cache 降為短 TTL。
+- GLB、WASM、data 檔案若改走獨立 asset CDN，需要同時設定 CORS、CSP `script-src` / `connect-src` / `img-src`，並重新跑 `npm run smoke` 確認沒有 404 或 WebGL taint 問題。
+
+## Security headers
+
+`public/_headers` 目前提供 baseline：
+
+- `Content-Security-Policy`
+  - `default-src 'self'`
+  - `script-src 'self' 'wasm-unsafe-eval'`：允許同源 JS 與 MediaPipe WASM。
+  - `connect-src 'self' https://*.ingest.sentry.io https://*.sentry.io`：允許 optional Sentry-compatible error reporting。
+  - `img-src 'self' data: blob:`：支援 UI thumbnail 與本機 share preview。
+  - `media-src 'self' blob:`：保留相機/媒體元素需要的安全範圍。
+  - `frame-ancestors 'none'`、`object-src 'none'`、`base-uri 'self'`。
+- `X-Content-Type-Options: nosniff`
+- `Referrer-Policy: strict-origin-when-cross-origin`
+- `Permissions-Policy: camera=(self), microphone=(), geolocation=(), payment=(), usb=(), bluetooth=()`
+
+相機權限仍由瀏覽器 permission prompt 控制；`Permissions-Policy: camera=(self)` 的目的，是允許本站使用 camera，同時避免第三方 iframe 任意取得權限。
+
+### 平台設定範例
+
+Cloudflare Pages / Netlify：
+
+```text
+public/_headers -> dist/_headers
+```
+
+已由 repo 提供，部署平台會讀取。
+
+Vercel `vercel.json` 範例：
+
+```json
+{
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
+        { "key": "Permissions-Policy", "value": "camera=(self), microphone=(), geolocation=()" }
+      ]
+    },
+    {
+      "source": "/assets/(.*)",
+      "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }]
+    },
+    {
+      "source": "/index.html",
+      "headers": [{ "key": "Cache-Control", "value": "no-cache, max-age=0, must-revalidate" }]
+    }
+  ]
+}
+```
+
+Firebase Hosting `firebase.json` 範例：
+
+```json
+{
+  "hosting": {
+    "public": "dist",
+    "headers": [
+      {
+        "source": "/assets/**",
+        "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }]
+      },
+      {
+        "source": "/index.html",
+        "headers": [{ "key": "Cache-Control", "value": "no-cache, max-age=0, must-revalidate" }]
+      }
+    ]
+  }
+}
+```
+
+S3 + CloudFront：
+
+- Upload `index.html` / `release.json` 時設定 `Cache-Control: no-cache, max-age=0, must-revalidate`。
+- Upload `assets/*`、`models/*`、`vendor/*` 時設定長效 cache；若 CDN 不把 `v` query string 納入 cache key，請改 release-prefixed asset path。
+- 在 CloudFront Response Headers Policy 設定 CSP、`nosniff`、Referrer-Policy、Permissions-Policy。
+
+GitHub Pages：
+
+- 不支援自訂 response headers，`_headers` 不會被套用。
+- 可作 demo/fallback，但不應視為 production security headers 的驗收來源。
+- 若必須暫時使用 GitHub Pages production，至少保留 `npm run smoke:release` 與人工相機驗收，並把「無法 enforce CSP/cache headers」列為 release risk。
 
 ## Rollback 策略
 
@@ -201,6 +370,7 @@ Rollback 完成後至少確認：
 - `index.html` 指向的 `assets/index-*.js` / `assets/index-*.css` 可讀。
 - `models/necklace.glb` 與 MediaPipe vendor 重要資產沒有 404。
 - Showcase 初始畫面無 console error；相機與 iOS Safari 仍需人工實機抽測。
+- 若 rollback 是為了解 runtime crash，先查 error reporting 是否停止出現新版 release 的同類 event，再用 `SMOKE_BASE_URL=<production-url> EXPECTED_COMMIT_SHA=<old-sha> npm run smoke` 做完整 browser smoke。
 
 ## 參考官方文件
 

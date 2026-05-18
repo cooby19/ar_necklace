@@ -1,13 +1,15 @@
 // @ts-check
 
+import { versionedPublicAssetUrl } from './assets.js';
+
 /** @satisfies {readonly import('../types/domain').NecklaceConfig[]} */
 export const NECKLACES = [
   {
     id: 'default-necklace',
     label: '經典細鍊',
     description: '柔和日常款',
-    url: `${import.meta.env.BASE_URL}models/necklace.glb`,
-    thumbnailUrl: `${import.meta.env.BASE_URL}thumbnails/default-necklace.svg`,
+    url: versionedPublicAssetUrl('models/necklace.glb'),
+    thumbnailUrl: versionedPublicAssetUrl('thumbnails/default-necklace.svg'),
     preserveAuthorOrigin: true,
     occluderParts: {
       // Mesh/object/material names containing these words become invisible depth occluders.

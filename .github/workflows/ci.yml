@@ -150,8 +150,11 @@ jobs:
       - name: Bundle budget
         run: npm run budget
 
-      - name: Install Lighthouse Chromium
+      - name: Install browser Chromium
         run: npx playwright install --with-deps chromium
+
+      - name: Synthetic smoke
+        run: npm run smoke
 
       - name: Lighthouse
         run: npm run lighthouse

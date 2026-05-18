@@ -1,6 +1,8 @@
 // @ts-check
 
 import { TRACKING_TUNING } from '../config/tuning.js';
+import { versionedPublicAssetUrl } from '../config/assets.js';
+import { runtimeErrorReporter } from '../telemetry/RuntimeErrorReporter.js';
 
 /** @typedef {import('../types/domain').FaceMeshResults} FaceMeshResults */
 /** @typedef {import('../types/domain').FaceTrackerResultsHandler} FaceTrackerResultsHandler */
@@ -19,7 +21,7 @@ import { TRACKING_TUNING } from '../config/tuning.js';
 /** @typedef {new (options: { locateFile: (file: string) => string }) => FaceMeshInstance} FaceMeshConstructor */
 /** @typedef {Window & { FaceMesh?: FaceMeshConstructor }} FaceMeshWindow */
 
-const FACE_MESH_SCRIPT_URL = `${import.meta.env.BASE_URL}vendor/mediapipe/face_mesh/face_mesh.js`;
+const FACE_MESH_SCRIPT_URL = versionedPublicAssetUrl('vendor/mediapipe/face_mesh/face_mesh.js');
 
 /** @type {Promise<FaceMeshConstructor> | null} */
 let faceMeshScriptPromise = null;
@@ -51,7 +53,15 @@ async function loadFaceMeshConstructor() {
       };
       script.onerror = () => {
         faceMeshScriptPromise = null;
-        reject(new Error(`無法載入 MediaPipe Face Mesh：${FACE_MESH_SCRIPT_URL}`));
+        const error = new Error(`無法載入 MediaPipe Face Mesh：${FACE_MESH_SCRIPT_URL}`);
+        runtimeErrorReporter.captureError(error, {
+          eventType: 'mediapipe.script_load_failed',
+          feature: 'mediapipe',
+          extra: {
+            assetUrl: FACE_MESH_SCRIPT_URL,
+          },
+        });
+        reject(error);
       };
       document.head.appendChild(script);
     });
@@ -106,28 +116,40 @@ export class FaceTracker {
    * @returns {Promise<void>}
    */
   async init() {
-    const FaceMeshConstructor = await loadFaceMeshConstructor();
+    try {
+      const FaceMeshConstructor = await loadFaceMeshConstructor();
 
-    this.faceMesh = new FaceMeshConstructor({
-      // Assets are copied from node_modules into public/vendor so the MVP does
-      // not need a CDN at runtime.
-      locateFile: (file) => `${import.meta.env.BASE_URL}vendor/mediapipe/face_mesh/${file}`,
-    });
+      this.faceMesh = new FaceMeshConstructor({
+        // Assets are copied from node_modules into public/vendor so the MVP does
+        // not need a third-party CDN at runtime.
+        locateFile: (file) => versionedPublicAssetUrl(`vendor/mediapipe/face_mesh/${file}`),
+      });
 
-    this.faceMesh.setOptions({
-      maxNumFaces: 1,
-      refineLandmarks: true,
-      minDetectionConfidence: 0.58,
-      minTrackingConfidence: 0.58,
-      // Internally flips the camera input when using the front-facing mirrored preview.
-      selfieMode: this.selfieMode,
-    });
+      this.faceMesh.setOptions({
+        maxNumFaces: 1,
+        refineLandmarks: true,
+        minDetectionConfidence: 0.58,
+        minTrackingConfidence: 0.58,
+        // Internally flips the camera input when using the front-facing mirrored preview.
+        selfieMode: this.selfieMode,
+      });
 
-    this.faceMesh.onResults((results) => {
-      this.onResults?.(results);
-    });
+      this.faceMesh.onResults((results) => {
+        this.onResults?.(results);
+      });
 
-    await this.faceMesh.initialize();
+      await this.faceMesh.initialize();
+    } catch (error) {
+      runtimeErrorReporter.captureError(error, {
+        eventType: 'mediapipe.init_failed',
+        feature: 'mediapipe',
+        extra: {
+          scriptUrl: FACE_MESH_SCRIPT_URL,
+          selfieMode: this.selfieMode,
+        },
+      });
+      throw error;
+    }
   }
 
   /**
@@ -260,6 +282,14 @@ export class FaceTracker {
     try {
       await this.faceMesh.send({ image: this.video });
     } catch (error) {
+      runtimeErrorReporter.captureError(error, {
+        eventType: 'mediapipe.inference_failed',
+        feature: 'mediapipe',
+        extra: {
+          currentFps: this.currentFps,
+          schedulerType: this.schedulerType,
+        },
+      });
       this.onError?.(error);
     } finally {
       const completedAt = performance.now();
