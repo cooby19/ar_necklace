@@ -7,49 +7,33 @@ import {
   getCameraLabel,
   getCameraSwitchingLabel,
 } from './AppState.js';
-import { CalibrationService } from './CalibrationService.js';
-import { ModelCatalogService } from './ModelCatalogService.js';
-import { RealtimeTrackingStore, createIdleTrackerStats } from './RealtimeTrackingStore.js';
-import { RendererLoop } from './RendererLoop.js';
-import { ShareWorkflow } from './ShareWorkflow.js';
-import { TrackingFeedbackService } from './TrackingFeedbackService.js';
-import { DebugOverlay } from '../core/DebugOverlay.js';
-import { FaceQualityAdvisor } from '../core/FaceQualityAdvisor.js';
-import { NecklaceController } from '../core/NecklaceController.js';
-import { NecklaceScene } from '../core/NecklaceScene.js';
+import { createIdleTrackerStats } from './RealtimeTrackingStore.js';
+import { reduceAppIntent } from './app-reducer';
 
 const TRACKING_FEEDBACK_UPDATE_INTERVAL_MS = 350;
 
-/** @typedef {import('../types/domain').AppMode} AppMode */
-/** @typedef {import('../types/domain').AppStateMeta} AppStateMeta */
-/** @typedef {import('../types/domain').AppStatePatch} AppStatePatch */
 /** @typedef {import('../types/domain').AppStateSnapshot} AppStateSnapshot */
 /** @typedef {import('../types/domain').ArSessionStatus} ArSessionStatus */
 /** @typedef {import('../types/domain').CameraFacingMode} CameraFacingMode */
-/** @typedef {import('../types/domain').ColorSelectionByTarget} ColorSelectionByTarget */
-/** @typedef {import('../types/domain').FaceLandmarkList} FaceLandmarkList */
 /** @typedef {import('../types/domain').FaceMeshResults} FaceMeshResults */
-/** @typedef {import('../types/domain').NecklaceConfig} NecklaceConfig */
 /** @typedef {import('../types/domain').NecklaceDebugData} NecklaceDebugData */
 /** @typedef {import('../types/domain').RealtimeTrackingSnapshot} RealtimeTrackingSnapshot */
-/** @typedef {import('../types/domain').RenderStats} RenderStats */
 /** @typedef {import('../types/domain').TrackerStats} TrackerStats */
 /** @typedef {import('../types/domain').WearAdjustmentPatch} WearAdjustmentPatch */
-/** @typedef {import('../types/domain').WearAdjustments} WearAdjustments */
 /** @typedef {import('../types/domain').WorkflowStatusView} WorkflowStatusView */
 /** @typedef {import('../types/app-ports').AppStatePort} AppStatePort */
-/** @typedef {import('../types/app-ports').CaptureServicePort} CaptureServicePort */
 /** @typedef {import('../types/ui-ports').UiControllerPort} UiControllerPort */
 /** @typedef {import('../types/scene-ports').NecklaceSceneModePort} NecklaceSceneModePort */
 /** @typedef {import('./ArSessionService.js').ArSessionService} ArSessionService */
+/** @typedef {import('./app-intents').AppIntent} AppIntent */
+/** @typedef {import('./app-reducer').AppReducerResult} AppReducerResult */
+/** @typedef {import('./createAppRuntime.js').AppRuntime} AppRuntime */
 
 /**
  * @typedef {{
  *   appState: AppStatePort,
  *   uiController: UiControllerPort,
- *   captureService: CaptureServicePort,
- *   necklaces: readonly NecklaceConfig[],
- *   realtimeStore?: RealtimeTrackingStore,
+ *   runtime: AppRuntime,
  * }} ModeControllerOptions
  */
 
@@ -57,65 +41,30 @@ export class ModeController {
   /**
    * @param {ModeControllerOptions} options
    */
-  constructor({ appState, uiController, captureService, necklaces, realtimeStore }) {
+  constructor({ appState, uiController, runtime }) {
     this.appState = appState;
     this.ui = uiController;
-    this.necklaces = necklaces;
-    this.realtimeStore = realtimeStore ?? new RealtimeTrackingStore();
-
+    this.realtimeStore = runtime.realtimeStore;
     /** @type {NecklaceSceneModePort} */
-    this.scene = /** @type {NecklaceSceneModePort} */ (new NecklaceScene({
-      canvas: this.ui.elements.threeCanvas,
-      stageElement: this.ui.elements.stage,
-      onError: /** @param {string} message */ (message) => this.showError(message),
-    }));
-    this.controller = new NecklaceController(this.scene);
-    this.faceQualityAdvisor = new FaceQualityAdvisor({
-      video: this.ui.elements.video,
-    });
-    this.debugOverlay = new DebugOverlay({
-      canvas: this.ui.elements.debugCanvas,
-      stageElement: this.ui.elements.stage,
-    });
+    this.scene = /** @type {NecklaceSceneModePort} */ (runtime.scene);
+    this.controller = runtime.necklaceController;
+    this.debugOverlay = runtime.debugOverlay;
     /** @type {ArSessionService | null} */
     this.sessionService = null;
     /** @type {Promise<ArSessionService> | null} */
     this.sessionServicePromise = null;
-    this.modelCatalog = new ModelCatalogService({
-      scene: this.scene,
-      necklaces: this.necklaces,
-    });
-    this.calibrationService = new CalibrationService({
-      stageElement: this.ui.elements.stage,
-      pointerElement: this.ui.elements.threeCanvas,
-    });
-    this.shareWorkflow = new ShareWorkflow({
-      captureService,
-      scene: this.scene,
-    });
-    this.rendererLoop = new RendererLoop({
-      scene: this.scene,
-      debugOverlay: this.debugOverlay,
-      getState: () => this.getState(),
-      getRealtimeSnapshot: () => this.realtimeStore.getSnapshot(),
-      onStatsUpdate: (stats) => {
-        this.realtimeStore.setRenderStats(stats);
-        this.scheduleTrackingFeedbackUpdate();
-      },
-    });
-    this.feedbackService = new TrackingFeedbackService({
-      faceQualityAdvisor: this.faceQualityAdvisor,
-      getTrackerStats: () => this.realtimeStore.getSnapshot().trackerStats,
-      getRenderStats: () => this.realtimeStore.getSnapshot().renderStats,
-      modelCatalog: this.modelCatalog,
-      calibrationService: this.calibrationService,
-    });
+    this.modelCatalog = runtime.modelCatalog;
+    this.calibrationService = runtime.calibrationService;
+    this.shareWorkflow = runtime.shareWorkflow;
+    this.rendererLoop = runtime.rendererLoop;
+    this.feedbackService = runtime.feedbackService;
     /** @type {number | null} */
     this.trackingFeedbackTimer = null;
     this.lastTrackingFeedbackUpdateAt = 0;
     this.capturePreviewUrl = '';
     /** @type {(() => void)[]} */
     this.lifecycleDisposers = [];
+    runtime.setRenderStatsUpdateHandler(() => this.scheduleTrackingFeedbackUpdate());
   }
 
   /**
@@ -140,12 +89,35 @@ export class ModeController {
   }
 
   /**
+   * @param {AppIntent} intent
+   * @returns {AppStateSnapshot | null}
+   */
+  dispatchAppIntent(intent) {
+    return this.applyAppReducerResult(reduceAppIntent(this.getState(), intent));
+  }
+
+  /**
+   * @param {AppReducerResult} result
+   * @returns {AppStateSnapshot | null}
+   */
+  applyAppReducerResult(result) {
+    if (result.kind === 'none') return null;
+
+    if (result.kind === 'session-transition') {
+      return this.appState.transitionSession(result.nextStatus, result.patch, result.eventName);
+    }
+
+    return this.appState.set(result.patch, result.eventName);
+  }
+
+  /**
    * @param {string | null | undefined} mode
    * @returns {void}
    */
   selectMode(mode) {
     const state = this.getState();
-    if (!isAppMode(mode) || state.mode === mode) return;
+    const result = reduceAppIntent(state, { type: 'mode/select', mode });
+    if (result.kind === 'none') return;
 
     if (mode === APP_MODES.SHOWCASE && state.cameraStarted) {
       this.stopCameraSession({
@@ -154,20 +126,7 @@ export class ModeController {
       });
     }
 
-    /** @type {AppStatePatch} */
-    const patch = {
-      mode,
-    };
-
-    if (mode !== APP_MODES.AR && state.activePanel === 'fit') {
-      patch.activePanel = 'styles';
-    }
-
-    this.appState.transitionSession(
-      mode === APP_MODES.SHOWCASE ? AR_SESSION_STATES.SHOWCASE : AR_SESSION_STATES.AR_IDLE,
-      patch,
-      'mode-select',
-    );
+    this.applyAppReducerResult(result);
 
     if (mode === APP_MODES.AR) {
       this.scene.setShowcaseMode(false);
@@ -185,14 +144,14 @@ export class ModeController {
   selectControlPanel(panelName) {
     if (!panelName) return;
     if (!this.ui.canSelectControlPanel(panelName)) return;
-    this.appState.set({ activePanel: panelName }, 'panel-select');
+    this.dispatchAppIntent({ type: 'panel/select', panelName });
   }
 
   /**
    * @returns {void}
    */
   toggleBottomSheet() {
-    this.appState.update((state) => ({ controlsCollapsed: !state.controlsCollapsed }), 'bottom-sheet-toggle');
+    this.dispatchAppIntent({ type: 'bottom-sheet/toggle' });
   }
 
   /**
@@ -572,7 +531,7 @@ export class ModeController {
    * @returns {void}
    */
   handleDebugToggle(isEnabled) {
-    this.appState.set({ debugEnabled: isEnabled }, 'debug-toggle');
+    this.dispatchAppIntent({ type: 'debug/toggle', isEnabled });
     this.debugOverlay.setEnabled(this.appState.get('mode') === APP_MODES.AR && isEnabled);
     this.updateDeveloperPanel();
     this.updateTrackingStatus();
@@ -583,7 +542,7 @@ export class ModeController {
    * @returns {void}
    */
   handleNecklaceToggle(isVisible) {
-    this.appState.set({ necklaceVisible: isVisible }, 'necklace-toggle');
+    this.dispatchAppIntent({ type: 'necklace-visibility/toggle', isVisible });
 
     if (!isVisible) {
       this.controller.fadeOut();
@@ -1003,14 +962,6 @@ export class ModeController {
   getState() {
     return this.appState.getSnapshot();
   }
-}
-
-/**
- * @param {string | null | undefined} mode
- * @returns {mode is AppMode}
- */
-function isAppMode(mode) {
-  return mode === APP_MODES.SHOWCASE || mode === APP_MODES.AR;
 }
 
 /**

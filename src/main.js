@@ -22,12 +22,20 @@ async function bootstrap() {
   });
 
   try {
-    const { ModeController } = await import('./app/ModeController.js');
-    const modeController = new ModeController({
+    const [{ createAppRuntime }, { ModeController }] = await Promise.all([
+      import('./app/createAppRuntime.js'),
+      import('./app/ModeController.js'),
+    ]);
+    const runtime = createAppRuntime({
       appState,
       uiController,
       captureService,
       necklaces: NECKLACES,
+    });
+    const modeController = new ModeController({
+      appState,
+      uiController,
+      runtime,
     });
 
     appState.subscribe((snapshot, meta) => {

@@ -4,6 +4,37 @@ import { ModeController } from './ModeController.js';
 import { RealtimeTrackingStore } from './RealtimeTrackingStore.js';
 import { NECKLACES } from '../config/necklaces.js';
 
+describe('ModeController runtime injection', () => {
+  it('keeps public handlers available while using injected runtime ports', () => {
+    const controller = createModeController();
+
+    [
+      'init',
+      'selectMode',
+      'selectControlPanel',
+      'toggleBottomSheet',
+      'startExperience',
+      'switchCamera',
+      'stopExperience',
+      'handleCapture',
+      'selectNecklace',
+      'selectColor',
+      'handleDebugToggle',
+      'handleNecklaceToggle',
+      'updateTuningFromControls',
+      'saveCalibration',
+      'resetCalibration',
+      'downloadCapture',
+      'shareCapture',
+      'closeShareSheet',
+    ].forEach((methodName) => {
+      expect(controller[methodName]).toBeTypeOf('function');
+    });
+
+    expect(controller.runtime.setRenderStatsUpdateHandler).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('ModeController mode and panel intents', () => {
   it('transitions from showcase to AR idle and resets showcase effects', () => {
     const controller = createModeController({
@@ -125,14 +156,23 @@ describe('ModeController mode and panel intents', () => {
     expect(controller.getState().activePanel).toBe('fit');
   });
 
-  it('toggles bottom sheet collapsed state through app state update', () => {
+  it('toggles bottom sheet collapsed state through app state dispatch', () => {
     const controller = createModeController({ controlsCollapsed: true });
 
     controller.toggleBottomSheet();
     controller.toggleBottomSheet();
 
-    expect(controller.appState.update).toHaveBeenCalledTimes(2);
-    expect(controller.appState.update).toHaveBeenNthCalledWith(1, expect.any(Function), 'bottom-sheet-toggle');
+    expect(controller.appState.set).toHaveBeenCalledTimes(2);
+    expect(controller.appState.set).toHaveBeenNthCalledWith(
+      1,
+      { controlsCollapsed: false },
+      'bottom-sheet-toggle',
+    );
+    expect(controller.appState.set).toHaveBeenNthCalledWith(
+      2,
+      { controlsCollapsed: true },
+      'bottom-sheet-toggle',
+    );
     expect(controller.getState().controlsCollapsed).toBe(true);
   });
 });
@@ -330,6 +370,7 @@ function createModeController(overrides = {}, options = {}) {
     mode: APP_MODES.SHOWCASE,
     sessionStatus: AR_SESSION_STATES.SHOWCASE,
     cameraStarted: false,
+    cameraFacingMode: 'user',
     isSwitchingCamera: false,
     modelLoaded: false,
     necklaceVisible: true,
@@ -337,63 +378,110 @@ function createModeController(overrides = {}, options = {}) {
     activePanel: 'styles',
     controlsCollapsed: true,
     selectedNecklace: NECKLACES[0],
+    selectedColorId: '',
+    selectedColorIdsByTarget: {},
+    captureDataUrl: '',
+    captureBlob: null,
+    adjustments: {
+      horizontalOffset: 0,
+      verticalOffset: 0,
+      scaleMultiplier: 1,
+      rotationOffset: 0,
+    },
     ...overrides,
   };
   const debugData = { scale: 1.2, rotationY: 0.1 };
-  const controller = Object.create(ModeController.prototype);
   const setState = (patch = {}) => {
+    if (!patch) return state;
     state = { ...state, ...patch };
     return state;
   };
-
-  Object.assign(controller, {
-    debugData,
-    realtimeStore: new RealtimeTrackingStore({ now: () => 100 }),
-    appState: {
-      transitionSession: vi.fn((nextStatus, patch = {}) => setState({ ...patch, sessionStatus: nextStatus })),
-      set: vi.fn((patch) => setState(patch)),
-      update: vi.fn((updater) => setState(updater({ ...state }))),
-      get: vi.fn((key) => state[key]),
-    },
-    ui: {
-      canSelectControlPanel: vi.fn(() => true),
-      closeShareSheet: vi.fn(),
-      setCalibrationDragging: vi.fn(),
-      setCameraOn: vi.fn(),
-      setCaptureDisabled: vi.fn(),
-      setStartButtonLabel: vi.fn(),
-      elements: {
-        startButton: { disabled: false },
+  const realtimeStore = new RealtimeTrackingStore({ now: () => 100 });
+  const uiController = {
+    canSelectControlPanel: vi.fn(() => true),
+    closeShareSheet: vi.fn(),
+    setCalibrationDragging: vi.fn(),
+    setCameraOn: vi.fn(),
+    setCaptureDisabled: vi.fn(),
+    setStartButtonLabel: vi.fn(),
+    elements: {
+      stage: {},
+      video: {},
+      threeCanvas: {
+        setPointerCapture: vi.fn(),
+        releasePointerCapture: vi.fn(),
       },
+      debugCanvas: {},
+      startButton: { disabled: false },
+      switchCameraButton: { disabled: false },
+      stopCameraButton: { disabled: false },
     },
+  };
+  const runtime = {
+    debugData,
+    realtimeStore,
     scene: {
       setShowcaseMode: vi.fn(),
+      beginShowcaseDrag: vi.fn(),
+      dragShowcase: vi.fn(),
+      endShowcaseDrag: vi.fn(),
+      resize: vi.fn(),
     },
-    sessionService: {
-      stop: vi.fn(),
+    necklaceController: {
+      fadeOut: vi.fn(),
+      reset: vi.fn(),
+      updateFromLandmarks: vi.fn(() => (options.includeDebugData ? debugData : null)),
+      setAdjustments: vi.fn(),
+    },
+    debugOverlay: {
+      setEnabled: vi.fn(),
+      resize: vi.fn(),
+    },
+    rendererLoop: {
+      start: vi.fn(),
+      pause: vi.fn(),
+      resume: vi.fn(),
+      requestRender: vi.fn(),
+    },
+    modelCatalog: {
+      getById: vi.fn(() => null),
+      buildColorUiModel: vi.fn(),
+      getColorableMaterialCount: vi.fn(() => 0),
     },
     calibrationService: {
       cancelDrag: vi.fn(),
       markFaceReady: vi.fn(() => null),
     },
-    controller: {
-      fadeOut: vi.fn(),
-      reset: vi.fn(),
-      updateFromLandmarks: vi.fn(() => (options.includeDebugData ? debugData : null)),
+    shareWorkflow: {},
+    feedbackService: {},
+    renderStatsUpdateHandler: null,
+    setRenderStatsUpdateHandler: vi.fn((handler) => {
+      runtime.renderStatsUpdateHandler = handler;
+    }),
+  };
+
+  const controller = new ModeController({
+    appState: {
+      transitionSession: vi.fn((nextStatus, patch = {}) => setState({ ...patch, sessionStatus: nextStatus })),
+      set: vi.fn((patch) => setState(patch)),
+      update: vi.fn((updater) => setState(updater({ ...state }))),
+      get: vi.fn((key) => state[key]),
+      getSnapshot: vi.fn(() => state),
     },
-    debugOverlay: {
-      setEnabled: vi.fn(),
-    },
-    rendererLoop: {
-      requestRender: vi.fn(),
-    },
-    updateDeveloperPanel: vi.fn(),
-    updateTrackingStatus: vi.fn(),
-    syncModeEffects: vi.fn(),
-    scheduleTrackingFeedbackUpdate: vi.fn(),
-    markCalibrationReady: vi.fn(),
-    getState: () => state,
+    uiController,
+    runtime,
   });
+
+  controller.debugData = debugData;
+  controller.runtime = runtime;
+  controller.sessionService = {
+    stop: vi.fn(),
+  };
+  vi.spyOn(controller, 'updateDeveloperPanel').mockImplementation(() => {});
+  vi.spyOn(controller, 'updateTrackingStatus').mockImplementation(() => {});
+  vi.spyOn(controller, 'syncModeEffects').mockImplementation(() => {});
+  vi.spyOn(controller, 'scheduleTrackingFeedbackUpdate').mockImplementation(() => {});
+  vi.spyOn(controller, 'markCalibrationReady').mockImplementation(() => {});
 
   return controller;
 }
