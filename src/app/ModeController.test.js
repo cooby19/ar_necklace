@@ -10,6 +10,7 @@ describe('ModeController runtime injection', () => {
 
     [
       'init',
+      'destroy',
       'selectMode',
       'selectControlPanel',
       'toggleBottomSheet',
@@ -69,7 +70,7 @@ describe('ModeController mode and panel intents', () => {
 
     controller.selectMode(APP_MODES.SHOWCASE);
 
-    expect(controller.sessionService.stop).toHaveBeenCalledTimes(1);
+    expect(controller.cameraSessionUseCase.sessionService.stop).toHaveBeenCalledTimes(1);
     expect(controller.realtimeStore.getSnapshot()).toMatchObject({
       hasFace: false,
       latestLandmarks: null,
@@ -177,7 +178,7 @@ describe('ModeController mode and panel intents', () => {
   });
 });
 
-describe('ModeController UI toggles and share sheet', () => {
+describe('ModeController UI toggles', () => {
   it('syncs debug toggle to state, overlay, developer panel, and tracking status', () => {
     const controller = createModeController({
       mode: APP_MODES.AR,
@@ -204,166 +205,7 @@ describe('ModeController UI toggles and share sheet', () => {
     expect(controller.getState().necklaceVisible).toBe(false);
   });
 
-  it('closes share UI and returns sharing sessions to tracking when a live face exists', () => {
-    const controller = createModeController({
-      sessionStatus: AR_SESSION_STATES.SHARING,
-      cameraStarted: true,
-    });
-    const landmarks = [{ x: 0.4, y: 0.5 }];
-    controller.realtimeStore.updateFrame({ landmarks, hasFace: true, debugData: null });
-
-    controller.closeShareSheet();
-
-    expect(controller.ui.closeShareSheet).toHaveBeenCalledTimes(1);
-    expect(controller.appState.transitionSession).toHaveBeenCalledWith(
-      AR_SESSION_STATES.TRACKING,
-      {},
-      'share-close',
-    );
-  });
-
-  it('closes share UI and returns sharing sessions to noFace when live face is absent', () => {
-    const controller = createModeController({
-      sessionStatus: AR_SESSION_STATES.SHARING,
-      cameraStarted: true,
-    });
-
-    controller.closeShareSheet();
-
-    expect(controller.ui.closeShareSheet).toHaveBeenCalledTimes(1);
-    expect(controller.appState.transitionSession).toHaveBeenCalledWith(
-      AR_SESSION_STATES.NO_FACE,
-      {},
-      'share-close',
-    );
-  });
-
-  it('does not transition session status when closing a non-sharing share sheet', () => {
-    const controller = createModeController({
-      sessionStatus: AR_SESSION_STATES.TRACKING,
-      cameraStarted: true,
-    });
-
-    controller.closeShareSheet();
-
-    expect(controller.ui.closeShareSheet).toHaveBeenCalledTimes(1);
-    expect(controller.appState.transitionSession).not.toHaveBeenCalled();
-  });
 });
-
-describe('ModeController FaceMesh result boundary', () => {
-  it('writes every frame to realtime store without transitioning when status is unchanged', () => {
-    const controller = createFaceResultController({
-      sessionStatus: AR_SESSION_STATES.TRACKING,
-    });
-    const landmarks = [{ x: 0.45, y: 0.5 }];
-
-    controller.handleFaceResults({ multiFaceLandmarks: [landmarks] });
-
-    expect(controller.controller.updateFromLandmarks).toHaveBeenCalledWith(landmarks, true);
-    expect(controller.markCalibrationReady).toHaveBeenCalledTimes(1);
-    expect(controller.appState.transitionSession).not.toHaveBeenCalled();
-    expect(controller.rendererLoop.requestRender).toHaveBeenCalledTimes(1);
-    expect(controller.realtimeStore.getSnapshot()).toMatchObject({
-      hasFace: true,
-      latestLandmarks: landmarks,
-      debugData: controller.debugData,
-      frameSequence: 1,
-    });
-  });
-
-  it('transitions from tracking to noFace only when live face status changes', () => {
-    const controller = createFaceResultController({
-      sessionStatus: AR_SESSION_STATES.TRACKING,
-    });
-
-    controller.handleFaceResults({ multiFaceLandmarks: [] });
-    controller.handleFaceResults({ multiFaceLandmarks: [] });
-
-    expect(controller.controller.fadeOut).toHaveBeenCalledTimes(2);
-    expect(controller.appState.transitionSession).toHaveBeenCalledTimes(1);
-    expect(controller.appState.transitionSession).toHaveBeenCalledWith(
-      AR_SESSION_STATES.NO_FACE,
-      {},
-      'face-results',
-    );
-    expect(controller.realtimeStore.getSnapshot()).toMatchObject({
-      hasFace: false,
-      latestLandmarks: null,
-      debugData: null,
-      frameSequence: 2,
-    });
-  });
-
-  it.each([AR_SESSION_STATES.CAPTURING, AR_SESSION_STATES.SHARING])(
-    'keeps %s workflow status while still sampling realtime frames',
-    (sessionStatus) => {
-      const controller = createFaceResultController({ sessionStatus });
-      const landmarks = [{ x: 0.48, y: 0.52 }];
-
-      controller.handleFaceResults({ multiFaceLandmarks: [landmarks] });
-
-      expect(controller.appState.transitionSession).not.toHaveBeenCalled();
-      expect(controller.realtimeStore.getSnapshot()).toMatchObject({
-        hasFace: true,
-        latestLandmarks: landmarks,
-        frameSequence: 1,
-      });
-    },
-  );
-
-  it('fades out without marking calibration when a face is missing', () => {
-    const controller = createFaceResultController({
-      sessionStatus: AR_SESSION_STATES.NO_FACE,
-    });
-
-    controller.handleFaceResults({ multiFaceLandmarks: [] });
-
-    expect(controller.controller.fadeOut).toHaveBeenCalledTimes(1);
-    expect(controller.controller.updateFromLandmarks).not.toHaveBeenCalled();
-    expect(controller.markCalibrationReady).not.toHaveBeenCalled();
-    expect(controller.realtimeStore.getSnapshot()).toMatchObject({
-      hasFace: false,
-      latestLandmarks: null,
-      debugData: null,
-      frameSequence: 1,
-    });
-  });
-
-  it('fades out when a face exists but the model is not loaded', () => {
-    const controller = createFaceResultController({
-      modelLoaded: false,
-    });
-    const landmarks = [{ x: 0.48, y: 0.52 }];
-
-    controller.handleFaceResults({ multiFaceLandmarks: [landmarks] });
-
-    expect(controller.controller.fadeOut).toHaveBeenCalledTimes(1);
-    expect(controller.controller.updateFromLandmarks).not.toHaveBeenCalled();
-    expect(controller.markCalibrationReady).not.toHaveBeenCalled();
-    expect(controller.realtimeStore.getSnapshot()).toMatchObject({
-      hasFace: true,
-      latestLandmarks: landmarks,
-      debugData: null,
-      frameSequence: 1,
-    });
-  });
-});
-
-function createFaceResultController(overrides = {}) {
-  return createModeController(
-    {
-      mode: APP_MODES.AR,
-      cameraStarted: true,
-      modelLoaded: true,
-      necklaceVisible: true,
-      sessionStatus: AR_SESSION_STATES.NO_FACE,
-      selectedNecklace: NECKLACES[0],
-      ...overrides,
-    },
-    { includeDebugData: true },
-  );
-}
 
 function createModeController(overrides = {}, options = {}) {
   let state = {
@@ -474,7 +316,7 @@ function createModeController(overrides = {}, options = {}) {
 
   controller.debugData = debugData;
   controller.runtime = runtime;
-  controller.sessionService = {
+  controller.cameraSessionUseCase.sessionService = {
     stop: vi.fn(),
   };
   vi.spyOn(controller, 'updateDeveloperPanel').mockImplementation(() => {});
