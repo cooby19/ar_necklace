@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { APP_MODES, CAMERA_FACING_MODES } from './AppState.js';
-import { UiController } from './UiController.js';
+import { APP_MODES, CAMERA_FACING_MODES } from '../app/AppState.js';
+import { UiRoot } from './UiRoot.js';
 import { NECKLACES } from '../config/necklaces.js';
 
 class FakeClassList {
@@ -271,24 +271,24 @@ afterEach(() => {
   delete globalThis.requestAnimationFrame;
 });
 
-describe('UiController DOM guards', () => {
+describe('UiRoot DOM guards', () => {
   it('throws a clear initialization error when a required element is missing', () => {
     installFakeDocument({ missingSelector: '#cameraVideo' });
 
-    expect(() => new UiController({ necklaces: [] })).toThrow('Missing required UI element: #cameraVideo');
+    expect(() => new UiRoot({ necklaces: [] })).toThrow('Missing required UI element: #cameraVideo');
   });
 
   it('throws a clear initialization error when a required element list is missing', () => {
     installFakeDocument({ missingListSelector: '[data-mode]' });
 
-    expect(() => new UiController({ necklaces: [] })).toThrow('Missing required UI element: [data-mode]');
+    expect(() => new UiRoot({ necklaces: [] })).toThrow('Missing required UI element: [data-mode]');
   });
 });
 
-describe('UiController listener lifecycle', () => {
+describe('UiRoot listener lifecycle', () => {
   it('binds core controls to the supplied handlers', () => {
     installFakeDocument();
-    const ui = new UiController({ necklaces: NECKLACES });
+    const ui = new UiRoot({ necklaces: NECKLACES });
     const handlers = {
       onModeSelect: vi.fn(),
       onPanelSelect: vi.fn(),
@@ -330,7 +330,7 @@ describe('UiController listener lifecycle', () => {
 
   it('removes bind listeners through destroy', () => {
     const document = installFakeDocument();
-    const ui = new UiController({ necklaces: [] });
+    const ui = new UiRoot({ necklaces: [] });
     const onStartCamera = vi.fn();
     const onCloseShareSheet = vi.fn();
     const onShareFocusEscape = vi.fn();
@@ -363,7 +363,7 @@ describe('UiController listener lifecycle', () => {
 
   it('closes the share sheet on Escape when it is open', () => {
     const document = installFakeDocument();
-    const ui = new UiController({ necklaces: [] });
+    const ui = new UiRoot({ necklaces: [] });
     const onCloseShareSheet = vi.fn();
 
     ui.elements.shareSheet.hidden = false;
@@ -377,7 +377,7 @@ describe('UiController listener lifecycle', () => {
 
   it('keeps share sheet Tab focus trapping from crashing when open', () => {
     const document = installFakeDocument();
-    const ui = new UiController({ necklaces: [] });
+    const ui = new UiRoot({ necklaces: [] });
 
     ui.elements.shareSheet.hidden = false;
     ui.bind({});
@@ -386,10 +386,10 @@ describe('UiController listener lifecycle', () => {
   });
 });
 
-describe('UiController state synchronization', () => {
+describe('UiRoot state synchronization', () => {
   it('syncs mode classes, selected mode button, AR sections, capture visibility, and panels', () => {
     installFakeDocument();
-    const ui = new UiController({ necklaces: NECKLACES });
+    const ui = new UiRoot({ necklaces: NECKLACES });
 
     ui.syncFromState(createState({ mode: APP_MODES.AR, controlsCollapsed: false, activePanel: 'fit' }), {
       changes: ['mode', 'controlsCollapsed', 'activePanel', 'modelLoaded'],
@@ -410,7 +410,7 @@ describe('UiController state synchronization', () => {
 
   it('syncs camera button disabled states, title, aria-label, and selfie class', () => {
     installFakeDocument();
-    const ui = new UiController({ necklaces: NECKLACES });
+    const ui = new UiRoot({ necklaces: NECKLACES });
 
     ui.syncFromState(
       createState({
@@ -430,7 +430,7 @@ describe('UiController state synchronization', () => {
 
   it('syncs selected necklace to the select control and cards', () => {
     installFakeDocument();
-    const ui = new UiController({ necklaces: NECKLACES });
+    const ui = new UiRoot({ necklaces: NECKLACES });
     const selectedCard = createChildElement(ui.elements.necklaceCards, 'button', {
       dataset: { necklaceId: NECKLACES[0].id },
     });
@@ -453,7 +453,7 @@ describe('UiController state synchronization', () => {
 
   it('syncs selected colors to swatch selected state and tab order', () => {
     installFakeDocument();
-    const ui = new UiController({ necklaces: NECKLACES });
+    const ui = new UiRoot({ necklaces: NECKLACES });
     const gemGroup = createChildElement(ui.elements.colorSwatches, 'div', {
       attributes: { role: 'radiogroup' },
     });
@@ -496,7 +496,7 @@ describe('UiController state synchronization', () => {
 
   it('shows the developer panel only when debug is enabled in AR mode', () => {
     installFakeDocument();
-    const ui = new UiController({ necklaces: NECKLACES });
+    const ui = new UiRoot({ necklaces: NECKLACES });
 
     ui.syncFromState(createState({ mode: APP_MODES.AR, debugEnabled: true }), {
       changes: ['mode', 'debugEnabled'],

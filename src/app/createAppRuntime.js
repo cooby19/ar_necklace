@@ -15,14 +15,15 @@ import { NecklaceScene } from '../core/NecklaceScene.js';
 /** @typedef {import('../types/domain').RenderStats} RenderStats */
 /** @typedef {import('../types/app-ports').AppStatePort} AppStatePort */
 /** @typedef {import('../types/app-ports').CaptureServicePort} CaptureServicePort */
-/** @typedef {import('../types/ui-ports').UiControllerPort} UiControllerPort */
+/** @typedef {import('../types/ui-ports').UiRuntimePort} UiRuntimePort */
 
 /** @typedef {(stats: RenderStats) => void} RenderStatsUpdateHandler */
 
 /**
  * @typedef {{
  *   appState: AppStatePort,
- *   uiController: UiControllerPort,
+ *   uiRoot?: UiRuntimePort,
+ *   uiController?: UiRuntimePort,
  *   captureService: CaptureServicePort,
  *   necklaces: readonly NecklaceConfig[],
  *   realtimeStore?: RealtimeTrackingStore,
@@ -46,39 +47,43 @@ import { NecklaceScene } from '../core/NecklaceScene.js';
  */
 
 /**
- * Builds the runtime services used by ModeController without changing their lifecycle semantics.
+ * Builds the runtime services used by AppRuntimeController without changing their lifecycle semantics.
  *
  * @param {CreateAppRuntimeOptions} options
  * @returns {AppRuntime}
  */
-export function createAppRuntime({
-  appState,
-  uiController,
-  captureService,
-  necklaces,
-  realtimeStore = new RealtimeTrackingStore(),
-  onError = (message) => uiController.showError(message),
-}) {
+export function createAppRuntime(options) {
+  const {
+    appState,
+    captureService,
+    necklaces,
+    realtimeStore = new RealtimeTrackingStore(),
+  } = options;
+  const uiRoot = options.uiRoot ?? options.uiController;
+  if (!uiRoot) {
+    throw new Error('createAppRuntime requires a uiRoot');
+  }
+  const onError = options.onError ?? ((message) => uiRoot.showError(message));
   const scene = new NecklaceScene({
-    canvas: uiController.elements.threeCanvas,
-    stageElement: uiController.elements.stage,
+    canvas: uiRoot.elements.threeCanvas,
+    stageElement: uiRoot.elements.stage,
     onError,
   });
   const necklaceController = new NecklaceController(scene);
   const faceQualityAdvisor = new FaceQualityAdvisor({
-    video: uiController.elements.video,
+    video: uiRoot.elements.video,
   });
   const debugOverlay = new DebugOverlay({
-    canvas: uiController.elements.debugCanvas,
-    stageElement: uiController.elements.stage,
+    canvas: uiRoot.elements.debugCanvas,
+    stageElement: uiRoot.elements.stage,
   });
   const modelCatalog = new ModelCatalogService({
     scene,
     necklaces,
   });
   const calibrationService = new CalibrationService({
-    stageElement: uiController.elements.stage,
-    pointerElement: uiController.elements.threeCanvas,
+    stageElement: uiRoot.elements.stage,
+    pointerElement: uiRoot.elements.threeCanvas,
   });
   const shareWorkflow = new ShareWorkflow({
     captureService,

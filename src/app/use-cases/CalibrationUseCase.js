@@ -2,7 +2,8 @@
 
 /** @typedef {import('../../types/domain').WearAdjustmentPatch} WearAdjustmentPatch */
 /** @typedef {import('../../types/app-ports').AppStatePort} AppStatePort */
-/** @typedef {import('../../types/ui-ports').UiControllerPort} UiControllerPort */
+/** @typedef {import('../../types/ui-ports').CalibrationHintOptions} CalibrationHintOptions */
+/** @typedef {import('../../types/ui-ports').TuningControlsReadResult} TuningControlsReadResult */
 /** @typedef {import('../RealtimeTrackingStore.js').RealtimeTrackingStore} RealtimeTrackingStore */
 
 /**
@@ -14,8 +15,17 @@
 
 /**
  * @typedef {{
+ *   setCalibrationDragging: (isDragging: boolean) => void,
+ *   syncTuningControlsFromAdjustments: (adjustments: WearAdjustmentPatch) => TuningControlsReadResult,
+ *   readTuningControls: () => TuningControlsReadResult,
+ *   setCalibrationHint: (message: string, options?: CalibrationHintOptions) => void,
+ * }} CalibrationUiPort
+ */
+
+/**
+ * @typedef {{
  *   appState: AppStatePort,
- *   ui: UiControllerPort,
+ *   ui: CalibrationUiPort,
  *   realtimeStore: RealtimeTrackingStore,
  *   calibrationService: import('../CalibrationService.js').CalibrationService,
  *   necklaceController: import('../../core/NecklaceController.js').NecklaceController,

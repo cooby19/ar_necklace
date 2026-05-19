@@ -3,12 +3,7 @@ import type {
   AppStateSnapshot,
   ArSessionStatus,
   CaptureResult,
-  FaceLandmarkList,
-  FaceTrackingAdvice,
-  NecklaceDebugData,
-  RenderStats,
   ShareResult,
-  TrackerStats,
 } from './domain';
 
 export interface AppStatePort {
@@ -38,28 +33,4 @@ export interface CaptureServicePort {
   createCapture(options: { mirrored: boolean }): Promise<CaptureResult>;
   download(capture: CaptureDownloadInput): void;
   share(blob: Blob): Promise<ShareResult>;
-}
-
-export interface FaceQualityAdvisorPort {
-  getAdvice(input: {
-    landmarks?: FaceLandmarkList | null;
-    debugData?: NecklaceDebugData | null;
-    now?: number;
-  }): FaceTrackingAdvice;
-}
-
-export interface TrackingModelCatalogPort {
-  getColorableMaterialCount(): number;
-}
-
-export interface TrackingCalibrationPort {
-  hasCalibration(necklaceId: string): boolean;
-}
-
-export interface TrackingFeedbackOptions {
-  faceQualityAdvisor: FaceQualityAdvisorPort;
-  getTrackerStats(): TrackerStats;
-  getRenderStats(): RenderStats;
-  modelCatalog: TrackingModelCatalogPort;
-  calibrationService: TrackingCalibrationPort;
 }

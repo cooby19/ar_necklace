@@ -12,16 +12,33 @@ import { createIdleTrackerStats } from '../RealtimeTrackingStore.js';
 /** @typedef {import('../../types/domain').CameraFacingMode} CameraFacingMode */
 /** @typedef {import('../../types/domain').FaceMeshResults} FaceMeshResults */
 /** @typedef {import('../../types/domain').TrackerStats} TrackerStats */
+/** @typedef {import('../../types/domain').WorkflowStatusView} WorkflowStatusView */
 /** @typedef {import('../../types/app-ports').AppStatePort} AppStatePort */
-/** @typedef {import('../../types/ui-ports').UiControllerPort} UiControllerPort */
 /** @typedef {import('../../types/scene-ports').NecklaceSceneModePort} NecklaceSceneModePort */
 /** @typedef {import('../ArSessionService.js').ArSessionService} ArSessionService */
 /** @typedef {import('../RealtimeTrackingStore.js').RealtimeTrackingStore} RealtimeTrackingStore */
 
 /**
  * @typedef {{
+ *   elements: {
+ *     video: HTMLVideoElement,
+ *     startButton: HTMLButtonElement,
+ *     switchCameraButton: HTMLButtonElement,
+ *     stopCameraButton: HTMLButtonElement,
+ *   },
+ *   clearError: () => void,
+ *   setStartButtonLabel: (label: string) => void,
+ *   setCameraOn: (isCameraOn: boolean) => void,
+ *   setCaptureDisabled: (isDisabled: boolean) => void,
+ *   setStatus: (kind: WorkflowStatusView['kind'], label: string, metrics: string) => void,
+ *   setCalibrationDragging: (isDragging: boolean) => void,
+ * }} CameraSessionUiPort
+ */
+
+/**
+ * @typedef {{
  *   appState: AppStatePort,
- *   ui: UiControllerPort,
+ *   ui: CameraSessionUiPort,
  *   realtimeStore: RealtimeTrackingStore,
  *   scene: NecklaceSceneModePort,
  *   debugOverlay: import('../../core/DebugOverlay.js').DebugOverlay,

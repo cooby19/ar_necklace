@@ -1,13 +1,25 @@
 // @ts-check
 
 /** @typedef {import('../../types/domain').AppStateSnapshot} AppStateSnapshot */
+/** @typedef {import('../../types/domain').WorkflowStatusView} WorkflowStatusView */
 /** @typedef {import('../../types/app-ports').AppStatePort} AppStatePort */
-/** @typedef {import('../../types/ui-ports').UiControllerPort} UiControllerPort */
+/** @typedef {import('../../types/ui-ports').ColorAvailabilityUiModel} ColorAvailabilityUiModel */
+/** @typedef {import('../../types/ui-ports').ColorSwatchesUiModel} ColorSwatchesUiModel */
+
+/**
+ * @typedef {{
+ *   syncNecklaceSelection: (necklaceId: string) => void,
+ *   clearError: () => void,
+ *   setStatus: (kind: WorkflowStatusView['kind'], label: string, metrics: string) => void,
+ *   populateColorSwatches: (model: ColorSwatchesUiModel) => void,
+ *   updateColorUiAvailability: (availability: ColorAvailabilityUiModel) => void,
+ * }} ModelUiPort
+ */
 
 /**
  * @typedef {{
  *   appState: AppStatePort,
- *   ui: UiControllerPort,
+ *   ui: ModelUiPort,
  *   modelCatalog: import('../ModelCatalogService.js').ModelCatalogService,
  *   necklaceController: import('../../core/NecklaceController.js').NecklaceController,
  *   rendererLoop: import('../RendererLoop.js').RendererLoop,

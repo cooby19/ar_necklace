@@ -62,7 +62,7 @@ describe('createAppRuntime', () => {
       getSnapshot: vi.fn(() => realtimeSnapshot),
       setRenderStats: vi.fn(),
     };
-    const uiController = {
+    const uiRoot = {
       elements,
       showError: vi.fn(),
     };
@@ -70,7 +70,7 @@ describe('createAppRuntime', () => {
 
     const runtime = createAppRuntime({
       appState,
-      uiController,
+      uiRoot,
       captureService,
       necklaces: NECKLACES,
       realtimeStore,
@@ -108,7 +108,7 @@ describe('createAppRuntime', () => {
     });
 
     runtime.scene.options.onError('broken model');
-    expect(uiController.showError).toHaveBeenCalledWith('broken model');
+    expect(uiRoot.showError).toHaveBeenCalledWith('broken model');
 
     const renderStatsHandler = vi.fn();
     const stats = { fps: 60 };

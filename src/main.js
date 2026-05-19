@@ -4,74 +4,74 @@ import { RELEASE_METADATA } from './config/release.js';
 import { AppState } from './app/AppState.js';
 import { CaptureService } from './app/CaptureService.js';
 import { runtimeErrorReporter } from './telemetry/RuntimeErrorReporter.js';
-import { UiController } from './app/UiController.js';
+import { UiRoot } from './ui/UiRoot.js';
 
 runtimeErrorReporter.installGlobalHandlers();
 bootstrap();
 
 async function bootstrap() {
   const appState = new AppState({ necklaces: NECKLACES });
-  const uiController = new UiController({ necklaces: NECKLACES });
-  uiController.setReleaseMetadata(RELEASE_METADATA);
+  const uiRoot = new UiRoot({ necklaces: NECKLACES });
+  uiRoot.setReleaseMetadata(RELEASE_METADATA);
   exposeRuntimeMetadata(RELEASE_METADATA);
 
   const captureService = new CaptureService({
-    stageElement: uiController.elements.stage,
-    videoElement: uiController.elements.video,
-    threeCanvas: uiController.elements.threeCanvas,
+    stageElement: uiRoot.elements.stage,
+    videoElement: uiRoot.elements.video,
+    threeCanvas: uiRoot.elements.threeCanvas,
   });
 
   try {
-    const [{ createAppRuntime }, { ModeController }] = await Promise.all([
+    const [{ createAppRuntime }, { AppRuntimeController }] = await Promise.all([
       import('./app/createAppRuntime.js'),
-      import('./app/ModeController.js'),
+      import('./app/AppRuntimeController.js'),
     ]);
     const runtime = createAppRuntime({
       appState,
-      uiController,
+      uiRoot,
       captureService,
       necklaces: NECKLACES,
     });
-    const modeController = new ModeController({
+    const appRuntimeController = new AppRuntimeController({
       appState,
-      uiController,
+      uiRoot,
       runtime,
     });
 
     appState.subscribe((snapshot, meta) => {
-      uiController.syncFromState(snapshot, meta);
+      uiRoot.syncFromState(snapshot, meta);
     });
 
-    uiController.bind({
-      onModeSelect: (mode) => modeController.selectMode(mode),
-      onPanelSelect: (panelName) => modeController.selectControlPanel(panelName),
-      onBottomSheetToggle: () => modeController.toggleBottomSheet(),
-      onShowcasePointerDown: (event) => modeController.handleShowcasePointerDown(event),
-      onShowcasePointerMove: (event) => modeController.handleShowcasePointerMove(event),
-      onShowcasePointerUp: (event) => modeController.handleShowcasePointerUp(event),
-      onStartCamera: () => modeController.startExperience(),
-      onSwitchCamera: () => modeController.switchCamera(),
-      onStopCamera: () => modeController.stopExperience(),
-      onCapture: () => modeController.handleCapture(),
-      onDebugToggle: (isEnabled) => modeController.handleDebugToggle(isEnabled),
-      onNecklaceToggle: (isVisible) => modeController.handleNecklaceToggle(isVisible),
-      onNecklaceSelect: (necklaceId) => modeController.selectNecklace(necklaceId),
-      onColorSelect: (colorId, targetId) => modeController.selectColor(colorId, targetId),
-      onTuningInput: () => modeController.updateTuningFromControls(),
-      onSaveCalibration: () => modeController.saveCalibration(),
-      onResetCalibration: () => modeController.resetCalibration(),
-      onDownloadCapture: () => modeController.downloadCapture(),
-      onShareCapture: () => modeController.shareCapture(),
-      onCloseShareSheet: () => modeController.closeShareSheet(),
+    uiRoot.bind({
+      onModeSelect: (mode) => appRuntimeController.selectMode(mode),
+      onPanelSelect: (panelName) => appRuntimeController.selectControlPanel(panelName),
+      onBottomSheetToggle: () => appRuntimeController.toggleBottomSheet(),
+      onShowcasePointerDown: (event) => appRuntimeController.handleShowcasePointerDown(event),
+      onShowcasePointerMove: (event) => appRuntimeController.handleShowcasePointerMove(event),
+      onShowcasePointerUp: (event) => appRuntimeController.handleShowcasePointerUp(event),
+      onStartCamera: () => appRuntimeController.startExperience(),
+      onSwitchCamera: () => appRuntimeController.switchCamera(),
+      onStopCamera: () => appRuntimeController.stopExperience(),
+      onCapture: () => appRuntimeController.handleCapture(),
+      onDebugToggle: (isEnabled) => appRuntimeController.handleDebugToggle(isEnabled),
+      onNecklaceToggle: (isVisible) => appRuntimeController.handleNecklaceToggle(isVisible),
+      onNecklaceSelect: (necklaceId) => appRuntimeController.selectNecklace(necklaceId),
+      onColorSelect: (colorId, targetId) => appRuntimeController.selectColor(colorId, targetId),
+      onTuningInput: () => appRuntimeController.updateTuningFromControls(),
+      onSaveCalibration: () => appRuntimeController.saveCalibration(),
+      onResetCalibration: () => appRuntimeController.resetCalibration(),
+      onDownloadCapture: () => appRuntimeController.downloadCapture(),
+      onShareCapture: () => appRuntimeController.shareCapture(),
+      onCloseShareSheet: () => appRuntimeController.closeShareSheet(),
     });
 
-    modeController.init();
+    appRuntimeController.init();
   } catch (error) {
     runtimeErrorReporter.captureError(error, {
       eventType: 'app.bootstrap_failed',
       feature: 'runtime',
     });
-    uiController.showError(`應用程式初始化失敗：${error.message ?? error}`);
+    uiRoot.showError(`應用程式初始化失敗：${error.message ?? error}`);
   }
 }
 

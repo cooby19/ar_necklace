@@ -6,18 +6,25 @@ const TRACKING_FEEDBACK_UPDATE_INTERVAL_MS = 350;
 
 /** @typedef {import('../../types/domain').AppStateSnapshot} AppStateSnapshot */
 /** @typedef {import('../../types/domain').ArSessionStatus} ArSessionStatus */
+/** @typedef {import('../../types/domain').DeveloperPanelModel} DeveloperPanelModel */
 /** @typedef {import('../../types/domain').FaceMeshResults} FaceMeshResults */
 /** @typedef {import('../../types/domain').NecklaceDebugData} NecklaceDebugData */
 /** @typedef {import('../../types/domain').TrackerStats} TrackerStats */
 /** @typedef {import('../../types/domain').WorkflowStatusView} WorkflowStatusView */
 /** @typedef {import('../../types/app-ports').AppStatePort} AppStatePort */
-/** @typedef {import('../../types/ui-ports').UiControllerPort} UiControllerPort */
 /** @typedef {import('../RealtimeTrackingStore.js').RealtimeTrackingStore} RealtimeTrackingStore */
 
 /**
  * @typedef {{
+ *   updateDeveloperPanel: (model: DeveloperPanelModel) => void,
+ *   setStatus: (kind: WorkflowStatusView['kind'], label: string, metrics: string) => void,
+ * }} TrackingUiPort
+ */
+
+/**
+ * @typedef {{
  *   appState: AppStatePort,
- *   ui: UiControllerPort,
+ *   ui: TrackingUiPort,
  *   realtimeStore: RealtimeTrackingStore,
  *   necklaceController: import('../../core/NecklaceController.js').NecklaceController,
  *   rendererLoop: import('../RendererLoop.js').RendererLoop,

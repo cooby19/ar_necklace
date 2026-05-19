@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import { APP_MODES, AR_SESSION_STATES } from './AppState.js';
-import { ModeController } from './ModeController.js';
+import { AppRuntimeController } from './AppRuntimeController.js';
 import { RealtimeTrackingStore } from './RealtimeTrackingStore.js';
 import { NECKLACES } from '../config/necklaces.js';
 
-describe('ModeController runtime injection', () => {
+describe('AppRuntimeController runtime injection', () => {
   it('keeps public handlers available while using injected runtime ports', () => {
-    const controller = createModeController();
+    const controller = createAppRuntimeController();
 
     [
       'init',
@@ -36,9 +36,9 @@ describe('ModeController runtime injection', () => {
   });
 });
 
-describe('ModeController mode and panel intents', () => {
+describe('AppRuntimeController mode and panel intents', () => {
   it('transitions from showcase to AR idle and resets showcase effects', () => {
-    const controller = createModeController({
+    const controller = createAppRuntimeController({
       mode: APP_MODES.SHOWCASE,
       sessionStatus: AR_SESSION_STATES.SHOWCASE,
       cameraStarted: false,
@@ -62,7 +62,7 @@ describe('ModeController mode and panel intents', () => {
   });
 
   it('stops the active camera session before returning from AR to showcase', () => {
-    const controller = createModeController({
+    const controller = createAppRuntimeController({
       mode: APP_MODES.AR,
       sessionStatus: AR_SESSION_STATES.TRACKING,
       cameraStarted: true,
@@ -100,7 +100,7 @@ describe('ModeController mode and panel intents', () => {
   });
 
   it('ignores invalid or unchanged modes', () => {
-    const controller = createModeController({
+    const controller = createAppRuntimeController({
       mode: APP_MODES.AR,
       sessionStatus: AR_SESSION_STATES.AR_IDLE,
     });
@@ -116,7 +116,7 @@ describe('ModeController mode and panel intents', () => {
   });
 
   it('returns the fit panel to styles when switching to non-AR mode', () => {
-    const controller = createModeController({
+    const controller = createAppRuntimeController({
       mode: APP_MODES.AR,
       sessionStatus: AR_SESSION_STATES.AR_IDLE,
       activePanel: 'fit',
@@ -136,7 +136,7 @@ describe('ModeController mode and panel intents', () => {
   });
 
   it('ignores missing or unavailable control panels', () => {
-    const controller = createModeController({ activePanel: 'styles' });
+    const controller = createAppRuntimeController({ activePanel: 'styles' });
     controller.ui.canSelectControlPanel.mockReturnValue(false);
 
     controller.selectControlPanel();
@@ -148,7 +148,7 @@ describe('ModeController mode and panel intents', () => {
   });
 
   it('writes valid control panel selection to app state', () => {
-    const controller = createModeController({ activePanel: 'styles' });
+    const controller = createAppRuntimeController({ activePanel: 'styles' });
 
     controller.selectControlPanel('fit');
 
@@ -158,7 +158,7 @@ describe('ModeController mode and panel intents', () => {
   });
 
   it('toggles bottom sheet collapsed state through app state dispatch', () => {
-    const controller = createModeController({ controlsCollapsed: true });
+    const controller = createAppRuntimeController({ controlsCollapsed: true });
 
     controller.toggleBottomSheet();
     controller.toggleBottomSheet();
@@ -178,9 +178,9 @@ describe('ModeController mode and panel intents', () => {
   });
 });
 
-describe('ModeController UI toggles', () => {
+describe('AppRuntimeController UI toggles', () => {
   it('syncs debug toggle to state, overlay, developer panel, and tracking status', () => {
-    const controller = createModeController({
+    const controller = createAppRuntimeController({
       mode: APP_MODES.AR,
       debugEnabled: false,
     });
@@ -195,7 +195,7 @@ describe('ModeController UI toggles', () => {
   });
 
   it('fades out the necklace and requests a render when necklace visibility is disabled', () => {
-    const controller = createModeController({ necklaceVisible: true });
+    const controller = createAppRuntimeController({ necklaceVisible: true });
 
     controller.handleNecklaceToggle(false);
 
@@ -207,7 +207,7 @@ describe('ModeController UI toggles', () => {
 
 });
 
-function createModeController(overrides = {}, options = {}) {
+function createAppRuntimeController(overrides = {}, options = {}) {
   let state = {
     mode: APP_MODES.SHOWCASE,
     sessionStatus: AR_SESSION_STATES.SHOWCASE,
@@ -239,7 +239,7 @@ function createModeController(overrides = {}, options = {}) {
     return state;
   };
   const realtimeStore = new RealtimeTrackingStore({ now: () => 100 });
-  const uiController = {
+  const uiRoot = {
     canSelectControlPanel: vi.fn(() => true),
     closeShareSheet: vi.fn(),
     setCalibrationDragging: vi.fn(),
@@ -302,7 +302,7 @@ function createModeController(overrides = {}, options = {}) {
     }),
   };
 
-  const controller = new ModeController({
+  const controller = new AppRuntimeController({
     appState: {
       transitionSession: vi.fn((nextStatus, patch = {}) => setState({ ...patch, sessionStatus: nextStatus })),
       set: vi.fn((patch) => setState(patch)),
@@ -310,7 +310,7 @@ function createModeController(overrides = {}, options = {}) {
       get: vi.fn((key) => state[key]),
       getSnapshot: vi.fn(() => state),
     },
-    uiController,
+    uiRoot,
     runtime,
   });
 

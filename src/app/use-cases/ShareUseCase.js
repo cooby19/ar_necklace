@@ -7,13 +7,25 @@ import { AR_SESSION_STATES } from '../AppState.js';
 /** @typedef {import('../../types/domain').RealtimeTrackingSnapshot} RealtimeTrackingSnapshot */
 /** @typedef {import('../../types/domain').WorkflowStatusView} WorkflowStatusView */
 /** @typedef {import('../../types/app-ports').AppStatePort} AppStatePort */
-/** @typedef {import('../../types/ui-ports').UiControllerPort} UiControllerPort */
 /** @typedef {import('../RealtimeTrackingStore.js').RealtimeTrackingStore} RealtimeTrackingStore */
 
 /**
  * @typedef {{
+ *   clearError: () => void,
+ *   hasCurrentVideoFrame: () => boolean,
+ *   setCaptureDisabled: (isDisabled: boolean) => void,
+ *   setCaptureBusy: (isBusy: boolean) => void,
+ *   setShareImage: (url: string) => void,
+ *   openShareSheet: () => void,
+ *   closeShareSheet: () => void,
+ *   setStatus: (kind: WorkflowStatusView['kind'], label: string, metrics: string) => void,
+ * }} ShareUiPort
+ */
+
+/**
+ * @typedef {{
  *   appState: AppStatePort,
- *   ui: UiControllerPort,
+ *   ui: ShareUiPort,
  *   realtimeStore: RealtimeTrackingStore,
  *   shareWorkflow: import('../ShareWorkflow.js').ShareWorkflow,
  *   showError: (message: string) => void,
