@@ -8,9 +8,18 @@
 
 ```text
 .
+├── .github/
+│   └── workflows/
+├── docs/
+│   └── deployment.md
 ├── index.html
 ├── package.json
 ├── package-lock.json
+├── scripts/
+│   ├── check-bundle-budget.mjs
+│   ├── run-lighthouse.mjs
+│   ├── smoke.mjs
+│   └── smoke-release.mjs
 ├── vite.config.js
 ├── public/
 │   ├── models/
@@ -21,46 +30,71 @@
 │   └── vendor/
 │       └── mediapipe/
 │           └── face_mesh/
-└── src/
-    ├── main.js
-    ├── styles.css
-    ├── app/
-    │   ├── AppState.js
-    │   ├── AppState.test.js
-    │   ├── ArSessionService.js
-    │   ├── CalibrationService.js
-    │   ├── CalibrationService.test.js
-    │   ├── CaptureService.js
-    │   ├── ModelCatalogService.js
-    │   ├── ModelCatalogService.test.js
-    │   ├── ModeController.js
-    │   ├── RealtimeTrackingStore.js
-    │   ├── RendererLoop.js
-    │   ├── ShareWorkflow.js
-    │   ├── ShareWorkflow.test.js
-    │   ├── TrackingFeedbackService.js
-    │   └── UiController.js
-    ├── config/
-    │   ├── necklaces.js
-    │   └── tuning.js
-    ├── core/
-    │   ├── CameraStream.js
-    │   ├── DebugOverlay.js
-    │   ├── FaceQualityAdvisor.js
-    │   ├── FaceTracker.js
-    │   ├── NecklaceController.js
-    │   ├── NecklaceScene.js
-    │   ├── NecklaceScene.test.js
-    │   ├── Smoother.js
-    │   └── WearCalibration.js
-    ├── types/
-    │   └── domain.ts
-    └── utils/
-        ├── landmarks.js
-        └── stageResize.js
+├── src/
+│   ├── main.js
+│   ├── styles/
+│   │   ├── index.css
+│   │   ├── reset.css
+│   │   ├── tokens.css
+│   │   ├── layout.css
+│   │   ├── states.css
+│   │   ├── responsive.css
+│   │   ├── accessibility.css
+│   │   └── components/
+│   ├── app/
+│   │   ├── AppState.js
+│   │   ├── AppState.test.js
+│   │   ├── ArSessionService.js
+│   │   ├── CalibrationService.js
+│   │   ├── CalibrationService.test.js
+│   │   ├── CaptureService.js
+│   │   ├── ModelCatalogService.js
+│   │   ├── ModelCatalogService.test.js
+│   │   ├── ModeController.js
+│   │   ├── RealtimeTrackingStore.js
+│   │   ├── RendererLoop.js
+│   │   ├── ShareWorkflow.js
+│   │   ├── ShareWorkflow.test.js
+│   │   ├── TrackingFeedbackService.js
+│   │   └── UiController.js
+│   ├── config/
+│   │   ├── assets.js
+│   │   ├── necklaces.js
+│   │   ├── release.js
+│   │   └── tuning.js
+│   ├── core/
+│   │   ├── CameraStream.js
+│   │   ├── DebugOverlay.js
+│   │   ├── FaceQualityAdvisor.js
+│   │   ├── FaceTracker.js
+│   │   ├── GlbAssetLoader.ts
+│   │   ├── MaterialCustomizationEngine.js
+│   │   ├── ModelResourceDisposer.js
+│   │   ├── NecklaceController.js
+│   │   ├── NecklacePlacementAdapter.js
+│   │   ├── NecklaceScene.js
+│   │   ├── NecklaceScene.test.js
+│   │   ├── OccluderProcessor.js
+│   │   ├── ShowcasePresenter.ts
+│   │   ├── Smoother.js
+│   │   ├── ThreeRendererHost.js
+│   │   └── WearCalibration.js
+│   ├── telemetry/
+│   │   └── RuntimeErrorReporter.js
+│   ├── types/
+│   │   ├── app-ports.ts
+│   │   ├── domain.ts
+│   │   ├── scene-ports.ts
+│   │   └── ui-ports.ts
+│   └── utils/
+│       ├── landmarks.js
+│       └── stageResize.js
+└── tests/
+    ├── a11y/
+    └── visual/
 ```
 
-其中 `src/main.js` 只負責組裝狀態、UI、模式控制與截圖服務。`src/app/ModeController.js` 現在是輕量 use-case orchestrator：接收 UI intent、協調 app services、提交 `AppState`，但不直接管理相機生命週期、模型 catalog/color、render loop、校準流程、分享流程或 debug/status 資料組裝。`src/app/` 放應用狀態、UI 綁定、工作流程服務與模式協調，`src/core/` 放相機、Face Mesh、Three.js、穿戴校準與品質提示等可重用核心邏輯，`src/utils/` 放 landmark 計算與預覽區尺寸監聽工具。
+其中 `src/main.js` 只負責載入樣式、安裝 runtime error reporter、暴露 release metadata，並組裝狀態、UI、模式控制與截圖服務。`src/app/ModeController.js` 是輕量 use-case orchestrator：接收 UI intent、協調 app services、提交 `AppState`，但不直接管理相機生命週期、模型 catalog/color、render loop、校準流程、分享流程或 debug/status 資料組裝。`src/app/` 放應用狀態、UI 綁定、工作流程服務與模式協調，`src/core/` 放相機、Face Mesh、Three.js scene 子服務、穿戴校準與品質提示等可重用核心邏輯，`src/utils/` 放 landmark 計算與預覽區尺寸監聽工具。
 
 ## 應用流程分層
 
@@ -91,7 +125,8 @@ UiController intent
 
 - `tsconfig.json` 使用 `allowJs: true`、`checkJs: false`、`strict: true`。
 - `src/types/domain.ts` 保存跨檔案共享的 domain types。
-- 只檢查局部加上 `// @ts-check` 的 `.js` 檔案，以及 `src/types/domain.ts`。
+- `src/types/app-ports.ts`、`src/types/ui-ports.ts`、`src/types/scene-ports.ts` 保存 app/UI/scene 邊界 port types。
+- 只檢查局部加上 `// @ts-check` 的 `.js` 檔案、`.ts` 檔案與 `vite.config.js`。
 - 使用 `npm run typecheck` 執行 `tsc --noEmit`。
 
 目前已納入 typed boundary 的核心範圍包含：
@@ -100,15 +135,16 @@ UiController intent
 - config schema：`tuning`、`necklaces`。
 - MediaPipe results、RealtimeTrackingStore、FaceTracker、ArSessionService、ModeController、NecklaceController、landmark metrics 的資料流。
 - model/color、calibration、share、tracking feedback、renderer loop、camera stream、debug overlay、capture service。
+- scene boundary：NecklaceScene facade、GlbAssetLoader、ThreeRendererHost、NecklacePlacementAdapter、OccluderProcessor、MaterialCustomizationEngine、ModelResourceDisposer、ShowcasePresenter。
+- telemetry boundary：RuntimeErrorReporter、release metadata 與 sanitized error context。
 - pure logic：landmarks、Smoother、WearCalibration、FaceQualityAdvisor。
 
 仍刻意未完整型別化的區域：
 
 - `src/app/UiController.js`：DOM query、event binding、UI render helper 與 focus trap 噪音較高。若要推進，建議先拆 DOM helper 或 view helper，再分段加 `// @ts-check`。
-- `src/core/NecklaceScene.js`：Three.js、GLTFLoader、材質 traverse、WebGL render 與 asset cache 型別噪音較高。其他模組應先用小型 port 描述實際使用 surface，不要為了型別化整包重構。
-- `src/main.js` 與 `src/app/*.test.js`：適合作為下一階段低成本補強。
+- `src/main.js`、`src/app/*.test.js` 與 `src/core/*.test.js`：適合作為下一階段低成本補強。
 
-目前不建議打開全域 `checkJs`，也不建議直接把 `UiController` 或 `NecklaceScene` 整包轉成 TypeScript。維護時優先持續保護 runtime 資料形狀容易錯接的 service boundary。
+目前不建議打開全域 `checkJs`，也不建議直接把 `UiController` 或剩餘高 DOM/WebGL 噪音模組整包轉成 TypeScript。維護時優先持續保護 runtime 資料形狀容易錯接的 service boundary。
 
 `AppState` 保留 durable UI state，例如 mode、sessionStatus、cameraStarted、selectedNecklace、debugEnabled、capture/share 狀態與校準調參。每幀 landmarks、debugData、hasFace、frame sequence、tracker stats 與 render stats 放在 `RealtimeTrackingStore`。UI 只訂閱 `AppState` 以及節流後的 realtime snapshot，FaceMesh result 不再每幀觸發 DOM 同步。
 
@@ -210,19 +246,21 @@ CI 的 npm audit 先以 production dependency 為範圍執行 `npm audit --omit=
 public/models/necklace.glb
 ```
 
-瀏覽器執行時會載入：
+瀏覽器執行時會透過 `versionedPublicAssetUrl('models/necklace.glb')` 載入；在本機 dev 通常解析為：
 
 ```text
-/models/necklace.glb
+/models/necklace.glb?v=<version>-<commit>
 ```
 
-如果要新增多款項鍊，請在 `src/config/necklaces.js` 新增設定：
+如果要新增多款項鍊，請在 `src/config/necklaces.js` 匯入並使用 `versionedPublicAssetUrl()` 產生 URL，避免 GitHub Pages 子路徑部署時資產 404：
 
 ```js
+import { versionedPublicAssetUrl } from './assets.js';
+
 {
   id: 'silver-chain',
   label: '銀色鍊款',
-  url: '/models/silver-chain.glb',
+  url: versionedPublicAssetUrl('models/silver-chain.glb'),
   preserveAuthorOrigin: true,
   occluderParts: {
     nameIncludes: ['neck', '脖', '頸', '圓柱'],
@@ -255,13 +293,13 @@ public/models/necklace.glb
 
 ## WebGL 資源與 GLB 快取
 
-`NecklaceScene` 擁有 Three.js 模型資源生命週期。切換項鍊款式時，`loadNecklace()` 會先釋放舊模型底下的 geometry、material 與 texture，再清空 `necklaceRoot` 並載入新 GLB，避免多次切換模型後 GPU memory 持續成長。這些 Three.js 細節維持在 `NecklaceScene` 內，`ModelCatalogService` 只負責款式選擇、載入流程與套色協調。
+`NecklaceScene` 是 scene facade，負責協調 `GlbAssetLoader`、`NecklacePlacementAdapter`、`OccluderProcessor`、`MaterialCustomizationEngine`、`ModelResourceDisposer`、`ShowcasePresenter` 與 `ThreeRendererHost`。切換項鍊款式時，`loadNecklace()` 會 abort 舊載入、釋放舊模型底下的 geometry、material 與 texture，再清空 placement/material state 並載入新 GLB，避免多次切換模型後 GPU memory 持續成長。這些 Three.js 細節維持在 scene/core 層，`ModelCatalogService` 只負責款式選擇、載入流程與套色協調。
 
-資源釋放 helper 會遞迴 traverse 舊模型，並用 `Set` 對共享的 geometry、material、texture 去重，避免同一個資源被重複 dispose。材質 texture 清理不只處理 `map`，也涵蓋 normal、roughness、metalness、ao、emissive、alpha、bump、displacement、env、light、specular 等常見 texture-like 欄位；scene-level `environmentMap` 不會在模型切換時釋放，只會在 `NecklaceScene.dispose()` teardown 時釋放。
+`ModelResourceDisposer` 會遞迴 traverse 舊模型，並用 `Set` 對共享的 geometry、material、texture 去重，避免同一個資源被重複 dispose。材質 texture 清理不只處理 `map`，也涵蓋 normal、roughness、metalness、ao、emissive、alpha、bump、displacement、env、light、specular、transmission 等常見 texture-like 欄位；scene-level `environmentMap` 不會在模型切換時釋放，只會在 `ThreeRendererHost.dispose()` teardown 時釋放。
 
 depth occluder 會用新的 `MeshBasicMaterial` 取代原材質以只寫入 Depth Buffer。替換前的原材質會暫存在 `mesh.userData.originalOccluderMaterials`，讓模型 dispose 時可連同原材質、其 texture 與新的 occluder material 一起釋放。
 
-GLB `ArrayBuffer` 使用小型 LRU cache，最多保留 5 個最近使用的 GLB buffer。cache hit 會刷新 recently-used 順序；新增後超過上限會移除最久未使用項目。解析 GLB 前仍使用 `glbBuffer.slice(0)`，避免 GLTFLoader 修改共用 cache buffer。
+`GlbAssetLoader` 的 GLB `ArrayBuffer` 使用小型 LRU cache，最多保留 5 個最近使用的 GLB buffer。cache hit 會刷新 recently-used 順序；新增後超過上限會移除最久未使用項目。解析 GLB 前仍使用 `glbBuffer.slice(0)`，避免 GLTFLoader 修改共用 cache buffer。
 
 ## 測試步驟
 
@@ -302,8 +340,10 @@ roll = atan2(rightCheek.y - leftCheek.y, rightCheek.x - leftCheek.x)
 項鍊縮放使用臉寬估算：
 
 ```text
-scale = faceWidthWorld * necklaceWidthToFaceWidth
+scale = blendedFaceWidthWorld * necklaceWidthToFaceWidth
 ```
+
+其中 `blendedFaceWidthWorld` 會把實測臉寬與臉高推估寬度混合，側臉時更偏向臉高推估值，降低左右臉側距離變短造成的縮放跳動。
 
 ## 可調參數
 
@@ -312,8 +352,12 @@ scale = faceWidthWorld * necklaceWidthToFaceWidth
 - `neckOffsetFromChin`：項鍊 anchor 在下巴下方的距離，比例基準是臉高。
 - `necklaceWidthToFaceWidth`：項鍊相對臉寬的寬度比例。
 - `necklaceVerticalLift`：項鍊垂直微調，負值會往上。
+- `scaleWidthFromFaceHeight`：用臉高推估穩定臉寬。
+- `scaleWidthMinFromHeight` / `scaleWidthMaxFromHeight`：用臉高推估寬度保護實測臉寬上下限。
+- `sideScaleHeightBlend`：側臉時 scale 從實測臉寬混向臉高推估寬度的比例。
 - `yawStrength`：側臉時項鍊繞 Y 軸旋轉的強度，數值越大越有側視透視感。
 - `yawDirection`：側臉旋轉方向，若轉側臉時項鍊往反方向旋轉，將 `1` 改成 `-1`。
+- `yawNoseWeight` / `yawDepthWeight` / `yawDepthStrength`：混合鼻尖水平偏移與臉側深度差的側臉 yaw 訊號。
 - `maxYawRadians`：側臉旋轉的最大角度限制，避免極端 landmarks 讓模型翻太多。
 - `yawAnchorBlend`：側臉時 anchor 從下巴往臉側中心靠近的比例，數值越大越貼近側邊脖子。
 - `yawPositionShift`：側臉時項鍊 anchor 的小幅水平補償。
@@ -323,6 +367,7 @@ scale = faceWidthWorld * necklaceWidthToFaceWidth
 - `smoothing.rotation`：旋轉平滑。
 - `smoothing.yaw`：側臉 Y 軸旋轉平滑。
 - `smoothing.opacity`：淡入淡出平滑。
+- `inference`：FaceTracker adaptive FPS 設定，包含 target/min/max FPS、slow/fast frame ratio、調整冷卻時間與平均視窗大小。
 
 模型資產修正參數在 `src/config/necklaces.js`：
 
