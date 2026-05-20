@@ -48,4 +48,44 @@ describe('MaterialCustomizationEngine opacity updates', () => {
     expect(material.needsUpdate).toBe(false);
     expect(occluderMaterial.opacity).toBe(0);
   });
+
+  it('applies color without replacing existing material maps or opacity', () => {
+    const engine = new MaterialCustomizationEngine();
+    const normalMap = {};
+    const roughnessMap = {};
+    const metalnessMap = {};
+    const aoMap = {};
+    const material = {
+      uuid: 'material-colorable',
+      name: 'Colorable_Metal.001',
+      color: {
+        isColor: true,
+        set: vi.fn(),
+      },
+      normalMap,
+      roughnessMap,
+      metalnessMap,
+      aoMap,
+      opacity: 0.68,
+      needsUpdate: false,
+    };
+    const model = createModel([createMesh({ geometry: {}, material })]);
+
+    engine.collectColorableMaterials(model, [
+      {
+        id: 'metal',
+        label: '金屬',
+        materialNameIncludes: ['Colorable_Metal'],
+      },
+    ]);
+
+    expect(engine.applyColor('metal', '#F6C6D3')).toBe(true);
+    expect(material.color.set).toHaveBeenCalledWith('#F6C6D3');
+    expect(material.normalMap).toBe(normalMap);
+    expect(material.roughnessMap).toBe(roughnessMap);
+    expect(material.metalnessMap).toBe(metalnessMap);
+    expect(material.aoMap).toBe(aoMap);
+    expect(material.opacity).toBe(0.68);
+    expect(material.needsUpdate).toBe(true);
+  });
 });

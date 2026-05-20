@@ -285,6 +285,54 @@ describe('UiRoot DOM guards', () => {
   });
 });
 
+describe('UiRoot catalog rendering', () => {
+  it('renders every configured necklace in the select control and card list', () => {
+    installFakeDocument();
+    const ui = new UiRoot({ necklaces: NECKLACES });
+
+    ui.populateNecklaceSelect(NECKLACES[1].id);
+
+    expect(ui.elements.necklaceSelect.children).toHaveLength(NECKLACES.length);
+    expect(ui.elements.necklaceCards.children).toHaveLength(NECKLACES.length);
+    expect(ui.elements.necklaceSelect.children.map((option) => option.value)).toEqual(
+      NECKLACES.map((necklace) => necklace.id),
+    );
+    expect(ui.elements.necklaceCards.children.map((card) => card.dataset.necklaceId)).toEqual(
+      NECKLACES.map((necklace) => necklace.id),
+    );
+    expect(ui.elements.necklaceCards.children[1].getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('renders color target swatch groups only for matched target ids', () => {
+    installFakeDocument();
+    const ui = new UiRoot({ necklaces: NECKLACES });
+
+    ui.populateColorSwatches({
+      necklace: NECKLACES[0],
+      selectedColorIdsByTarget: {
+        metal: 'citrine',
+        gem: 'amethyst',
+      },
+      fallbackColorId: 'rose-quartz',
+      targetIds: ['metal', 'gem'],
+    });
+
+    const groups = ui.elements.colorSwatches.children;
+    const targetIds = [
+      ...new Set(
+        ui.elements.colorSwatches
+          .querySelectorAll('[data-color-id]')
+          .map((swatch) => swatch.dataset.colorTargetId),
+      ),
+    ];
+
+    expect(groups).toHaveLength(2);
+    expect(groups.map((group) => group.children[0].textContent)).toEqual(['金屬', '寶石']);
+    expect(targetIds).toEqual(['metal', 'gem']);
+    expect(ui.elements.colorSwatches.hasAttribute('hidden')).toBe(false);
+  });
+});
+
 describe('UiRoot listener lifecycle', () => {
   it('binds core controls to the supplied handlers', () => {
     installFakeDocument();

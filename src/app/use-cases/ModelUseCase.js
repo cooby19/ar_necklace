@@ -119,10 +119,11 @@ export class ModelUseCase {
       if (isAbortError(error)) return;
 
       const message =
-        `無法載入 ${selectedNecklace.url}。請確認 .glb 已放在 public/models/necklace.glb。` +
+        `無法載入「${selectedNecklace.label}」模型：${selectedNecklace.url}。` +
+        ` 請確認該款式的 .glb 已放在 public/models/，且 catalog URL 設定正確。` +
         ` 原始錯誤：${formatUnknownError(error)}`;
       this.showError(message);
-      this.ui.setStatus('error', '模型載入失敗', '請先放置 necklace.glb');
+      this.ui.setStatus('error', '模型載入失敗', `請檢查「${selectedNecklace.label}」模型檔`);
       this.syncColorAvailability();
     }
   }

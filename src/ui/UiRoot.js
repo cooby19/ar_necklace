@@ -205,7 +205,7 @@ export class UiRoot {
       const card = document.createElement('button');
       card.className = 'necklace-card';
       card.type = 'button';
-      card.dataset.necklaceId = necklace.id;
+      card.setAttribute('data-necklace-id', necklace.id);
       card.setAttribute('role', 'radio');
       card.setAttribute('aria-checked', 'false');
       card.tabIndex = -1;
@@ -275,8 +275,8 @@ export class UiRoot {
         const button = document.createElement('button');
         button.className = 'color-swatch';
         button.type = 'button';
-        button.dataset.colorId = colorOption.id;
-        button.dataset.colorTargetId = target.id;
+        button.setAttribute('data-color-id', colorOption.id);
+        button.setAttribute('data-color-target-id', target.id);
         button.setAttribute('role', 'radio');
         button.setAttribute('aria-checked', 'false');
         button.setAttribute('aria-label', `${target.label}：${colorOption.label}`);

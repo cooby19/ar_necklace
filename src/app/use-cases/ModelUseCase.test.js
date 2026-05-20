@@ -94,7 +94,8 @@ describe('ModelUseCase', () => {
     await useCase.loadSelectedNecklace();
 
     expect(useCase.showError).toHaveBeenCalledWith(expect.stringContaining('bad glb'));
-    expect(useCase.ui.setStatus).toHaveBeenCalledWith('error', '模型載入失敗', '請先放置 necklace.glb');
+    expect(useCase.showError).toHaveBeenCalledWith(expect.stringContaining('public/models/'));
+    expect(useCase.ui.setStatus).toHaveBeenCalledWith('error', '模型載入失敗', '請檢查「經典細鍊」模型檔');
     expect(useCase.ui.populateColorSwatches).toHaveBeenCalledTimes(2);
   });
 });
