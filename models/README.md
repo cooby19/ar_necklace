@@ -1,15 +1,15 @@
 # 項鍊模型資產
 
-預設 GLB 放在：
+GLB 款式資產放在：
 
 ```text
-public/models/necklace.glb
+public/models/*.glb
 ```
 
-瀏覽器執行時，請從 `src/config/necklaces.js` 透過 `versionedPublicAssetUrl('models/necklace.glb')` 組合 URL。本機 dev 通常會解析成：
+瀏覽器執行時，請從 `src/config/necklaces.js` 透過 `versionedPublicAssetUrl('models/檔名.glb')` 組合 URL。本機 dev 通常會解析成：
 
 ```text
-/models/necklace.glb?v=<version>-<commit>
+/models/檔名.glb?v=<version>-<commit>
 ```
 
 不要在新增款式時硬編碼 `/models/...`，否則部署到 GitHub Pages 子路徑時容易 404。
