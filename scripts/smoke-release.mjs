@@ -8,8 +8,8 @@ if (!baseUrl) {
 
 const checks = [];
 
-await checkHtmlAndBuiltAssets();
 await checkReleaseMetadata();
+await checkHtmlAndBuiltAssets();
 await checkGlbAsset('models/necklace.glb');
 await checkPublicAsset('vendor/mediapipe/face_mesh/face_mesh.binarypb');
 await checkPublicAsset('vendor/mediapipe/face_mesh/face_mesh.js');

@@ -22,8 +22,8 @@ let browser;
 
 try {
   await waitForUrl(baseUrl, previewServer);
-  await checkHtmlAndBuiltAssets();
   await checkReleaseMetadata();
+  await checkHtmlAndBuiltAssets();
   await checkGlbAsset('models/necklace.glb');
   await checkMediapipeAssets();
   browser = await chromium.launch({
