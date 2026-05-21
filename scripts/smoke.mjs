@@ -6,6 +6,7 @@ import { chromium } from '@playwright/test';
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const configuredBaseUrl = normalizeBaseUrl(process.env.SMOKE_BASE_URL ?? process.argv[2]);
+const shouldCheckResponseHeaders = Boolean(configuredBaseUrl);
 const previewPort = Number(process.env.SMOKE_PREVIEW_PORT ?? 4174);
 const baseUrl = configuredBaseUrl || `http://127.0.0.1:${previewPort}/`;
 const expectedCommitSha = process.env.EXPECTED_COMMIT_SHA ?? '';
@@ -39,7 +40,19 @@ try {
 }
 
 async function checkHtmlAndBuiltAssets() {
-  const html = await fetchText(baseUrl);
+  const response = await fetch(baseUrl);
+  if (!response.ok) {
+    throw new Error(`${baseUrl} returned HTTP ${response.status}.`);
+  }
+
+  if (shouldCheckResponseHeaders) {
+    assertSecurityHeaders(response.headers);
+    assertNoCacheHeader(response.headers, 'index.html');
+    checks.push('security headers present on index.html');
+    checks.push('index.html cache policy requires revalidation');
+  }
+
+  const html = await response.text();
   checks.push('index.html reachable');
 
   const assetPaths = [...html.matchAll(/(?:src|href)="([^"]*assets\/[^"]+)"/g)].map((match) => match[1]);
@@ -48,13 +61,27 @@ async function checkHtmlAndBuiltAssets() {
   }
 
   for (const assetPath of assetPaths) {
-    await assertHeadOrGet(new URL(assetPath, baseUrl));
+    const assetResponse = await assertHeadOrGet(new URL(assetPath, baseUrl));
+    if (shouldCheckResponseHeaders) {
+      assertLongLivedCache(assetResponse.headers, `built asset ${assetPath}`);
+    }
     checks.push(`built asset reachable: ${assetPath}`);
   }
 }
 
 async function checkReleaseMetadata() {
-  const metadata = await fetchJson(new URL('release.json', baseUrl));
+  const releaseUrl = new URL('release.json', baseUrl);
+  const response = await fetch(releaseUrl);
+  if (!response.ok) {
+    throw new Error(`${releaseUrl} returned HTTP ${response.status}.`);
+  }
+
+  if (shouldCheckResponseHeaders) {
+    assertNoCacheHeader(response.headers, 'release.json');
+    checks.push('release.json cache policy requires revalidation');
+  }
+
+  const metadata = JSON.parse(await response.text());
   checks.push('release.json reachable');
 
   for (const key of ['version', 'commitSha', 'buildTime', 'environment']) {
@@ -79,6 +106,10 @@ async function checkGlbAsset(assetPath) {
   const response = await fetch(url);
   if (!response.ok) {
     throw new Error(`${url} returned HTTP ${response.status}.`);
+  }
+
+  if (shouldCheckResponseHeaders) {
+    assertLongLivedCache(response.headers, assetPath);
   }
 
   const buffer = await response.arrayBuffer();
@@ -118,7 +149,10 @@ async function checkMediapipeAssets() {
   ];
 
   for (const asset of assets) {
-    await assertHeadOrGet(new URL(asset, baseUrl));
+    const response = await assertHeadOrGet(new URL(asset, baseUrl));
+    if (shouldCheckResponseHeaders) {
+      assertLongLivedCache(response.headers, asset);
+    }
     checks.push(`MediaPipe asset reachable: ${asset}`);
   }
 }
@@ -289,18 +323,6 @@ async function waitForVisible(page, selector) {
   await locator.waitFor({ state: 'visible', timeout: 30000 });
 }
 
-async function fetchText(url) {
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`${url} returned HTTP ${response.status}.`);
-  }
-  return response.text();
-}
-
-async function fetchJson(url) {
-  return JSON.parse(await fetchText(url));
-}
-
 async function assertHeadOrGet(url) {
   let response = await fetch(url, { method: 'HEAD' });
   if (response.status === 405 || response.status === 403) {
@@ -310,6 +332,54 @@ async function assertHeadOrGet(url) {
   if (!response.ok) {
     throw new Error(`${url} returned HTTP ${response.status}.`);
   }
+
+  return response;
+}
+
+function assertSecurityHeaders(headers) {
+  const csp = headers.get('content-security-policy');
+  if (!csp) {
+    throw new Error('index.html is missing Content-Security-Policy.');
+  }
+
+  const normalizedCsp = csp.toLowerCase();
+  for (const directive of ["default-src 'self'", "script-src 'self'", "connect-src 'self'", "object-src 'none'", "frame-ancestors 'none'"]) {
+    if (!normalizedCsp.includes(directive)) {
+      throw new Error(`Content-Security-Policy is missing directive: ${directive}`);
+    }
+  }
+
+  const permissionsPolicy = headers.get('permissions-policy');
+  if (!permissionsPolicy) {
+    throw new Error('index.html is missing Permissions-Policy.');
+  }
+
+  if (!/camera=\(self\)/i.test(permissionsPolicy.replace(/\s+/g, ''))) {
+    throw new Error(`Permissions-Policy does not allow same-origin camera access: ${permissionsPolicy}`);
+  }
+}
+
+function assertNoCacheHeader(headers, label) {
+  const cacheControl = headers.get('cache-control') ?? '';
+  const normalized = cacheControl.toLowerCase();
+  if (!normalized.includes('no-cache') || !normalized.includes('must-revalidate')) {
+    throw new Error(`${label} should require revalidation, received Cache-Control: ${cacheControl || '(missing)'}`);
+  }
+}
+
+function assertLongLivedCache(headers, label) {
+  const cacheControl = headers.get('cache-control') ?? '';
+  const normalized = cacheControl.toLowerCase();
+  const maxAge = parseMaxAge(normalized);
+
+  if (!normalized.includes('public') || !normalized.includes('immutable') || maxAge < 31536000) {
+    throw new Error(`${label} should be long-lived immutable cache, received Cache-Control: ${cacheControl || '(missing)'}`);
+  }
+}
+
+function parseMaxAge(cacheControl) {
+  const match = cacheControl.match(/(?:^|,)\s*max-age=(\d+)/);
+  return match ? Number(match[1]) : 0;
 }
 
 function startPreviewServer() {

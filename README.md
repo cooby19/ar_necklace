@@ -224,17 +224,18 @@ CI 的 npm audit 先以 production dependency 為範圍執行 `npm audit --omit=
 - build artifact：CI 會上傳 `ar-necklace-dist-${GITHUB_SHA}`，內容包含 `dist/release.json`。
 - release metadata：build 後可在 `release.json`、browser console、`window.__AR_NECKLACE_RELEASE__` 與 debug panel 看到 version、commit SHA、build time、environment。
 - runtime safety：可選 `VITE_ERROR_REPORTING_DSN` 啟用 Sentry-compatible error reporting；未設定時不影響 build 或 app。上報會帶 release metadata，但不包含相機畫面、使用者影像或 Face Mesh landmarks。
-- headers/cache：`public/_headers` 提供 Cloudflare Pages / Netlify 可套用的 CSP、Permissions-Policy、cache-control 範本；GitHub Pages 不支援自訂 headers，僅適合 demo/fallback。
-- `.github/workflows/deploy.yml`：Cloudflare Pages PR preview / staging / production skeleton。沒有 secrets 時部署 job 會跳過。
-- `.github/workflows/rollback.yml`：Cloudflare Pages rollback skeleton，rollback 後會以 `npm run smoke:release` 驗證版本與資產。
+- 正式部署目標：Cloudflare Pages，部署 root base path 為 `/`。`vite.config.js` 預設 `base: '/'`，若歷史 GitHub Pages rollback 需要子路徑，可用 `VITE_BASE_PATH=/ar_necklace/ npm run build` 明確覆寫。
+- headers/cache：`public/_headers` 會由 Vite 複製到 `dist/_headers`，Cloudflare Pages 會套用 CSP、Permissions-Policy 與 Cache-Control。GitHub Pages 不支援自訂 headers，因此不再作為正式部署目標。
+- `.github/workflows/deploy.yml`：Cloudflare Pages PR preview、`staging` branch preview，以及 `master` / `main` push 後的 production deploy。沒有 Cloudflare secrets 時部署 job 會跳過。
+- `.github/workflows/rollback.yml`：Cloudflare Pages rollback workflow，rollback 後會以 `npm run smoke:release` 驗證版本、header 與資產。
 
-正式啟用部署前，需在 GitHub repository secrets 設定 `CLOUDFLARE_API_TOKEN`、`CLOUDFLARE_ACCOUNT_ID`、`CLOUDFLARE_PAGES_PROJECT`、`STAGING_URL`、`PRODUCTION_URL`，並替 `production` environment 開啟 required reviewers。
+正式啟用部署前，需在 GitHub repository secrets 設定 `CLOUDFLARE_API_TOKEN`、`CLOUDFLARE_ACCOUNT_ID`、`CLOUDFLARE_PAGES_PROJECT`；`STAGING_URL`、`PRODUCTION_URL` 可選，用於自訂網域 smoke fallback。建議替 `production` environment 開啟 required reviewers。
 
-線上部署後建議對 GitHub Pages 做冒煙測試：
+線上部署後建議對 Cloudflare Pages URL 做冒煙測試：
 
-- 開啟 `https://cooby19.github.io/ar_necklace/`，確認頁面可載入且 console 沒有 error。
-- 確認 `index.html` 指向最新 `assets/index-*.js` 與 `assets/index-*.css`。
-- 確認 showcase 初始畫面、Three.js canvas、`models/necklace.glb` 與 `vendor/mediapipe/face_mesh/*` 路徑沒有 404。
+- 執行 `SMOKE_BASE_URL=<Cloudflare Pages URL> npm run smoke`，確認首頁 CSP、Permissions-Policy、Cache-Control、release metadata、JS/CSS、GLB、MediaPipe vendor assets 與 showcase canvas 都正常。
+- 用瀏覽器開啟 production URL，確認頁面載入無 console error。
+- 確認 showcase 初始畫面、Three.js canvas、`models/necklace.glb` 與 `vendor/mediapipe/face_mesh/*` 路徑沒有 404，且大型資產回應 `Cache-Control: public, max-age=31536000, immutable`。
 - 基本操作款式卡片、色票、AR/模型展示切換與 Debug toggle。
 - 相機權限、Face Mesh 真實追蹤、前後鏡頭切換與 iOS Safari 表現仍需人工實機確認。
 
@@ -252,7 +253,7 @@ public/models/necklace.glb
 /models/necklace.glb?v=<version>-<commit>
 ```
 
-如果要新增多款項鍊，請在 `src/config/necklaces.js` 匯入並使用 `versionedPublicAssetUrl()` 產生 URL，避免 GitHub Pages 子路徑部署時資產 404：
+如果要新增多款項鍊，請在 `src/config/necklaces.js` 匯入並使用 `versionedPublicAssetUrl()` 產生 URL，讓 Cloudflare Pages 根路徑、preview URL 與必要時的子路徑 rollback build 都能正確解析資產：
 
 ```js
 import { versionedPublicAssetUrl } from './assets.js';

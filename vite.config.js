@@ -6,10 +6,11 @@ import { fileURLToPath, URL } from 'node:url';
 
 const rootDir = fileURLToPath(new URL('.', import.meta.url));
 const packageJson = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'));
+const viteBasePath = normalizeBasePath(process.env.VITE_BASE_PATH ?? '/');
 const releaseMetadata = createReleaseMetadata();
 
 export default defineConfig({
-  base: './',
+  base: viteBasePath,
   define: {
     __APP_RELEASE_METADATA__: JSON.stringify(releaseMetadata),
   },
@@ -41,6 +42,15 @@ export default defineConfig({
     port: 5173,
   },
 });
+
+function normalizeBasePath(value) {
+  const text = String(value || '/').trim();
+  if (!text || text === '/') return '/';
+  if (text === './' || text === '.') return './';
+
+  const withLeadingSlash = text.startsWith('/') ? text : `/${text}`;
+  return withLeadingSlash.endsWith('/') ? withLeadingSlash : `${withLeadingSlash}/`;
+}
 
 function createReleaseMetadata() {
   return {

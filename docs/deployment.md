@@ -1,14 +1,15 @@
 # 部署與發布流程
 
-本文定義商業化前可接受的靜態前端部署流程。現階段 repo 已提供可落地的 artifact、metadata、runtime error reporting、synthetic smoke、headers/cache 範本、Cloudflare Pages workflow skeleton 與 rollback skeleton；正式部署前仍需在 GitHub repository secrets / environments 補齊 hosting credentials。
+本文定義商業化前可接受的靜態前端部署流程。正式部署目標已切換為 Cloudflare Pages，使用 GitHub Actions 先建置並驗證 `dist/`，再用 Wrangler Direct Upload 發布到 Cloudflare Pages。GitHub Pages 僅保留為歷史 demo 或緊急 rollback 參考，不再作為正式安全 header / cache 驗收來源。
 
 ## 目前限制與設計前提
 
 - 專案是純前端 Vite app，正式建置輸出在 `dist/`。
 - 相機、MediaPipe live tracking、iOS Safari 實機體驗不可作為 CI 必通條件；部署 smoke 檢查 showcase 可載入、版本 metadata、核心靜態資產與不需真實相機的基本互動。
-- `vite.config.js` 保持 `base: './'`，確保 GitHub Pages 子路徑、Cloudflare Pages 根路徑、Netlify/Vercel preview URL 都能使用相對 build assets。
-- runtime 資產已透過 `import.meta.env.BASE_URL` 組出 `models/`、`thumbnails/` 與 MediaPipe vendor 路徑，並加上 release token query string，避免 GitHub Pages 子路徑 404，同時讓 GLB/WASM/data 可搭配 CDN cache。
-- GitHub Pages 目前保留為 fallback / demo channel，不在本次 workflow 直接替換；商業化 primary hosting 建議改由 Cloudflare Pages 或等價平台承接。
+- `vite.config.js` 預設 `base: '/'`，符合 Cloudflare Pages production / preview 的根路徑部署；不得沿用 GitHub Pages 的 `/ar_necklace/` 作為正式 build base。
+- 若需要重建歷史 GitHub Pages fallback，才使用 `VITE_BASE_PATH=/ar_necklace/ npm run build` 明確覆寫。
+- runtime 資產已透過 `import.meta.env.BASE_URL` 組出 `models/`、`thumbnails/` 與 MediaPipe vendor 路徑，並加上 release token query string。正式 Cloudflare Pages build 會解析為 `/models/...`、`/vendor/...`，大型 GLB/WASM/data 可搭配 Cloudflare edge cache。
+- 不硬編碼正式站 URL；遠端 smoke 使用 `SMOKE_BASE_URL`，workflow 使用 `PRODUCTION_URL` / `STAGING_URL` secrets 作為自訂網域 fallback。
 
 ## 環境規劃
 
@@ -16,7 +17,7 @@
 | --- | --- | --- | --- | --- |
 | PR preview | Pull request opened / synchronized | 給 PM、設計、QA、客戶看單一 PR 改動 | CI build artifact 成功，且 hosting secrets 可用 | `npm run smoke` 檢查 preview URL |
 | staging | push 到 `staging` branch，或手動 dispatch target=`staging` | 合併前/發布前的整體驗收環境 | lint/typecheck/unit/build/budget 成功 | staging URL 必須 smoke 通過 |
-| production | GitHub Release published，或手動 dispatch target=`production` | 正式公開環境 | 同一個 artifact 先部署 staging 並 smoke 通過 | production URL smoke 驗證 |
+| production | push 到 `master` / `main`、GitHub Release published，或手動 dispatch target=`production` | 正式公開環境 | 同一個 artifact 先部署 staging preview 並 smoke 通過 | production URL smoke 驗證 |
 
 Production deploy 在 `.github/workflows/deploy.yml` 中明確依賴 `smoke-staging`。若 staging smoke 無法取得 URL 或驗證失敗，production job 不會執行。
 
@@ -24,10 +25,10 @@ Production deploy 在 `.github/workflows/deploy.yml` 中明確依賴 `smoke-stag
 
 ### 建議排序
 
-1. **Cloudflare Pages（建議 primary）**
+1. **Cloudflare Pages（primary）**
    - 優點：靜態資產 CDN 非常適合本專案；官方支援 PR preview deployments、branch preview、Direct Upload with Wrangler、production rollback。
    - 取捨：若使用 Direct Upload，需自行管理 GitHub Actions 與 secrets；preview deployment 不是 production rollback target。
-   - 適合本專案原因：目前是純靜態 app，資產含 GLB、WASM、data files，Cloudflare edge cache 與 Pages preview 模型足夠；可保留 GitHub Actions 的品質閘門後再上傳 prebuilt `dist/`。
+   - 適合本專案原因：目前是純靜態 app，資產含 GLB、WASM、data files，Cloudflare edge cache 與 Pages preview 模型足夠；可保留 GitHub Actions 的品質閘門後再上傳 prebuilt `dist/`，同時讓 `_headers` 在正式站生效。
 
 2. **Netlify**
    - 優點：Deploy Preview、branch deploy、deploy permalink、rollback 體驗成熟；協作 preview 功能強。
@@ -45,11 +46,11 @@ Production deploy 在 `.github/workflows/deploy.yml` 中明確依賴 `smoke-stag
    - 優點：企業 AWS 標準解；S3 versioning 可保留物件版本，CloudFront 可控 cache/invalidation。
    - 取捨：PR preview、branch deploy、rollback、權限、cache invalidation 都要自建；商業化前維運成本最高。
 
-### GitHub Pages 保留或替換策略
+### GitHub Pages 歷史/rollback 策略
 
-- 短期保留 GitHub Pages 作為 demo/fallback，不破壞既有 `https://cooby19.github.io/ar_necklace/`。
-- 商業化 primary domain 建議切到 Cloudflare Pages。GitHub Pages 可留作「最新 main demo」或停在穩定版本。
-- 若仍使用 GitHub Pages production，建議改成 GitHub Pages custom workflow，使用 `actions/upload-pages-artifact` 與 `actions/deploy-pages` 從同一份 `dist/` artifact 發布，避免手動更新 `gh-pages` 分支。
+- 可保留既有 `https://cooby19.github.io/ar_necklace/` 作為歷史 demo/fallback，但不要把它視為 production security headers 驗收來源。
+- GitHub Pages 不支援自訂 response headers，`public/_headers` 不會在該平台生效，因此不適合承擔這個相機 Web AR App 的正式站。
+- 若緊急需要重建 GitHub Pages fallback，請使用 `VITE_BASE_PATH=/ar_necklace/ npm run build` 產生子路徑 build，再明確記錄「沒有 CSP / Permissions-Policy / cache header」這個 release risk。
 
 ## Release metadata
 
@@ -126,17 +127,17 @@ ar-necklace-dist-${GITHUB_SHA}
 - 比對 `release.json` 的 version / commit / buildTime。
 - 必要時下載後手動上傳到 hosting 平台。
 
-## CD workflow skeleton
+## Cloudflare Pages CD workflow
 
-`.github/workflows/deploy.yml` 已建立以下流程：
+`.github/workflows/deploy.yml` 已啟用以下流程：
 
 1. Resolve target：依 event 決定 `preview` / `staging` / `production`。
 2. Secret preflight：沒有 secrets 時 deploy jobs 會跳過，不假裝部署成功。
 3. Build deploy artifact：執行 lint、typecheck、unit、build、budget、synthetic smoke，並上傳 `dist/` artifact。
 4. PR preview：用 Cloudflare Pages branch deploy `pr-<number>`。
 5. Staging：部署到 Cloudflare Pages `staging` branch，接著跑 smoke。
-6. Production：只有 staging smoke 成功後，才把同一份 artifact 部署 production。
-7. Production smoke：若有 `PRODUCTION_URL`，部署後跑遠端 synthetic smoke。
+6. Production：push 到 `master` / `main`、release event 或手動 target=`production` 時，只有 staging smoke 成功後才把同一份 artifact 部署 production。
+7. Production smoke：優先使用 Wrangler 回傳的 Pages URL；若沒有回傳 URL，使用 `PRODUCTION_URL` secret 作為 fallback。
 
 需要設定的 GitHub Secrets：
 
@@ -144,9 +145,18 @@ ar-necklace-dist-${GITHUB_SHA}
 CLOUDFLARE_API_TOKEN
 CLOUDFLARE_ACCOUNT_ID
 CLOUDFLARE_PAGES_PROJECT
+```
+
+`CLOUDFLARE_PAGES_PROJECT` 是 Wrangler `--project-name` 使用的 Cloudflare Pages project name / slug，不是 GitHub repository name 也不是正式站 URL。
+
+可選的 GitHub Secrets：
+
+```text
 STAGING_URL
 PRODUCTION_URL
 ```
+
+`STAGING_URL`、`PRODUCTION_URL` 用於自訂網域或 Wrangler output 無法解析 Pages URL 時的 smoke fallback；不應在程式碼中硬編碼正式站 URL。
 
 建議設定的 GitHub Environments：
 
@@ -156,12 +166,20 @@ PRODUCTION_URL
 
 Cloudflare token 最小權限建議只授予該 Pages project 的 deploy/rollback 所需權限，不要使用全帳號管理 token。
 
+Cloudflare Pages project 設定：
+
+- Project 類型：Direct Upload，因為 GitHub Actions 會負責 build/test/smoke，再上傳 prebuilt `dist/`；不要同時啟用 Cloudflare Git integration 讓 Cloudflare 端重複 build。
+- 建立 project 時的 production branch 選目前主分支 `master`（若 repo 改名再改為 `main`）；workflow production deploy 會用 `wrangler pages deploy dist --project-name ...` 發布 production。
+- Build command / output directory：若使用 Direct Upload，不需要在 Cloudflare 端設定 build command；GitHub Actions 產出的 `dist/` 是唯一部署輸入。
+- Production base path：`/`。正式 build 不設定 `VITE_BASE_PATH`，避免 `/ar_necklace/` 這類 GitHub Pages 子路徑殘留。
+- 自訂網域：可在 Cloudflare Pages project 綁定正式網域；綁定後把該 URL 放入 `PRODUCTION_URL` 方便 smoke。
+
 ## Release versioning
 
 建議流程：
 
 1. 更新 `package.json` version，例如 `0.2.0`。
-2. 合併功能到 `main`。
+2. 合併功能到目前的主分支（此 repo 為 `master`；若之後改名則使用 `main`）。
 3. 建立 release branch 或 tag，例如 `v0.2.0`。
 4. 發布 GitHub Release。
 5. `deploy.yml` 以 release event 建置 artifact，先部署 staging。
@@ -204,7 +222,9 @@ npm run smoke
 `npm run smoke` 目前檢查：
 
 - `index.html` 可讀。
+- 當設定 `SMOKE_BASE_URL` 檢查遠端部署時，首頁必須有 `Content-Security-Policy` 與 `Permissions-Policy: camera=(self)`，`index.html` / `release.json` 必須要求重新驗證。
 - `index.html` 指向的 `assets/*.js` / `assets/*.css` 可讀，不是 404。
+- 當設定 `SMOKE_BASE_URL` 檢查遠端部署時，`assets/*`、`models/*` 與 `vendor/mediapipe/face_mesh/*` 必須回應長效 immutable Cache-Control。
 - `release.json` 可讀且包含 `version`、`commitSha`、`buildTime`、`environment`。
 - `window.__AR_NECKLACE_RELEASE__` 與 error reporting public status 已注入 runtime。
 - `models/necklace.glb` 可讀，且 GLB magic header、version、declared length 正確。
@@ -219,7 +239,7 @@ npm run smoke
 SMOKE_BASE_URL=https://example.com/ npm run smoke:release
 ```
 
-`smoke:release` 不啟動 browser，只做遠端 HTTP/release/asset 檢查，適合 rollback workflow、CDN 快速探測或瀏覽器環境暫時不可用時使用。
+`smoke:release` 不啟動 browser，只做遠端 HTTP/release/header/cache/asset 檢查，適合 rollback workflow、CDN 快速探測或瀏覽器環境暫時不可用時使用。
 
 CI/CD 串接：
 
@@ -232,14 +252,14 @@ CI 不要求真實 camera permission。相機權限、Face Mesh 真實追蹤、�
 
 ## Cache-control 與 asset CDN
 
-商業化 primary hosting 建議使用支援 edge cache 與 headers 的 Cloudflare Pages、Netlify、Vercel、Firebase Hosting 或 S3 + CloudFront。不要把 GitHub Pages 當成 production security/cache control 的唯一落點，因為 GitHub Pages 不支援自訂 response headers。
+正式 hosting 使用 Cloudflare Pages，理由是同一個純前端架構即可取得 `_headers`、edge cache、preview deployment 與 rollback。不要把 GitHub Pages 當成 production security/cache control 的落點，因為 GitHub Pages 不支援自訂 response headers。
 
 目前 repo 提供 `public/_headers`，Vite build 時會複製到 `dist/_headers`。Cloudflare Pages 與 Netlify 會套用它：
 
 - `index.html` 與 `/`：`Cache-Control: no-cache, max-age=0, must-revalidate`，確保新部署能立即拿到最新 asset manifest。
 - `release.json`：`no-cache`，確保 smoke、客服與 rollback 查驗看到當前部署版本。
 - `assets/*`：Vite hashed JS/CSS，`public, max-age=31536000, immutable`。
-- `models/*` 與 `vendor/mediapipe/face_mesh/*`：runtime URL 會加 release token query string，例如 `?v=0.2.0-<sha>`，因此可搭配 `public, max-age=31536000, immutable`。
+- `models/*` 與 `vendor/mediapipe/face_mesh/*`：runtime URL 會加 release token query string，例如 `?v=0.2.0-<sha>`，因此即使 GLB/WASM/data 檔名未 hash，也可搭配 `public, max-age=31536000, immutable`。
 
 CDN 策略：
 
