@@ -240,26 +240,33 @@ jobs:
         run: npm run smoke
 
   deploy-staging:
-    name: Deploy staging
+    name: Deploy staging and smoke
     runs-on: ubuntu-latest
     needs: [resolve, preflight, build-artifact]
     if: (needs.resolve.outputs.target == 'staging' || needs.resolve.outputs.target == 'production') && needs.preflight.outputs.cloudflare_enabled == 'true'
-    outputs:
-      deployment_url: ${{ steps.deploy.outputs.url }}
     environment:
       name: staging
-      url: ${{ steps.deploy.outputs.url }}
     steps:
-      - name: Download deploy artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: ar-necklace-dist-${{ needs.resolve.outputs.target }}-${{ needs.build-artifact.outputs.artifact_sha }}
-          path: dist
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install browser Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Download deploy artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ar-necklace-dist-${{ needs.resolve.outputs.target }}-${{ needs.build-artifact.outputs.artifact_sha }}
+          path: dist
 
       - name: Deploy staging to Cloudflare Pages
         id: deploy
@@ -281,11 +288,22 @@ jobs:
             echo "url=$url" >> "$GITHUB_OUTPUT"
           fi
 
-  smoke-staging:
-    name: Smoke staging
+      - name: Smoke staging deployment
+        env:
+          STAGING_URL: ${{ secrets.STAGING_URL }}
+          CLOUDFLARE_PAGES_PROJECT: ${{ secrets.CLOUDFLARE_PAGES_PROJECT }}
+          EXPECTED_COMMIT_SHA: ${{ needs.build-artifact.outputs.artifact_sha }}
+        run: |
+          base_url="${STAGING_URL:-https://staging.${CLOUDFLARE_PAGES_PROJECT}.pages.dev}"
+          SMOKE_BASE_URL="$base_url" npm run smoke
+
+  deploy-production:
+    name: Deploy production and smoke
     runs-on: ubuntu-latest
     needs: [resolve, preflight, build-artifact, deploy-staging]
-    if: (needs.resolve.outputs.target == 'staging' || needs.resolve.outputs.target == 'production') && needs.preflight.outputs.cloudflare_enabled == 'true'
+    if: needs.resolve.outputs.target == 'production' && needs.preflight.outputs.cloudflare_enabled == 'true' && needs.deploy-staging.result == 'success'
+    environment:
+      name: production
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -293,7 +311,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - name: Install dependencies
@@ -302,40 +320,11 @@ jobs:
       - name: Install browser Chromium
         run: npx playwright install --with-deps chromium
 
-      - name: Smoke staging deployment
-        env:
-          DEPLOYMENT_URL: ${{ needs.deploy-staging.outputs.deployment_url }}
-          STAGING_URL: ${{ secrets.STAGING_URL }}
-          EXPECTED_COMMIT_SHA: ${{ needs.build-artifact.outputs.artifact_sha }}
-        run: |
-          base_url="${DEPLOYMENT_URL:-$STAGING_URL}"
-          if [ -z "$base_url" ]; then
-            echo "::error::No staging URL available. Set STAGING_URL or ensure wrangler output includes a pages.dev URL."
-            exit 1
-          fi
-          SMOKE_BASE_URL="$base_url" npm run smoke
-
-  deploy-production:
-    name: Deploy production
-    runs-on: ubuntu-latest
-    needs: [resolve, preflight, build-artifact, smoke-staging]
-    if: needs.resolve.outputs.target == 'production' && needs.preflight.outputs.cloudflare_enabled == 'true' && needs.smoke-staging.result == 'success'
-    outputs:
-      deployment_url: ${{ steps.deploy.outputs.url }}
-    environment:
-      name: production
-      url: ${{ steps.deploy.outputs.url }}
-    steps:
       - name: Download deploy artifact
         uses: actions/download-artifact@v4
         with:
           name: ar-necklace-dist-${{ needs.resolve.outputs.target }}-${{ needs.build-artifact.outputs.artifact_sha }}
           path: dist
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
 
       - name: Deploy production to Cloudflare Pages
         id: deploy
@@ -357,36 +346,11 @@ jobs:
             echo "url=$url" >> "$GITHUB_OUTPUT"
           fi
 
-  smoke-production:
-    name: Smoke production
-    runs-on: ubuntu-latest
-    needs: [resolve, preflight, build-artifact, deploy-production]
-    if: needs.resolve.outputs.target == 'production' && needs.preflight.outputs.cloudflare_enabled == 'true'
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Install browser Chromium
-        run: npx playwright install --with-deps chromium
-
       - name: Smoke production deployment
         env:
-          DEPLOYMENT_URL: ${{ needs.deploy-production.outputs.deployment_url }}
           PRODUCTION_URL: ${{ secrets.PRODUCTION_URL }}
+          CLOUDFLARE_PAGES_PROJECT: ${{ secrets.CLOUDFLARE_PAGES_PROJECT }}
           EXPECTED_COMMIT_SHA: ${{ needs.build-artifact.outputs.artifact_sha }}
         run: |
-          base_url="${DEPLOYMENT_URL:-$PRODUCTION_URL}"
-          if [ -z "$base_url" ]; then
-            echo "::error::No production URL available. Set PRODUCTION_URL or ensure wrangler output includes a pages.dev URL."
-            exit 1
-          fi
+          base_url="${PRODUCTION_URL:-https://${CLOUDFLARE_PAGES_PROJECT}.pages.dev}"
           SMOKE_BASE_URL="$base_url" npm run smoke
