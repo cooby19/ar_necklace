@@ -71,17 +71,13 @@ async function checkHtmlAndBuiltAssets() {
 
 async function checkReleaseMetadata() {
   const releaseUrl = new URL('release.json', baseUrl);
-  const response = await fetch(releaseUrl);
-  if (!response.ok) {
-    throw new Error(`${releaseUrl} returned HTTP ${response.status}.`);
-  }
+  const { response, metadata } = await fetchExpectedReleaseMetadata(releaseUrl);
 
   if (shouldCheckResponseHeaders) {
     assertNoCacheHeader(response.headers, 'release.json');
     checks.push('release.json cache policy requires revalidation');
   }
 
-  const metadata = JSON.parse(await response.text());
   checks.push('release.json reachable');
 
   for (const key of ['version', 'commitSha', 'buildTime', 'environment']) {
@@ -99,6 +95,35 @@ async function checkReleaseMetadata() {
   }
 
   checks.push(`release metadata present: v${metadata.version} ${metadata.commitSha.slice(0, 12)}`);
+}
+
+async function fetchExpectedReleaseMetadata(url) {
+  const deadline = Date.now() + 120000;
+  let lastError;
+
+  while (Date.now() < deadline) {
+    try {
+      const requestUrl = new URL(url);
+      requestUrl.searchParams.set('smoke', String(Date.now()));
+      const response = await fetch(requestUrl, { cache: 'no-store' });
+      if (!response.ok) {
+        throw new Error(`${url} returned HTTP ${response.status}.`);
+      }
+
+      const metadata = JSON.parse(await response.text());
+      if (!expectedCommitSha || metadata.commitSha?.startsWith(expectedCommitSha)) {
+        return { response, metadata };
+      }
+
+      lastError = new Error(`Commit mismatch: expected ${expectedCommitSha}, received ${metadata.commitSha}.`);
+    } catch (error) {
+      lastError = error;
+    }
+
+    await delay(2000);
+  }
+
+  throw lastError ?? new Error(`Timed out waiting for release metadata at ${url}.`);
 }
 
 async function checkGlbAsset(assetPath) {
