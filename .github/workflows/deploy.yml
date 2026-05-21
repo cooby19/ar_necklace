@@ -219,8 +219,14 @@ jobs:
           CLOUDFLARE_PAGES_PROJECT: ${{ secrets.CLOUDFLARE_PAGES_PROJECT }}
           DEPLOY_BRANCH: ${{ needs.resolve.outputs.branch_alias }}
         run: |
-          output="$(npx wrangler pages deploy dist --project-name "$CLOUDFLARE_PAGES_PROJECT" --branch "$DEPLOY_BRANCH" 2>&1)"
+          set +e
+          output="$(npx --yes wrangler@latest pages deploy dist --project-name "$CLOUDFLARE_PAGES_PROJECT" --branch "$DEPLOY_BRANCH" 2>&1)"
+          status=$?
+          set -e
           echo "$output"
+          if [ "$status" -ne 0 ]; then
+            exit "$status"
+          fi
           url="$(printf '%s\n' "$output" | grep -Eo 'https://[^ ]+\.pages\.dev' | tail -1 || true)"
           if [ -n "$url" ]; then
             echo "url=$url" >> "$GITHUB_OUTPUT"
@@ -262,8 +268,14 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_PAGES_PROJECT: ${{ secrets.CLOUDFLARE_PAGES_PROJECT }}
         run: |
-          output="$(npx wrangler pages deploy dist --project-name "$CLOUDFLARE_PAGES_PROJECT" --branch staging 2>&1)"
+          set +e
+          output="$(npx --yes wrangler@latest pages deploy dist --project-name "$CLOUDFLARE_PAGES_PROJECT" --branch staging 2>&1)"
+          status=$?
+          set -e
           echo "$output"
+          if [ "$status" -ne 0 ]; then
+            exit "$status"
+          fi
           url="$(printf '%s\n' "$output" | grep -Eo 'https://[^ ]+\.pages\.dev' | tail -1 || true)"
           if [ -n "$url" ]; then
             echo "url=$url" >> "$GITHUB_OUTPUT"
@@ -332,8 +344,14 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_PAGES_PROJECT: ${{ secrets.CLOUDFLARE_PAGES_PROJECT }}
         run: |
-          output="$(npx wrangler pages deploy dist --project-name "$CLOUDFLARE_PAGES_PROJECT" 2>&1)"
+          set +e
+          output="$(npx --yes wrangler@latest pages deploy dist --project-name "$CLOUDFLARE_PAGES_PROJECT" 2>&1)"
+          status=$?
+          set -e
           echo "$output"
+          if [ "$status" -ne 0 ]; then
+            exit "$status"
+          fi
           url="$(printf '%s\n' "$output" | grep -Eo 'https://[^ ]+\.pages\.dev' | tail -1 || true)"
           if [ -n "$url" ]; then
             echo "url=$url" >> "$GITHUB_OUTPUT"
