@@ -275,7 +275,7 @@ CDN 策略：
 - `Content-Security-Policy`
   - `default-src 'self'`
   - `script-src 'self' 'wasm-unsafe-eval'`：允許同源 JS 與 MediaPipe WASM。
-  - `connect-src 'self' https://*.ingest.sentry.io https://*.sentry.io`：允許 optional Sentry-compatible error reporting。
+  - `connect-src 'self' blob: https://*.ingest.sentry.io https://*.sentry.io`：允許 GLB 內嵌 texture 的 blob fetch 與 optional Sentry-compatible error reporting。
   - `img-src 'self' data: blob:`：支援 UI thumbnail 與本機 share preview。
   - `media-src 'self' blob:`：保留相機/媒體元素需要的安全範圍。
   - `frame-ancestors 'none'`、`object-src 'none'`、`base-uri 'self'`。
