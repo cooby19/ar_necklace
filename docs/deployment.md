@@ -136,8 +136,8 @@ ar-necklace-dist-${GITHUB_SHA}
 3. Build deploy artifact：執行 lint、typecheck、unit、build、budget、synthetic smoke，並上傳 `dist/` artifact。
 4. PR preview：用 Cloudflare Pages branch deploy `pr-<number>`。
 5. Staging：部署到 Cloudflare Pages `staging` branch，接著跑 smoke。
-6. Production：push 到 `master` / `main`、release event 或手動 target=`production` 時，只有 staging smoke 成功後才把同一份 artifact 部署 production。
-7. Production smoke：優先使用 Wrangler 回傳的 Pages URL；若沒有回傳 URL，使用 `PRODUCTION_URL` secret 作為 fallback。
+6. Production：push 到 `master` / `main`、release event 或手動 target=`production` 時，只有 staging smoke 成功後才把同一份 artifact 部署到 Cloudflare Pages project 的 `production_branch`。
+7. Production smoke：使用 `PRODUCTION_URL` secret；若未設定則 fallback 到 `<project>.pages.dev`。
 
 需要設定的 GitHub Secrets：
 
@@ -169,7 +169,7 @@ Cloudflare token 最小權限建議只授予該 Pages project 的 deploy/rollbac
 Cloudflare Pages project 設定：
 
 - Project 類型：Direct Upload，因為 GitHub Actions 會負責 build/test/smoke，再上傳 prebuilt `dist/`；不要同時啟用 Cloudflare Git integration 讓 Cloudflare 端重複 build。
-- 建立 project 時的 production branch 選目前主分支 `master`（若 repo 改名再改為 `main`）；workflow production deploy 會用 `wrangler pages deploy dist --project-name ...` 發布 production。
+- 建立 project 時的 production branch 選目前主分支 `master`（若 repo 改名再改為 `main`）；workflow production deploy 會讀取 Cloudflare Pages project 的 `production_branch`，並用 `wrangler pages deploy dist --project-name ... --branch <production_branch>` 發布 production。
 - Build command / output directory：若使用 Direct Upload，不需要在 Cloudflare 端設定 build command；GitHub Actions 產出的 `dist/` 是唯一部署輸入。
 - Production base path：`/`。正式 build 不設定 `VITE_BASE_PATH`，避免 `/ar_necklace/` 這類 GitHub Pages 子路徑殘留。
 - 自訂網域：可在 Cloudflare Pages project 綁定正式網域；綁定後把該 URL 放入 `PRODUCTION_URL` 方便 smoke。
