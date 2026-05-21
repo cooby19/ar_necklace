@@ -391,6 +391,7 @@ function startPreviewServer() {
       cwd: rootDir,
       env: { ...process.env, FORCE_COLOR: '0' },
       stdio: ['ignore', 'pipe', 'pipe'],
+      detached: process.platform !== 'win32',
     },
   );
   child.smokeOutput = output;
@@ -432,7 +433,27 @@ async function waitForUrl(url, child = null) {
 }
 
 function stopPreviewServer(child) {
-  if (!child.killed) child.kill('SIGTERM');
+  if (child.exitCode !== null || child.killed) return;
+
+  const killSignal = (signal) => {
+    try {
+      if (process.platform !== 'win32' && child.pid) {
+        process.kill(-child.pid, signal);
+      } else {
+        child.kill(signal);
+      }
+    } catch (error) {
+      if (error?.code !== 'ESRCH') throw error;
+    }
+  };
+
+  killSignal('SIGTERM');
+
+  setTimeout(() => {
+    if (child.exitCode === null && !child.killed) {
+      killSignal('SIGKILL');
+    }
+  }, 5000).unref();
 }
 
 function normalizeBaseUrl(value) {
