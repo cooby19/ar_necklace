@@ -1,4 +1,4 @@
-import { APP_MODES, isSelfieCamera } from '../app/AppState.js';
+import { APP_MODES, AR_SESSION_STATES, isSelfieCamera } from '../app/AppState.js';
 
 const FOCUSABLE_SELECTOR = [
   'a[href]',
@@ -311,7 +311,7 @@ export class UiRoot {
       this.syncModeUi(state);
     }
 
-    if (shouldSync(['cameraStarted', 'isSwitchingCamera', 'cameraFacingMode'])) {
+    if (shouldSync(['cameraStarted', 'isSwitchingCamera', 'cameraFacingMode', 'sessionStatus'])) {
       this.syncCameraUi(state);
     }
 
@@ -398,9 +398,10 @@ export class UiRoot {
     const isSelfie = isSelfieCamera(state.cameraFacingMode);
     const nextLabel = isSelfie ? '切換後鏡頭' : '切換前鏡頭';
     const switchLabel = state.isSwitchingCamera ? '鏡頭切換中' : nextLabel;
+    const isTrackingStarting = state.sessionStatus === AR_SESSION_STATES.TRACKING_STARTING;
 
     this.elements.stage.classList.toggle('is-selfie-camera', isSelfie);
-    this.elements.switchCameraButton.disabled = !state.cameraStarted || state.isSwitchingCamera;
+    this.elements.switchCameraButton.disabled = !state.cameraStarted || state.isSwitchingCamera || isTrackingStarting;
     this.elements.stopCameraButton.disabled = !state.cameraStarted || state.isSwitchingCamera;
     this.elements.switchCameraButton.setAttribute('aria-label', switchLabel);
     this.elements.switchCameraButton.title = switchLabel;

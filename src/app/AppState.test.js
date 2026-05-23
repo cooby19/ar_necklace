@@ -13,6 +13,9 @@ describe('AppState AR session lifecycle', () => {
   it('defines expected legal and illegal session transitions', () => {
     expect(canTransitionSession(AR_SESSION_STATES.SHOWCASE, AR_SESSION_STATES.AR_IDLE)).toBe(true);
     expect(canTransitionSession(AR_SESSION_STATES.AR_IDLE, AR_SESSION_STATES.CAMERA_STARTING)).toBe(true);
+    expect(canTransitionSession(AR_SESSION_STATES.CAMERA_STARTING, AR_SESSION_STATES.TRACKING_STARTING)).toBe(true);
+    expect(canTransitionSession(AR_SESSION_STATES.TRACKING_STARTING, AR_SESSION_STATES.TRACKING_ERROR)).toBe(true);
+    expect(canTransitionSession(AR_SESSION_STATES.TRACKING_ERROR, AR_SESSION_STATES.TRACKING_STARTING)).toBe(true);
     expect(canTransitionSession(AR_SESSION_STATES.NO_FACE, AR_SESSION_STATES.TRACKING)).toBe(true);
     expect(canTransitionSession(AR_SESSION_STATES.TRACKING, AR_SESSION_STATES.CAPTURING)).toBe(true);
     expect(canTransitionSession(AR_SESSION_STATES.CAPTURING, AR_SESSION_STATES.SHARING)).toBe(true);
@@ -26,6 +29,8 @@ describe('AppState AR session lifecycle', () => {
     [AR_SESSION_STATES.SHOWCASE, { cameraStarted: false, isSwitchingCamera: false }],
     [AR_SESSION_STATES.AR_IDLE, { cameraStarted: false, isSwitchingCamera: false }],
     [AR_SESSION_STATES.CAMERA_STARTING, {}],
+    [AR_SESSION_STATES.TRACKING_STARTING, {}],
+    [AR_SESSION_STATES.TRACKING_ERROR, {}],
     [AR_SESSION_STATES.NO_FACE, {}],
   ])('keeps session patches limited to durable UI state when entering %s', (nextStatus, expectedPatch) => {
     expect(

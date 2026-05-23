@@ -67,6 +67,17 @@ export class ArSessionService {
    * @returns {Promise<ArSessionStartResult>}
    */
   async start(facingMode, { strictFacingMode = false } = {}) {
+    const session = await this.startCamera(facingMode, { strictFacingMode });
+    await this.startFaceTracking();
+    return session;
+  }
+
+  /**
+   * @param {CameraFacingMode} facingMode
+   * @param {{ strictFacingMode?: boolean }} [options]
+   * @returns {Promise<ArSessionStartResult>}
+   */
+  async startCamera(facingMode, { strictFacingMode = false } = {}) {
     this.resetTracking();
     this.faceTracker.setSelfieMode(isSelfieCamera(facingMode));
 
@@ -74,7 +85,6 @@ export class ArSessionService {
 
     const cameraFacingMode = normalizeFacingMode(this.camera.getFacingMode(), facingMode);
     this.faceTracker.setSelfieMode(isSelfieCamera(cameraFacingMode));
-    await this.faceTracker.start();
 
     return {
       cameraFacingMode,
@@ -83,15 +93,22 @@ export class ArSessionService {
   }
 
   /**
+   * @returns {Promise<void>}
+   */
+  async startFaceTracking() {
+    await this.faceTracker.start();
+  }
+
+  /**
    * @param {CameraFacingMode} previousFacingMode
    * @param {{ onRestoreStart?: CameraRestoreHandler }} [options]
    * @returns {Promise<CameraSwitchResult>}
    */
-  async switchCamera(previousFacingMode, { onRestoreStart } = {}) {
+  async switchCameraStream(previousFacingMode, { onRestoreStart } = {}) {
     const nextFacingMode = getNextFacingMode(previousFacingMode);
 
     try {
-      const session = await this.start(nextFacingMode, { strictFacingMode: true });
+      const session = await this.startCamera(nextFacingMode, { strictFacingMode: true });
       return {
         status: 'switched',
         previousFacingMode,
@@ -106,7 +123,7 @@ export class ArSessionService {
       });
 
       try {
-        const restoredSession = await this.start(previousFacingMode);
+        const restoredSession = await this.startCamera(previousFacingMode);
         return {
           status: 'restored',
           previousFacingMode,
@@ -129,6 +146,17 @@ export class ArSessionService {
         throw error;
       }
     }
+  }
+
+  /**
+   * @param {CameraFacingMode} previousFacingMode
+   * @param {{ onRestoreStart?: CameraRestoreHandler }} [options]
+   * @returns {Promise<CameraSwitchResult>}
+   */
+  async switchCamera(previousFacingMode, { onRestoreStart } = {}) {
+    const session = await this.switchCameraStream(previousFacingMode, { onRestoreStart });
+    await this.startFaceTracking();
+    return session;
   }
 
   /**
@@ -159,6 +187,13 @@ export class ArSessionService {
   stop() {
     this.camera.stop();
     this.faceTracker.stop();
+  }
+
+  /**
+   * @returns {boolean}
+   */
+  isCameraActive() {
+    return this.camera.isActive();
   }
 
   /**

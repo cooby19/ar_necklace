@@ -6,6 +6,8 @@ export type ArSessionStatus =
   | 'showcase'
   | 'arIdle'
   | 'cameraStarting'
+  | 'trackingStarting'
+  | 'trackingError'
   | 'noFace'
   | 'tracking'
   | 'capturing'

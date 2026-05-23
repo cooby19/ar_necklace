@@ -100,6 +100,8 @@ export class AppRuntimeController {
     this.shareWorkflow = runtime.shareWorkflow;
     this.rendererLoop = runtime.rendererLoop;
     this.feedbackService = runtime.feedbackService;
+    /** @type {(() => void) | null} */
+    this.cancelSessionServicePreload = null;
     this.calibrationUseCase = new CalibrationUseCase({
       appState: this.appState,
       ui: this.ui,
@@ -171,12 +173,15 @@ export class AppRuntimeController {
     this.loadSelectedNecklace();
     this.bindPageLifecycle();
     this.rendererLoop.start();
+    this.scheduleSessionServicePreload();
   }
 
   /**
    * @returns {void}
    */
   destroy() {
+    this.cancelSessionServicePreload?.();
+    this.cancelSessionServicePreload = null;
     this.lifecycleDisposers.splice(0).forEach((dispose) => dispose());
     this.trackingUseCase.dispose();
     this.runtime.setRenderStatsUpdateHandler(null);
@@ -226,6 +231,7 @@ export class AppRuntimeController {
       this.scene.setShowcaseMode(false);
       this.controller.reset();
       this.rendererLoop.requestRender();
+      void this.preloadSessionService();
     }
 
     this.syncModeEffects();
@@ -687,6 +693,25 @@ export class AppRuntimeController {
   }
 
   /**
+   * @returns {Promise<import('./ArSessionService.js').ArSessionService | null>}
+   */
+  preloadSessionService() {
+    return this.cameraSessionUseCase.preloadSessionService();
+  }
+
+  /**
+   * @returns {void}
+   */
+  scheduleSessionServicePreload() {
+    if (this.cancelSessionServicePreload) return;
+
+    this.cancelSessionServicePreload = scheduleIdleWork(() => {
+      this.cancelSessionServicePreload = null;
+      void this.preloadSessionService();
+    });
+  }
+
+  /**
    * @returns {AppStateSnapshot}
    */
   getState() {
@@ -701,4 +726,18 @@ export class AppRuntimeController {
 function formatUnknownError(error) {
   if (error instanceof Error) return error.message;
   return String(error);
+}
+
+/**
+ * @param {() => void} callback
+ * @returns {() => void}
+ */
+function scheduleIdleWork(callback) {
+  if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
+    const handle = window.requestIdleCallback(callback, { timeout: 2500 });
+    return () => window.cancelIdleCallback(handle);
+  }
+
+  const handle = globalThis.setTimeout(callback, 0);
+  return () => globalThis.clearTimeout(handle);
 }

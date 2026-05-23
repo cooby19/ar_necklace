@@ -152,6 +152,12 @@ export class ShareUseCase {
    */
   getLiveSessionStatus(state, realtime = this.realtimeStore.getSnapshot()) {
     if (!state.cameraStarted) return AR_SESSION_STATES.AR_IDLE;
+    if (
+      state.sessionStatus === AR_SESSION_STATES.TRACKING_STARTING ||
+      state.sessionStatus === AR_SESSION_STATES.TRACKING_ERROR
+    ) {
+      return state.sessionStatus;
+    }
     return realtime.hasFace ? AR_SESSION_STATES.TRACKING : AR_SESSION_STATES.NO_FACE;
   }
 

@@ -151,10 +151,10 @@ UiController intent
 AR session lifecycle 以 `sessionStatus` 表達，合法轉換大致為：
 
 ```text
-showcase -> arIdle -> cameraStarting -> noFace <-> tracking -> capturing -> sharing
+showcase -> arIdle -> cameraStarting -> trackingStarting -> noFace <-> tracking -> capturing -> sharing
 ```
 
-`error` 可由各階段進入，使用者重新切換模式或啟動相機後再回到正常流程。離開相機、切換鏡頭或進入背景時會清空 `RealtimeTrackingStore` 的 live tracking data，避免相機已關閉卻保留舊追蹤資料。
+相機成功但 FaceMesh 或 MediaPipe 資產初始化失敗時會進入 `trackingError`，保留 live camera preview 並允許只重試臉部追蹤初始化。`error` 可由各階段進入，使用者重新切換模式或啟動相機後再回到正常流程。離開相機、切換鏡頭或進入背景時會清空 `RealtimeTrackingStore` 的 live tracking data，避免相機已關閉卻保留舊追蹤資料。
 
 ## 啟動方式
 

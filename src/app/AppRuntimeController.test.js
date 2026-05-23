@@ -61,6 +61,19 @@ describe('AppRuntimeController mode and panel intents', () => {
     });
   });
 
+  it('preloads the AR session service immediately when entering AR mode', () => {
+    const controller = createAppRuntimeController({
+      mode: APP_MODES.SHOWCASE,
+      sessionStatus: AR_SESSION_STATES.SHOWCASE,
+      cameraStarted: false,
+    });
+    const preloadSessionService = vi.spyOn(controller, 'preloadSessionService').mockResolvedValue(null);
+
+    controller.selectMode(APP_MODES.AR);
+
+    expect(preloadSessionService).toHaveBeenCalledTimes(1);
+  });
+
   it('stops the active camera session before returning from AR to showcase', () => {
     const controller = createAppRuntimeController({
       mode: APP_MODES.AR,
@@ -205,6 +218,26 @@ describe('AppRuntimeController UI toggles', () => {
     expect(controller.getState().necklaceVisible).toBe(false);
   });
 
+});
+
+describe('AppRuntimeController AR session preload scheduling', () => {
+  it('runs the app-init preload on an idle timer without blocking the current task', async () => {
+    vi.useFakeTimers();
+    try {
+      const controller = createAppRuntimeController();
+      const preloadSessionService = vi.spyOn(controller, 'preloadSessionService').mockResolvedValue(null);
+
+      controller.scheduleSessionServicePreload();
+
+      expect(preloadSessionService).not.toHaveBeenCalled();
+
+      await vi.runOnlyPendingTimersAsync();
+
+      expect(preloadSessionService).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 function createAppRuntimeController(overrides = {}, options = {}) {

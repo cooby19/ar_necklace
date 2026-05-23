@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { APP_MODES, CAMERA_FACING_MODES } from '../app/AppState.js';
+import { APP_MODES, AR_SESSION_STATES, CAMERA_FACING_MODES } from '../app/AppState.js';
 import { UiRoot } from './UiRoot.js';
 import { NECKLACES } from '../config/necklaces.js';
 
@@ -476,6 +476,22 @@ describe('UiRoot state synchronization', () => {
     expect(ui.elements.switchCameraButton.title).toBe('鏡頭切換中');
   });
 
+  it('keeps camera switching disabled while face tracking assets initialize', () => {
+    installFakeDocument();
+    const ui = new UiRoot({ necklaces: NECKLACES });
+
+    ui.syncFromState(
+      createState({
+        cameraStarted: true,
+        sessionStatus: AR_SESSION_STATES.TRACKING_STARTING,
+      }),
+      { changes: ['cameraStarted', 'sessionStatus'] },
+    );
+
+    expect(ui.elements.switchCameraButton.disabled).toBe(true);
+    expect(ui.elements.stopCameraButton.disabled).toBe(false);
+  });
+
   it('syncs selected necklace to the select control and cards', () => {
     installFakeDocument();
     const ui = new UiRoot({ necklaces: NECKLACES });
@@ -650,6 +666,7 @@ function createState(overrides = {}) {
     controlsCollapsed: true,
     activePanel: 'styles',
     modelLoaded: true,
+    sessionStatus: AR_SESSION_STATES.SHOWCASE,
     cameraStarted: false,
     isSwitchingCamera: false,
     cameraFacingMode: CAMERA_FACING_MODES.USER,

@@ -1,16 +1,29 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AR_SESSION_STATES, CAMERA_FACING_MODES } from '../AppState.js';
 import { RealtimeTrackingStore } from '../RealtimeTrackingStore.js';
 import { CameraSessionUseCase } from './CameraSessionUseCase.js';
 import { NECKLACES } from '../../config/necklaces.js';
+import { runtimeErrorReporter } from '../../telemetry/RuntimeErrorReporter.js';
 
 const mocks = vi.hoisted(() => ({
   ArSessionService: vi.fn(function ArSessionService(options) {
     this.options = options;
-    this.start = vi.fn(() => Promise.resolve({ cameraFacingMode: CAMERA_FACING_MODES.USER }));
-    this.switchCamera = vi.fn(() =>
+    this.startCamera = vi.fn(() => Promise.resolve({ cameraFacingMode: CAMERA_FACING_MODES.USER }));
+    this.startFaceTracking = vi.fn(() => Promise.resolve());
+    this.start = vi.fn(async (facingMode) => {
+      const session = await this.startCamera(facingMode);
+      await this.startFaceTracking();
+      return session;
+    });
+    this.switchCameraStream = vi.fn(() =>
       Promise.resolve({ cameraFacingMode: CAMERA_FACING_MODES.ENVIRONMENT, status: 'switched' }),
     );
+    this.switchCamera = vi.fn(async (previousFacingMode) => {
+      const session = await this.switchCameraStream(previousFacingMode);
+      await this.startFaceTracking();
+      return session;
+    });
+    this.isCameraActive = vi.fn(() => true);
     this.stop = vi.fn();
     this.pauseTracking = vi.fn();
     this.resumeTracking = vi.fn(() => Promise.resolve());
@@ -19,18 +32,23 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../ArSessionService.js', () => ({ ArSessionService: mocks.ArSessionService }));
 
+beforeEach(() => {
+  mocks.ArSessionService.mockClear();
+});
+
 describe('CameraSessionUseCase', () => {
   it('starts the camera session and updates camera UI/state', async () => {
     const sessionService = {
-      start: vi.fn(() => Promise.resolve({ cameraFacingMode: CAMERA_FACING_MODES.USER })),
+      startCamera: vi.fn(() => Promise.resolve({ cameraFacingMode: CAMERA_FACING_MODES.USER })),
+      startFaceTracking: vi.fn(() => Promise.resolve()),
     };
     const useCase = createCameraSessionUseCase({ sessionService });
 
     await useCase.startExperience();
 
     expect(useCase.ui.elements.startButton.disabled).toBe(true);
-    expect(useCase.ui.elements.switchCameraButton.disabled).toBe(true);
-    expect(useCase.ui.elements.stopCameraButton.disabled).toBe(true);
+    expect(useCase.ui.elements.switchCameraButton.disabled).toBe(false);
+    expect(useCase.ui.elements.stopCameraButton.disabled).toBe(false);
     expect(useCase.necklaceController.fadeOut).toHaveBeenCalledTimes(1);
     expect(useCase.appState.transitionSession).toHaveBeenNthCalledWith(
       1,
@@ -38,22 +56,173 @@ describe('CameraSessionUseCase', () => {
       {},
       'camera-start-request',
     );
-    expect(sessionService.start).toHaveBeenCalledWith(CAMERA_FACING_MODES.USER);
+    expect(sessionService.startCamera).toHaveBeenCalledWith(CAMERA_FACING_MODES.USER);
+    expect(sessionService.startFaceTracking).toHaveBeenCalledTimes(1);
     expect(useCase.appState.transitionSession).toHaveBeenNthCalledWith(
       2,
-      AR_SESSION_STATES.NO_FACE,
+      AR_SESSION_STATES.TRACKING_STARTING,
       {
         cameraStarted: true,
         cameraFacingMode: CAMERA_FACING_MODES.USER,
+        isSwitchingCamera: false,
       },
       'camera-start',
+    );
+    expect(useCase.appState.transitionSession).toHaveBeenNthCalledWith(
+      3,
+      AR_SESSION_STATES.NO_FACE,
+      {},
+      'face-tracking-ready',
     );
     expect(useCase.rendererLoop.resume).toHaveBeenCalledTimes(1);
     expect(useCase.scene.resize).toHaveBeenCalledTimes(1);
     expect(useCase.debugOverlay.resize).toHaveBeenCalledTimes(1);
     expect(useCase.ui.setCameraOn).toHaveBeenCalledWith(true);
     expect(useCase.ui.setCaptureDisabled).toHaveBeenCalledWith(false);
-    expect(useCase.ui.setStatus).toHaveBeenCalledWith('idle', '相機已啟動', '正在尋找臉部');
+    expect(useCase.ui.setStatus).toHaveBeenLastCalledWith('idle', '臉部追蹤已啟動', '正在尋找臉部');
+  });
+
+  it('keeps the live camera preview when FaceMesh initialization fails', async () => {
+    const trackingError = new Error('asset missing');
+    const sessionService = {
+      startCamera: vi.fn(() => Promise.resolve({ cameraFacingMode: CAMERA_FACING_MODES.USER })),
+      startFaceTracking: vi.fn(() => Promise.reject(trackingError)),
+      stop: vi.fn(),
+    };
+    const useCase = createCameraSessionUseCase({ sessionService });
+    const captureError = vi.spyOn(runtimeErrorReporter, 'captureError').mockReturnValue(false);
+
+    await useCase.startExperience();
+
+    expect(sessionService.startCamera).toHaveBeenCalledTimes(1);
+    expect(sessionService.startFaceTracking).toHaveBeenCalledTimes(1);
+    expect(sessionService.stop).not.toHaveBeenCalled();
+    expect(useCase.appState.transitionSession).toHaveBeenNthCalledWith(
+      2,
+      AR_SESSION_STATES.TRACKING_STARTING,
+      {
+        cameraStarted: true,
+        cameraFacingMode: CAMERA_FACING_MODES.USER,
+        isSwitchingCamera: false,
+      },
+      'camera-start',
+    );
+    expect(useCase.appState.transitionSession).toHaveBeenNthCalledWith(
+      3,
+      AR_SESSION_STATES.TRACKING_ERROR,
+      {
+        cameraStarted: true,
+        isSwitchingCamera: false,
+      },
+      'face-tracking-error',
+    );
+    expect(useCase.ui.setCameraOn).toHaveBeenLastCalledWith(true);
+    expect(useCase.ui.setCaptureDisabled).toHaveBeenLastCalledWith(true);
+    expect(useCase.ui.elements.startButton.disabled).toBe(false);
+    expect(useCase.ui.elements.stopCameraButton.disabled).toBe(false);
+    expect(useCase.ui.setStartButtonLabel).toHaveBeenLastCalledWith('重試臉部追蹤');
+    expect(useCase.showError).toHaveBeenCalledWith('臉部追蹤資產載入失敗：asset missing');
+    expect(useCase.ui.setStatus).toHaveBeenLastCalledWith(
+      'error',
+      '臉部追蹤資產載入失敗',
+      '相機仍在運作，可重試載入臉部追蹤',
+    );
+    expect(captureError).toHaveBeenCalledWith(
+      trackingError,
+      expect.objectContaining({
+        eventType: 'face_tracking.init_failed',
+        feature: 'face-tracking',
+      }),
+    );
+
+    captureError.mockRestore();
+  });
+
+  it('labels FaceMesh asset timeouts and keeps the camera preview active', async () => {
+    const timeoutError = Object.assign(new Error('臉部追蹤資產載入逾時（超過 18 秒）。可能仍在等待：/vendor/mediapipe/face_mesh/face_mesh.binarypb'), {
+      code: 'FACE_MESH_INIT_TIMEOUT',
+      timeoutMs: 18000,
+      assetUrls: ['/vendor/mediapipe/face_mesh/face_mesh.binarypb'],
+      resolvedAssetUrls: ['/vendor/mediapipe/face_mesh/face_mesh_solution_packed_assets_loader.js'],
+      expectedAssetUrls: ['/vendor/mediapipe/face_mesh/face_mesh.binarypb'],
+    });
+    const sessionService = {
+      startCamera: vi.fn(() => Promise.resolve({ cameraFacingMode: CAMERA_FACING_MODES.USER })),
+      startFaceTracking: vi.fn(() => Promise.reject(timeoutError)),
+      stop: vi.fn(),
+    };
+    const useCase = createCameraSessionUseCase({ sessionService });
+    const captureError = vi.spyOn(runtimeErrorReporter, 'captureError').mockReturnValue(false);
+
+    await useCase.startExperience();
+
+    expect(sessionService.startCamera).toHaveBeenCalledTimes(1);
+    expect(sessionService.startFaceTracking).toHaveBeenCalledTimes(1);
+    expect(sessionService.stop).not.toHaveBeenCalled();
+    expect(useCase.appState.transitionSession).toHaveBeenNthCalledWith(
+      3,
+      AR_SESSION_STATES.TRACKING_ERROR,
+      {
+        cameraStarted: true,
+        isSwitchingCamera: false,
+      },
+      'face-tracking-error',
+    );
+    expect(useCase.ui.setCameraOn).toHaveBeenLastCalledWith(true);
+    expect(useCase.ui.elements.stopCameraButton.disabled).toBe(false);
+    expect(useCase.ui.setStartButtonLabel).toHaveBeenLastCalledWith('重試臉部追蹤');
+    expect(useCase.showError).toHaveBeenCalledWith(timeoutError.message);
+    expect(useCase.ui.setStatus).toHaveBeenLastCalledWith(
+      'error',
+      '臉部追蹤資產載入逾時',
+      '相機仍在運作，可重試載入臉部追蹤',
+    );
+    expect(captureError).toHaveBeenCalledWith(
+      timeoutError,
+      expect.objectContaining({
+        eventType: 'face_tracking.init_timeout',
+        feature: 'face-tracking',
+        extra: expect.objectContaining({
+          timeoutMs: 18000,
+          assetUrls: ['/vendor/mediapipe/face_mesh/face_mesh.binarypb'],
+        }),
+      }),
+    );
+
+    captureError.mockRestore();
+  });
+
+  it('retries FaceMesh initialization without restarting an active camera stream', async () => {
+    const sessionService = {
+      startCamera: vi.fn(() => Promise.resolve({ cameraFacingMode: CAMERA_FACING_MODES.USER })),
+      startFaceTracking: vi.fn(() => Promise.resolve()),
+      isCameraActive: vi.fn(() => true),
+    };
+    const useCase = createCameraSessionUseCase({
+      state: {
+        cameraStarted: true,
+        sessionStatus: AR_SESSION_STATES.TRACKING_ERROR,
+      },
+      sessionService,
+    });
+
+    await useCase.startExperience();
+
+    expect(sessionService.isCameraActive).toHaveBeenCalledTimes(1);
+    expect(sessionService.startCamera).not.toHaveBeenCalled();
+    expect(sessionService.startFaceTracking).toHaveBeenCalledTimes(1);
+    expect(useCase.appState.transitionSession).toHaveBeenNthCalledWith(
+      1,
+      AR_SESSION_STATES.TRACKING_STARTING,
+      {},
+      'face-tracking-retry',
+    );
+    expect(useCase.appState.transitionSession).toHaveBeenNthCalledWith(
+      2,
+      AR_SESSION_STATES.NO_FACE,
+      {},
+      'face-tracking-ready',
+    );
   });
 
   it('stops the active camera session and clears tracking state', () => {
@@ -96,9 +265,10 @@ describe('CameraSessionUseCase', () => {
 
   it('switches to the next camera and clears switching state', async () => {
     const sessionService = {
-      switchCamera: vi.fn(() =>
+      switchCameraStream: vi.fn(() =>
         Promise.resolve({ cameraFacingMode: CAMERA_FACING_MODES.ENVIRONMENT, status: 'switched' }),
       ),
+      startFaceTracking: vi.fn(() => Promise.resolve()),
     };
     const useCase = createCameraSessionUseCase({
       state: {
@@ -116,12 +286,12 @@ describe('CameraSessionUseCase', () => {
       { isSwitchingCamera: true },
       'camera-switch-start',
     );
-    expect(sessionService.switchCamera).toHaveBeenCalledWith(CAMERA_FACING_MODES.USER, {
+    expect(sessionService.switchCameraStream).toHaveBeenCalledWith(CAMERA_FACING_MODES.USER, {
       onRestoreStart: expect.any(Function),
     });
     expect(useCase.appState.transitionSession).toHaveBeenNthCalledWith(
       2,
-      AR_SESSION_STATES.NO_FACE,
+      AR_SESSION_STATES.TRACKING_STARTING,
       {
         cameraStarted: true,
         cameraFacingMode: CAMERA_FACING_MODES.ENVIRONMENT,
@@ -129,7 +299,13 @@ describe('CameraSessionUseCase', () => {
       },
       'camera-switch-success',
     );
-    expect(useCase.ui.setStatus).toHaveBeenLastCalledWith('idle', '鏡頭已切換', '目前使用後鏡頭');
+    expect(useCase.appState.transitionSession).toHaveBeenNthCalledWith(
+      3,
+      AR_SESSION_STATES.NO_FACE,
+      {},
+      'face-tracking-ready',
+    );
+    expect(useCase.ui.setStatus).toHaveBeenLastCalledWith('idle', '臉部追蹤已啟動', '正在尋找臉部');
     expect(useCase.ui.setCaptureDisabled).toHaveBeenLastCalledWith(false);
   });
 
@@ -159,6 +335,47 @@ describe('CameraSessionUseCase', () => {
     expect(onFaceResults).toHaveBeenCalledWith(results);
     expect(onFaceTrackerStats).toHaveBeenCalledWith(stats);
     expect(showError).toHaveBeenCalledWith('Face Mesh 偵測發生錯誤：mesh failed');
+  });
+
+  it('preloads the session service with the shared lazy promise without starting camera work', async () => {
+    const useCase = createCameraSessionUseCase();
+
+    const preloadPromise = useCase.preloadSessionService();
+    const servicePromise = useCase.getSessionService();
+    const [preloadedService, sessionService] = await Promise.all([preloadPromise, servicePromise]);
+
+    expect(preloadedService).toBe(sessionService);
+    expect(mocks.ArSessionService).toHaveBeenCalledTimes(1);
+    expect(sessionService.startCamera).not.toHaveBeenCalled();
+    expect(sessionService.startFaceTracking).not.toHaveBeenCalled();
+  });
+
+  it('reports preload failures, clears the shared promise, and allows a later retry', async () => {
+    const preloadError = new Error('preload failed');
+    mocks.ArSessionService.mockImplementationOnce(function ArSessionService() {
+      throw preloadError;
+    });
+    const captureError = vi.spyOn(runtimeErrorReporter, 'captureError').mockReturnValue(false);
+    const useCase = createCameraSessionUseCase();
+
+    await expect(useCase.preloadSessionService()).resolves.toBeNull();
+
+    expect(captureError).toHaveBeenCalledWith(
+      preloadError,
+      expect.objectContaining({
+        eventType: 'ar_session.preload_failed',
+        feature: 'ar-session',
+        level: 'warning',
+      }),
+    );
+    expect(useCase.sessionServicePromise).toBeNull();
+
+    const sessionService = await useCase.getSessionService();
+
+    expect(sessionService).toBeTruthy();
+    expect(mocks.ArSessionService).toHaveBeenCalledTimes(2);
+
+    captureError.mockRestore();
   });
 });
 

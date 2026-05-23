@@ -15,13 +15,58 @@ import { runtimeErrorReporter } from '../telemetry/RuntimeErrorReporter.js';
  *   onResults: (handler: FaceTrackerResultsHandler) => void,
  *   initialize: () => Promise<void>,
  *   send: (input: { image: HTMLVideoElement }) => Promise<void>,
+ *   close?: () => Promise<void> | void,
  * }} FaceMeshInstance
  */
 
 /** @typedef {new (options: { locateFile: (file: string) => string }) => FaceMeshInstance} FaceMeshConstructor */
 /** @typedef {Window & { FaceMesh?: FaceMeshConstructor }} FaceMeshWindow */
+/**
+ * @typedef {{
+ *   locateFile: (file: string) => string,
+ *   getResolvedAssetUrls: () => string[],
+ *   getExpectedAssetUrls: () => string[],
+ *   getKnownAssetUrls: () => string[],
+ * }} FaceMeshAssetTracker
+ */
 
 const FACE_MESH_SCRIPT_URL = versionedPublicAssetUrl('vendor/mediapipe/face_mesh/face_mesh.js');
+export const FACE_MESH_INIT_TIMEOUT_MS = 18000;
+export const FACE_MESH_INIT_TIMEOUT_CODE = 'FACE_MESH_INIT_TIMEOUT';
+
+const FACE_MESH_EXPECTED_ASSET_FILES = [
+  'face_mesh_solution_packed_assets_loader.js',
+  'face_mesh_solution_packed_assets.data',
+  'face_mesh_solution_simd_wasm_bin.js',
+  'face_mesh_solution_simd_wasm_bin.wasm',
+  'face_mesh_solution_simd_wasm_bin.data',
+  'face_mesh_solution_wasm_bin.js',
+  'face_mesh_solution_wasm_bin.wasm',
+  'face_mesh.binarypb',
+];
+
+export class FaceMeshAssetLoadTimeoutError extends Error {
+  /**
+   * @param {{
+   *   timeoutMs: number,
+   *   assetUrls: readonly string[],
+   *   resolvedAssetUrls: readonly string[],
+   *   expectedAssetUrls: readonly string[],
+   * }} options
+   */
+  constructor({ timeoutMs, assetUrls, resolvedAssetUrls, expectedAssetUrls }) {
+    const seconds = Math.round(timeoutMs / 1000);
+    const waitingList = assetUrls.length ? `可能仍在等待：${assetUrls.join(', ')}` : '尚未取得資產 URL。';
+    super(`臉部追蹤資產載入逾時（超過 ${seconds} 秒）。${waitingList}`);
+    this.name = 'FaceMeshAssetLoadTimeoutError';
+    /** @type {typeof FACE_MESH_INIT_TIMEOUT_CODE} */
+    this.code = FACE_MESH_INIT_TIMEOUT_CODE;
+    this.timeoutMs = timeoutMs;
+    this.assetUrls = [...assetUrls];
+    this.resolvedAssetUrls = [...resolvedAssetUrls];
+    this.expectedAssetUrls = [...expectedAssetUrls];
+  }
+}
 
 /** @type {Promise<FaceMeshConstructor> | null} */
 let faceMeshScriptPromise = null;
@@ -36,7 +81,7 @@ async function loadFaceMeshConstructor() {
   }
 
   if (!faceMeshScriptPromise) {
-    faceMeshScriptPromise = new Promise((resolve, reject) => {
+    const scriptPromise = new Promise((resolve, reject) => {
       const script = document.createElement('script');
       script.src = FACE_MESH_SCRIPT_URL;
       script.async = true;
@@ -48,11 +93,15 @@ async function loadFaceMeshConstructor() {
           return;
         }
 
-        faceMeshScriptPromise = null;
+        if (faceMeshScriptPromise === scriptPromise) {
+          faceMeshScriptPromise = null;
+        }
         reject(new Error('MediaPipe FaceMesh 載入後沒有提供 FaceMesh 建構子。'));
       };
       script.onerror = () => {
-        faceMeshScriptPromise = null;
+        if (faceMeshScriptPromise === scriptPromise) {
+          faceMeshScriptPromise = null;
+        }
         const error = new Error(`無法載入 MediaPipe Face Mesh：${FACE_MESH_SCRIPT_URL}`);
         runtimeErrorReporter.captureError(error, {
           eventType: 'mediapipe.script_load_failed',
@@ -65,6 +114,7 @@ async function loadFaceMeshConstructor() {
       };
       document.head.appendChild(script);
     });
+    faceMeshScriptPromise = scriptPromise;
   }
 
   return faceMeshScriptPromise;
@@ -116,40 +166,71 @@ export class FaceTracker {
    * @returns {Promise<void>}
    */
   async init() {
+    const assetTracker = createFaceMeshAssetTracker();
+
     try {
-      const FaceMeshConstructor = await loadFaceMeshConstructor();
-
-      this.faceMesh = new FaceMeshConstructor({
-        // Assets are copied from node_modules into public/vendor so the MVP does
-        // not need a third-party CDN at runtime.
-        locateFile: (file) => versionedPublicAssetUrl(`vendor/mediapipe/face_mesh/${file}`),
-      });
-
-      this.faceMesh.setOptions({
-        maxNumFaces: 1,
-        refineLandmarks: true,
-        minDetectionConfidence: 0.58,
-        minTrackingConfidence: 0.58,
-        // Internally flips the camera input when using the front-facing mirrored preview.
-        selfieMode: this.selfieMode,
-      });
-
-      this.faceMesh.onResults((results) => {
-        this.onResults?.(results);
-      });
-
-      await this.faceMesh.initialize();
+      this.faceMesh = await withTimeout(
+        this.createInitializedFaceMesh(assetTracker),
+        FACE_MESH_INIT_TIMEOUT_MS,
+        () => new FaceMeshAssetLoadTimeoutError({
+          timeoutMs: FACE_MESH_INIT_TIMEOUT_MS,
+          assetUrls: assetTracker.getKnownAssetUrls(),
+          resolvedAssetUrls: assetTracker.getResolvedAssetUrls(),
+          expectedAssetUrls: assetTracker.getExpectedAssetUrls(),
+        }),
+      );
     } catch (error) {
+      this.faceMesh = null;
+      if (isFaceMeshInitTimeoutError(error)) {
+        faceMeshScriptPromise = null;
+      }
       runtimeErrorReporter.captureError(error, {
-        eventType: 'mediapipe.init_failed',
+        eventType: isFaceMeshInitTimeoutError(error) ? 'mediapipe.init_timeout' : 'mediapipe.init_failed',
         feature: 'mediapipe',
+        tags: {
+          error_code: getErrorCode(error),
+        },
         extra: {
           scriptUrl: FACE_MESH_SCRIPT_URL,
           selfieMode: this.selfieMode,
+          timeoutMs: getErrorTimeoutMs(error),
+          assetUrls: getErrorAssetUrls(error, assetTracker.getKnownAssetUrls()),
+          resolvedAssetUrls: getErrorResolvedAssetUrls(error, assetTracker.getResolvedAssetUrls()),
+          expectedAssetUrls: getErrorExpectedAssetUrls(error, assetTracker.getExpectedAssetUrls()),
         },
       });
       throw error;
     }
+  }
+
+  /**
+   * @param {FaceMeshAssetTracker} assetTracker
+   * @returns {Promise<FaceMeshInstance>}
+   */
+  async createInitializedFaceMesh(assetTracker) {
+    const FaceMeshConstructor = await loadFaceMeshConstructor();
+
+    const faceMesh = new FaceMeshConstructor({
+      // Assets are copied from node_modules into public/vendor so the MVP does
+      // not need a third-party CDN at runtime.
+      locateFile: assetTracker.locateFile,
+    });
+
+    faceMesh.setOptions({
+      maxNumFaces: 1,
+      refineLandmarks: true,
+      minDetectionConfidence: 0.58,
+      minTrackingConfidence: 0.58,
+      // Internally flips the camera input when using the front-facing mirrored preview.
+      selfieMode: this.selfieMode,
+    });
+
+    faceMesh.onResults((results) => {
+      this.onResults?.(results);
+    });
+
+    await faceMesh.initialize();
+    return faceMesh;
   }
 
   /**
@@ -440,6 +521,156 @@ function clampNumber(value, min, max, fallback) {
   const number = Number(value);
   if (!Number.isFinite(number)) return fallback;
   return Math.min(max, Math.max(min, number));
+}
+
+/**
+ * @returns {FaceMeshAssetTracker}
+ */
+function createFaceMeshAssetTracker() {
+  const resolvedAssetUrls = new Set([FACE_MESH_SCRIPT_URL]);
+  const expectedAssetUrls = new Set([
+    FACE_MESH_SCRIPT_URL,
+    ...FACE_MESH_EXPECTED_ASSET_FILES.map(createFaceMeshAssetUrl),
+  ]);
+
+  return {
+    locateFile(file) {
+      const assetUrl = createFaceMeshAssetUrl(file);
+      resolvedAssetUrls.add(assetUrl);
+      expectedAssetUrls.add(assetUrl);
+      return assetUrl;
+    },
+    getResolvedAssetUrls() {
+      return [...resolvedAssetUrls];
+    },
+    getExpectedAssetUrls() {
+      return [...expectedAssetUrls];
+    },
+    getKnownAssetUrls() {
+      return [...new Set([...resolvedAssetUrls, ...expectedAssetUrls])];
+    },
+  };
+}
+
+/**
+ * @param {string} file
+ * @returns {string}
+ */
+function createFaceMeshAssetUrl(file) {
+  return versionedPublicAssetUrl(`vendor/mediapipe/face_mesh/${file}`);
+}
+
+/**
+ * @template T
+ * @param {Promise<T>} promise
+ * @param {number} timeoutMs
+ * @param {() => Error} createTimeoutError
+ * @returns {Promise<T>}
+ */
+function withTimeout(promise, timeoutMs, createTimeoutError) {
+  return new Promise((resolve, reject) => {
+    let isSettled = false;
+    const timeoutHandle = setTimeout(() => {
+      if (isSettled) return;
+      isSettled = true;
+      reject(createTimeoutError());
+    }, timeoutMs);
+
+    promise.then(
+      (value) => {
+        if (isSettled) return;
+        isSettled = true;
+        clearTimeout(timeoutHandle);
+        resolve(value);
+      },
+      (error) => {
+        if (isSettled) return;
+        isSettled = true;
+        clearTimeout(timeoutHandle);
+        reject(error);
+      },
+    );
+  });
+}
+
+/**
+ * @param {unknown} error
+ * @returns {boolean}
+ */
+function isFaceMeshInitTimeoutError(error) {
+  return Boolean(
+    error &&
+      typeof error === 'object' &&
+      'code' in error &&
+      error.code === FACE_MESH_INIT_TIMEOUT_CODE
+  );
+}
+
+/**
+ * @param {unknown} error
+ * @returns {string | undefined}
+ */
+function getErrorCode(error) {
+  if (!error || typeof error !== 'object' || !('code' in error)) return undefined;
+  return typeof error.code === 'string' ? error.code : undefined;
+}
+
+/**
+ * @param {unknown} error
+ * @returns {number | undefined}
+ */
+function getErrorTimeoutMs(error) {
+  if (!error || typeof error !== 'object' || !('timeoutMs' in error)) return undefined;
+  return typeof error.timeoutMs === 'number' ? error.timeoutMs : undefined;
+}
+
+/**
+ * @param {unknown} error
+ * @param {string[]} fallback
+ * @returns {string[]}
+ */
+function getErrorAssetUrls(error, fallback) {
+  if (!error || typeof error !== 'object' || !('assetUrls' in error) || !Array.isArray(error.assetUrls)) {
+    return fallback;
+  }
+
+  return error.assetUrls.filter((url) => typeof url === 'string');
+}
+
+/**
+ * @param {unknown} error
+ * @param {string[]} fallback
+ * @returns {string[]}
+ */
+function getErrorResolvedAssetUrls(error, fallback) {
+  if (
+    !error ||
+    typeof error !== 'object' ||
+    !('resolvedAssetUrls' in error) ||
+    !Array.isArray(error.resolvedAssetUrls)
+  ) {
+    return fallback;
+  }
+
+  return error.resolvedAssetUrls.filter((url) => typeof url === 'string');
+}
+
+/**
+ * @param {unknown} error
+ * @param {string[]} fallback
+ * @returns {string[]}
+ */
+function getErrorExpectedAssetUrls(error, fallback) {
+  if (
+    !error ||
+    typeof error !== 'object' ||
+    !('expectedAssetUrls' in error) ||
+    !Array.isArray(error.expectedAssetUrls)
+  ) {
+    return fallback;
+  }
+
+  return error.expectedAssetUrls.filter((url) => typeof url === 'string');
 }
 
 /**
