@@ -163,7 +163,13 @@ function assertSecurityHeaders(headers) {
   }
 
   const normalizedCsp = csp.toLowerCase();
-  for (const directive of ["default-src 'self'", "script-src 'self'", "connect-src 'self' blob:", "object-src 'none'", "frame-ancestors 'none'"]) {
+  for (const directive of [
+    "default-src 'self'",
+    "script-src 'self' 'wasm-unsafe-eval' 'unsafe-eval'",
+    "connect-src 'self' blob:",
+    "object-src 'none'",
+    "frame-ancestors 'none'",
+  ]) {
     if (!normalizedCsp.includes(directive)) {
       throw new Error(`Content-Security-Policy is missing directive: ${directive}`);
     }
