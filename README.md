@@ -252,9 +252,9 @@ CI 的 npm audit 先以 production dependency 為範圍執行 `npm audit --omit=
 - `.github/workflows/deploy.yml`：Cloudflare Pages PR preview、`staging` branch preview，以及 `master` / `main` push 後的 production deploy。沒有 Cloudflare secrets 時部署 job 會跳過。
 - `.github/workflows/rollback.yml`：Cloudflare Pages rollback workflow，rollback 後會以 `npm run smoke:release` 驗證版本、header 與資產。
 
-正式啟用部署前，需在 GitHub repository secrets 設定 `CLOUDFLARE_API_TOKEN`、`CLOUDFLARE_ACCOUNT_ID`、`CLOUDFLARE_PAGES_PROJECT`；`STAGING_URL`、`PRODUCTION_URL` 可選，用於自訂網域 smoke fallback。建議替 `production` environment 開啟 required reviewers。
+若使用此 repo 的 GitHub Actions CD workflow 維護 Cloudflare Pages，需在 GitHub repository secrets 設定 `CLOUDFLARE_API_TOKEN`、`CLOUDFLARE_ACCOUNT_ID`、`CLOUDFLARE_PAGES_PROJECT`；`STAGING_URL`、`PRODUCTION_URL` 可選，用於自訂網域 smoke fallback。建議替 `production` environment 開啟 required reviewers。正式線上入口以 Cloudflare Pages production URL 或自訂網域為準。
 
-線上部署後建議對 Cloudflare Pages URL 做冒煙測試：
+線上部署後建議對 Cloudflare Pages production URL 做冒煙測試：
 
 - 執行 `SMOKE_BASE_URL=<Cloudflare Pages URL> npm run smoke`，確認首頁 CSP、Permissions-Policy、Cache-Control、release metadata、JS/CSS、GLB、MediaPipe vendor assets 與 showcase canvas 都正常。
 - 用瀏覽器開啟 production URL，確認頁面載入無 console error。
@@ -264,6 +264,8 @@ CI 的 npm audit 先以 production dependency 為範圍執行 `npm audit --omit=
 - 確認 showcase 初始畫面、Three.js canvas、`models/necklace.glb` 與 `vendor/mediapipe/face_mesh/*` 路徑沒有 404，且大型資產回應 `Cache-Control: public, max-age=31536000, immutable`。
 - 基本操作款式卡片、色票、AR/模型展示切換與 Debug toggle。
 - 相機權限、Face Mesh 真實追蹤、前後鏡頭切換與 iOS Safari 表現仍需人工實機確認。
+
+GitHub Pages 不再是例行發布目標。若仍保留 `https://cooby19.github.io/ar_necklace/`，請把它視為 demo/fallback，並在 README、QR code、對外文件與測試流程中避免把它寫成正式站。
 
 ## 放置 GLB 模型
 
@@ -279,7 +281,7 @@ public/models/necklace.glb
 /models/necklace.glb?v=<version>-<commit>
 ```
 
-如果要新增多款項鍊，請在 `src/config/necklaces.js` 匯入並使用 `versionedPublicAssetUrl()` 產生 URL，讓 Cloudflare Pages 根路徑、preview URL 與必要時的子路徑 rollback build 都能正確解析資產：
+如果要新增多款項鍊，請在 `src/config/necklaces.js` 匯入並使用 `versionedPublicAssetUrl()` 產生 URL，讓 Cloudflare Pages 根路徑、preview URL、必要時的子路徑 rollback build 與 CDN cache key 差異下都能正確解析資產，避免 404 或讀到舊檔：
 
 ```js
 import { versionedPublicAssetUrl } from './assets.js';

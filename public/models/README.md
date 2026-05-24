@@ -12,7 +12,7 @@ public/models/*.glb
 /models/檔名.glb?v=<version>-<commit>
 ```
 
-不要在新增款式時硬編碼 `/models/...`，否則部署到 GitHub Pages 子路徑時容易 404。
+不要在新增款式時硬編碼 `/models/...`，否則在 preview、子路徑 hosting 或部分 CDN 設定下容易 404 或讀到舊檔。
 
 ## 對位建議
 

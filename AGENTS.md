@@ -12,7 +12,7 @@
 - Three.js 用於 WebGL 場景、正交相機、燈光與 GLB 模型載入。
 - `@mediapipe/face_mesh` 用於臉部 landmark 偵測。
 - MediaPipe wasm/model 等執行資產已 vendored 到 `public/vendor/mediapipe/face_mesh`，執行時不依賴 CDN。
-- 預設項鍊模型位於 `public/models/necklace.glb`，設定入口為 `src/config/necklaces.js`。runtime URL 需透過 `src/config/assets.js` 的 `versionedPublicAssetUrl()` 組合，避免 GitHub Pages 子路徑或 CDN cache 造成資產載入錯誤。
+- 預設項鍊模型位於 `public/models/necklace.glb`，設定入口為 `src/config/necklaces.js`。runtime URL 需透過 `src/config/assets.js` 的 `versionedPublicAssetUrl()` 組合，避免 preview、子路徑 hosting 或 CDN cache 造成資產載入錯誤。
 - 樣式入口為 `src/styles/index.css`，再拆成 reset、tokens、layout、states、responsive 與 `src/styles/components/*`。
 - Runtime release metadata 由 `vite.config.js` 注入，`src/config/release.js` 讀取，build 後會產生 `dist/release.json`。
 - `src/telemetry/RuntimeErrorReporter.js` 提供 optional Sentry-compatible error reporting；不得上傳相機畫面、截圖 Blob/data URL 或 Face Mesh landmarks。
@@ -252,12 +252,14 @@ showcase -> arIdle -> cameraStarting -> noFace <-> tracking -> capturing -> shar
 - 狀態面板會顯示模型載入、相機、追蹤、未偵測到臉、錯誤等狀態。
 - 窄螢幕會使用底部面板與分頁式控制，避免控制欄壓縮預覽區。
 
-## GitHub Pages 部署
+## Cloudflare Pages 部署與 GitHub Pages 備援
 
-- `npm run build` 會產出 `dist/`，正式部署到 GitHub Pages 時應使用 build 後的 `dist` 內容更新 `gh-pages` 分支。
-- 此專案在 GitHub Pages 子路徑執行時，靜態資產 URL 應透過 `import.meta.env.BASE_URL` 或相容方式組合，避免硬編碼根目錄造成模型或 MediaPipe 資產載入失敗。
-- 更新 `gh-pages` 前先確認 `npm run lint`、`npm run typecheck`、`npm test`、`npm run build`、`npm run budget` 與 `npm run smoke` 成功，並盡量避免把 `node_modules/`、本機暫存檔或未建置來源檔放入部署分支。
-- 目前線上 URL 為 `https://cooby19.github.io/ar_necklace/`。部署後需做冒煙測試：頁面載入無 console error、bundle 指向最新檔、showcase/Three.js canvas 正常、`models/necklace.glb` 與 `vendor/mediapipe/face_mesh/*` 沒有 404、款式卡片/色票/debug toggle 基本互動可用。
+- 正式線上入口以 Cloudflare Pages production URL 或自訂網域為準，GitHub Pages 不再是例行發布目標。
+- `npm run build` 會產出 `dist/`；Cloudflare Pages 部署應使用 build 後的 `dist`，並讓 `PRODUCTION_URL` 指向目前正式站。
+- 靜態資產 URL 應透過 `import.meta.env.BASE_URL` 或相容方式組合，避免硬編碼根目錄造成模型或 MediaPipe 資產在 preview、子路徑 hosting 或 CDN 環境載入失敗。
+- 部署 Cloudflare Pages production 前先確認 `npm run lint`、`npm run typecheck`、`npm test`、`npm run build`、`npm run budget` 與 `npm run smoke` 成功。
+- 部署後需對 Cloudflare Pages production URL 做冒煙測試：頁面載入無 console error、bundle 指向最新檔、showcase/Three.js canvas 正常、`models/necklace.glb` 與 `vendor/mediapipe/face_mesh/*` 沒有 404、款式卡片/色票/debug toggle 基本互動可用。
+- 若仍保留 `https://cooby19.github.io/ar_necklace/`，應定位為 demo/fallback 或舊版，不需要每次 Cloudflare Pages production release 都手動更新。
 - 自動化環境通常無法完整驗證相機權限、真實 Face Mesh 追蹤、前後鏡頭切換、iOS Safari 權限與效能；這些需人工實機確認。
 
 ## 單元測試策略

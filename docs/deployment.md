@@ -1,6 +1,6 @@
 # 部署與發布流程
 
-本文定義商業化前可接受的靜態前端部署流程。正式部署目標已切換為 Cloudflare Pages，使用 GitHub Actions 先建置並驗證 `dist/`，再用 Wrangler Direct Upload 發布到 Cloudflare Pages。GitHub Pages 僅保留為歷史 demo 或緊急 rollback 參考，不再作為正式安全 header / cache 驗收來源。
+本文定義商業化前可接受的靜態前端部署流程。正式部署目標已切換為 Cloudflare Pages，正式線上入口以 Cloudflare Pages production URL 或自訂網域為準；使用 GitHub Actions 先建置並驗證 `dist/`，再用 Wrangler Direct Upload 發布到 Cloudflare Pages。GitHub Pages 僅保留為歷史 demo 或緊急 rollback 參考，不再作為正式安全 header / cache 驗收來源，也不需要跟著每次 Cloudflare Pages production release 例行更新。
 
 ## 目前限制與設計前提
 
@@ -10,6 +10,7 @@
 - 若需要重建歷史 GitHub Pages fallback，才使用 `VITE_BASE_PATH=/ar_necklace/ npm run build` 明確覆寫。
 - runtime 資產已透過 `import.meta.env.BASE_URL` 組出 `models/`、`thumbnails/` 與 MediaPipe vendor 路徑，並加上 release token query string。正式 Cloudflare Pages build 會解析為 `/models/...`、`/vendor/...`，大型 GLB/WASM/data 可搭配 Cloudflare edge cache。
 - 不硬編碼正式站 URL；遠端 smoke 使用 `SMOKE_BASE_URL`，workflow 使用 `PRODUCTION_URL` / `STAGING_URL` secrets 作為自訂網域 fallback。
+- GitHub Pages 不再是例行 production 發布目標；若保留既有 URL，定位為 demo/fallback 或停在穩定版本，避免對外文件同時出現兩個「正式站」。
 
 ## 環境規劃
 
@@ -48,8 +49,10 @@ Production deploy 在 `.github/workflows/deploy.yml` 中明確依賴 `smoke-stag
 
 ### GitHub Pages 歷史/rollback 策略
 
+- Cloudflare Pages 是 primary hosting；發布 checklist、smoke test、README、QR code 與對外文件都應指向 Cloudflare Pages production URL 或自訂網域。
 - 可保留既有 `https://cooby19.github.io/ar_necklace/` 作為歷史 demo/fallback，但不要把它視為 production security headers 驗收來源。
 - GitHub Pages 不支援自訂 response headers，`public/_headers` 不會在該平台生效，因此不適合承擔這個相機 Web AR App 的正式站。
+- GitHub Pages 不需要跟著每次 Cloudflare Pages production release 手動更新；若仍公開可訪問，請在文件或頁面說明它不是正式入口，避免使用者誤開舊版。
 - 若緊急需要重建 GitHub Pages fallback，請使用 `VITE_BASE_PATH=/ar_necklace/ npm run build` 產生子路徑 build，再明確記錄「沒有 CSP / Permissions-Policy / cache header」這個 release risk。
 
 ## Release metadata
@@ -366,7 +369,8 @@ S3 + CloudFront：
 GitHub Pages：
 
 - 不支援自訂 response headers，`_headers` 不會被套用。
-- 可作 demo/fallback，但不應視為 production security headers 的驗收來源。
+- 可作 demo/fallback 或停在穩定版本，但不應視為 production security headers 的驗收來源。
+- Cloudflare Pages 已作為 primary hosting 時，GitHub Pages 不需要例行更新；若保留公開 URL，請避免在對外文件中把它標示為正式站。
 - 若必須暫時使用 GitHub Pages production，至少保留 `npm run smoke:release` 與人工相機驗收，並把「無法 enforce CSP/cache headers」列為 release risk。
 
 ## Rollback 策略
