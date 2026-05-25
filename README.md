@@ -22,9 +22,16 @@
 │   └── smoke-release.mjs
 ├── vite.config.js
 ├── public/
+│   ├── brand/
+│   │   └── lunera-logo.png
+│   ├── icons/
+│   │   ├── apple-touch-icon.png
+│   │   ├── lunera-icon-192.png
+│   │   └── lunera-icon-512.png
 │   ├── models/
 │   │   ├── README.md
 │   │   └── necklace.glb
+│   ├── site.webmanifest
 │   ├── thumbnails/
 │   │   └── default-necklace.svg
 │   └── vendor/
@@ -217,12 +224,28 @@ Playwright 視覺回歸測試會啟動本機 Vite dev server，檢查桌面、�
 
 CI 的 npm audit 先以 production dependency 為範圍執行 `npm audit --omit=dev`；若現有 production advisory 尚未修復，會產出 audit report artifact 與 warning，避免 dev dependency 或既有 advisory 讓 PR gate 長期無法通過。
 
+## SEO、社群分享與安裝體驗
+
+目前已補上商業化最低門檻的 SEO / OG / Twitter Card / Web App Manifest / JSON-LD 基礎：
+
+- `index.html`：包含繁體中文 title、description、robots、canonical、theme-color、mobile web app tags、Open Graph、Twitter Card 與 JSON-LD `@graph`。
+- `public/site.webmanifest`：定義 `name`、`short_name`、description、start URL、scope、display、theme/background color、`zh-Hant` 語系、categories 與 icon 清單。
+- `public/brand/lunera-logo.png`：暫用的 LUNERA logo，供 OG/Twitter image 與 JSON-LD logo/image 使用。
+- `public/icons/*`：由暫用 logo 產生的 192、512 與 Apple touch icon，避免 manifest 或 iOS install flow 引用不存在的檔案。
+
+正式上線前仍需確認：
+
+- 將 `index.html` 內 TODO 標註的 canonical、`og:url` 與 JSON-LD `url` 換成 Cloudflare Pages production URL 或自訂網域的絕對 URL。
+- 將暫用的方形 `brand/lunera-logo.png` 替換或補上正式 1200x630 社群分享預覽圖，並同步更新 `og:image` / `twitter:image` 與尺寸。
+- 確認最終品牌名稱是否使用 `LUNERA`，或改回 `Soft Jewelry Studio` / 其他正式名稱。
+
 ## 部署與發布
 
 部署流程設計請見 [`docs/deployment.md`](docs/deployment.md)。目前 repo 內已提供：
 
 - build artifact：CI 會上傳 `ar-necklace-dist-${GITHUB_SHA}`，內容包含 `dist/release.json`。
 - release metadata：build 後可在 `release.json`、browser console、`window.__AR_NECKLACE_RELEASE__` 與 debug panel 看到 version、commit SHA、build time、environment。
+- SEO/分享/安裝基礎：`index.html`、`public/site.webmanifest` 與 `public/brand` / `public/icons` 提供搜尋、社群分享與行動裝置加入主畫面的最低素材。
 - runtime safety：可選 `VITE_ERROR_REPORTING_DSN` 啟用 Sentry-compatible error reporting；未設定時不影響 build 或 app。上報會帶 release metadata，但不包含相機畫面、使用者影像或 Face Mesh landmarks。
 - 正式部署目標：Cloudflare Pages，部署 root base path 為 `/`。`vite.config.js` 預設 `base: '/'`，若歷史 GitHub Pages rollback 需要子路徑，可用 `VITE_BASE_PATH=/ar_necklace/ npm run build` 明確覆寫。
 - headers/cache：`public/_headers` 會由 Vite 複製到 `dist/_headers`，Cloudflare Pages 會套用 CSP、Permissions-Policy 與 Cache-Control。GitHub Pages 不支援自訂 headers，因此不再作為正式部署目標。
@@ -235,6 +258,9 @@ CI 的 npm audit 先以 production dependency 為範圍執行 `npm audit --omit=
 
 - 執行 `SMOKE_BASE_URL=<Cloudflare Pages URL> npm run smoke`，確認首頁 CSP、Permissions-Policy、Cache-Control、release metadata、JS/CSS、GLB、MediaPipe vendor assets 與 showcase canvas 都正常。
 - 用瀏覽器開啟 production URL，確認頁面載入無 console error。
+- 確認 `index.html` 指向最新 `assets/index-*.js` 與 `assets/index-*.css`。
+- 確認 title、description、canonical、Open Graph、Twitter Card、manifest link 與 JSON-LD 在 production HTML 中存在，且 URL 指向正式網域。
+- 確認 `site.webmanifest`、`brand/lunera-logo.png`、`icons/lunera-icon-192.png`、`icons/lunera-icon-512.png` 與 `icons/apple-touch-icon.png` 沒有 404。
 - 確認 showcase 初始畫面、Three.js canvas、`models/necklace.glb` 與 `vendor/mediapipe/face_mesh/*` 路徑沒有 404，且大型資產回應 `Cache-Control: public, max-age=31536000, immutable`。
 - 基本操作款式卡片、色票、AR/模型展示切換與 Debug toggle。
 - 相機權限、Face Mesh 真實追蹤、前後鏡頭切換與 iOS Safari 表現仍需人工實機確認。

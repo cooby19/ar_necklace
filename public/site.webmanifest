@@ -1,0 +1,27 @@
+{
+  "name": "LUNERA 線上 AR 項鍊試戴",
+  "short_name": "LUNERA",
+  "description": "線上 AR 項鍊試戴體驗，免安裝即可透過瀏覽器相機即時預覽，適合飾品展示與電商導購。",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f4f1ee",
+  "theme_color": "#f4f1ee",
+  "lang": "zh-Hant",
+  "categories": ["shopping", "lifestyle", "beauty"],
+  "icons": [
+    {
+      "src": "icons/lunera-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/lunera-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

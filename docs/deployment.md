@@ -260,6 +260,7 @@ CI 不要求真實 camera permission。相機權限、Face Mesh 真實追蹤、�
 - `release.json`：`no-cache`，確保 smoke、客服與 rollback 查驗看到當前部署版本。
 - `assets/*`：Vite hashed JS/CSS，`public, max-age=31536000, immutable`。
 - `models/*` 與 `vendor/mediapipe/face_mesh/*`：runtime URL 會加 release token query string，例如 `?v=0.2.0-<sha>`，因此即使 GLB/WASM/data 檔名未 hash，也可搭配 `public, max-age=31536000, immutable`。
+- `site.webmanifest`、`brand/*` 與 `icons/*`：支援 SEO、社群分享與加入主畫面的 public assets。若正式品牌圖或 icon 會在同一路徑替換，部署後需確認 CDN 已更新或短時間內可重新驗證。
 
 CDN 策略：
 
@@ -284,6 +285,22 @@ CDN 策略：
 - `Permissions-Policy: camera=(self), microphone=(), geolocation=(), payment=(), usb=(), bluetooth=()`
 
 相機權限仍由瀏覽器 permission prompt 控制；`Permissions-Policy: camera=(self)` 的目的，是允許本站使用 camera，同時避免第三方 iframe 任意取得權限。
+
+## SEO / OG / Manifest 發布檢查
+
+目前 `index.html` 已包含商業化最低門檻的 SEO 與社群分享基礎：
+
+- 繁體中文 title、description、robots、canonical、theme-color、color-scheme 與 mobile web app tags。
+- Open Graph 與 Twitter Card，暫用 `public/brand/lunera-logo.png` 作為分享圖片。
+- `public/site.webmanifest`，包含 `name`、`short_name`、description、`start_url`、`scope`、`display`、`theme_color`、`background_color`、`lang`、categories 與 icons。
+- JSON-LD `@graph`，包含 `Organization`、`WebSite` 與 `WebApplication`，描述線上 AR 項鍊試戴、免安裝、瀏覽器相機即時預覽與飾品展示 / 電商導購用途。
+
+正式 Cloudflare Pages production 發布前需完成：
+
+- 將 `index.html` 內 TODO 標註的 canonical、`og:url` 與 JSON-LD `url` 從相對 URL 換成正式 production URL 或自訂網域的絕對 URL。
+- 將暫用方形 logo 換成正式品牌素材；社群分享建議另備 1200x630 preview image，並同步更新 `og:image:width` / `og:image:height` / alt。
+- 用 production URL 檢查 `site.webmanifest`、`brand/lunera-logo.png`、`icons/lunera-icon-192.png`、`icons/lunera-icon-512.png`、`icons/apple-touch-icon.png` 沒有 404。
+- 用社群分享偵錯工具或瀏覽器檢查 production HTML 中的 title、description、OG、Twitter Card 與 JSON-LD 都讀得到最新內容。
 
 ### 平台設定範例
 
