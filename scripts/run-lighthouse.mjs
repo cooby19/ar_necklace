@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
@@ -7,6 +8,7 @@ import { chromium } from '@playwright/test';
 import * as chromeLauncher from 'chrome-launcher';
 import lighthouse from 'lighthouse';
 
+const requireFromScript = createRequire(import.meta.url);
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const reportDir = path.join(rootDir, 'lighthouse-report');
 const previewPort = Number(process.env.LIGHTHOUSE_PREVIEW_PORT ?? 4173);
@@ -63,17 +65,20 @@ try {
   checkScores(result.lhr.categories);
 } finally {
   if (chrome) await chrome.kill();
-  stopPreviewServer(previewServer);
+  await stopPreviewServer(previewServer);
 }
 
 function startPreviewServer() {
+  const viteCliPath = path.join(path.dirname(requireFromScript.resolve('vite/package.json')), 'bin/vite.js');
   const child = spawn(
-    'npm',
-    ['exec', 'vite', '--', 'preview', '--host', '127.0.0.1', '--port', String(previewPort), '--strictPort'],
+    process.execPath,
+    [viteCliPath, 'preview', '--host', '127.0.0.1', '--port', String(previewPort), '--strictPort'],
     {
       cwd: rootDir,
       env: { ...process.env, FORCE_COLOR: '0' },
       stdio: ['ignore', 'pipe', 'pipe'],
+      detached: process.platform !== 'win32',
+      windowsHide: true,
     },
   );
 
@@ -145,8 +150,33 @@ function checkScores(categories) {
   }
 }
 
-function stopPreviewServer(child) {
-  if (!child.killed) child.kill('SIGTERM');
+async function stopPreviewServer(child) {
+  if (child.exitCode !== null || child.signalCode !== null) return;
+
+  const closed = new Promise((resolve) => {
+    child.once('close', resolve);
+  });
+
+  killPreviewServer(child, 'SIGTERM');
+  await Promise.race([closed, delay(5000)]);
+
+  if (child.exitCode === null && child.signalCode === null) {
+    killPreviewServer(child, 'SIGKILL');
+    await Promise.race([closed, delay(1000)]);
+  }
+}
+
+function killPreviewServer(child, signal) {
+  try {
+    if (process.platform !== 'win32' && child.pid) {
+      process.kill(-child.pid, signal);
+      return;
+    }
+  } catch {
+    // Fall back to killing the direct child if the process group is already gone.
+  }
+
+  if (!child.killed) child.kill(signal);
 }
 
 function delay(ms) {
