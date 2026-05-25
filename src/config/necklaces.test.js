@@ -32,13 +32,13 @@ describe('NECKLACES catalog', () => {
         rotationZ: 0,
       },
     });
-    expect(necklace?.url).toContain('models/necklace_2.glb');
+    expect(necklace?.url).toContain('models/necklace_2.draco.glb');
     expect(necklace?.thumbnailUrl).toBeUndefined();
   });
 
   it('sets the crystal cone occluder to only match the GLB neck helper mesh', () => {
     const necklace = NECKLACES.find((item) => item.id === 'crystal-cone-necklace');
-    const glb = readGlbJson('public/models/necklace_2.glb');
+    const glb = readGlbJson('public/models/necklace_2.draco.glb');
     const matchedMeshes = getMeshRecords(glb).filter((record) =>
       matchesOccluderParts(record, necklace?.occluderParts),
     );
@@ -48,16 +48,16 @@ describe('NECKLACES catalog', () => {
       {
         nodeName: 'neck_helper',
         meshName: '圓柱體',
-        materialNames: [],
+        materialNames: ['default'],
       },
     ]);
   });
 
   it('registers only the crystal cone color targets that have GLB material hits', () => {
     const necklace = NECKLACES.find((item) => item.id === 'crystal-cone-necklace');
-    const materialNames = getMaterialNames(readGlbJson('public/models/necklace_2.glb'));
+    const materialNames = getMaterialNames(readGlbJson('public/models/necklace_2.draco.glb'));
 
-    expect(materialNames).toEqual(['Colorable_Gem', 'Colorable_Metal.001']);
+    expect(materialNames).toEqual(['Colorable_Gem', 'Colorable_Metal.001', 'default']);
     expect(necklace?.colorCustomization?.targets.map((target) => target.id)).toEqual(['metal', 'gem']);
     expect(getTargetIdsWithMaterialHits(necklace, materialNames)).toEqual(['metal', 'gem']);
     expect(necklace?.colorCustomization?.defaultColor).toBe('rose-quartz');
@@ -65,7 +65,7 @@ describe('NECKLACES catalog', () => {
 
   it('keeps the default necklace color target matching intact', () => {
     const necklace = NECKLACES.find((item) => item.id === 'default-necklace');
-    const materialNames = getMaterialNames(readGlbJson('public/models/necklace.glb'));
+    const materialNames = getMaterialNames(readGlbJson('public/models/necklace.draco.glb'));
 
     expect(necklace?.colorCustomization?.targets.map((target) => target.id)).toEqual([
       'metal',

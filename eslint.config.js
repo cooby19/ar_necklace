@@ -12,6 +12,7 @@ export default [
       'coverage/**',
       'public/vendor/**',
       'public/models/**',
+      'public/draco/**',
     ],
   },
   js.configs.recommended,

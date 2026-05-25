@@ -30,7 +30,11 @@
 │   │   └── lunera-icon-512.png
 │   ├── models/
 │   │   ├── README.md
-│   │   └── necklace.glb
+│   │   ├── necklace.glb
+│   │   └── necklace.draco.glb
+│   ├── draco/
+│   │   ├── draco_decoder.wasm
+│   │   └── draco_wasm_wrapper.js
 │   ├── site.webmanifest
 │   ├── thumbnails/
 │   │   └── default-necklace.svg
@@ -261,7 +265,7 @@ CI 的 npm audit 先以 production dependency 為範圍執行 `npm audit --omit=
 - 確認 `index.html` 指向最新 `assets/index-*.js` 與 `assets/index-*.css`。
 - 確認 title、description、canonical、Open Graph、Twitter Card、manifest link 與 JSON-LD 在 production HTML 中存在，且 URL 指向正式網域。
 - 確認 `site.webmanifest`、`brand/lunera-logo.png`、`icons/lunera-icon-192.png`、`icons/lunera-icon-512.png` 與 `icons/apple-touch-icon.png` 沒有 404。
-- 確認 showcase 初始畫面、Three.js canvas、`models/necklace.glb` 與 `vendor/mediapipe/face_mesh/*` 路徑沒有 404，且大型資產回應 `Cache-Control: public, max-age=31536000, immutable`。
+- 確認 showcase 初始畫面、Three.js canvas、`models/necklace.draco.glb`、`draco/draco_decoder.wasm` 與 `vendor/mediapipe/face_mesh/*` 路徑沒有 404，且大型資產回應 `Cache-Control: public, max-age=31536000, immutable`。
 - 基本操作款式卡片、色票、AR/模型展示切換與 Debug toggle。
 - 相機權限、Face Mesh 真實追蹤、前後鏡頭切換與 iOS Safari 表現仍需人工實機確認。
 
@@ -269,17 +273,19 @@ GitHub Pages 不再是例行發布目標。若仍保留 `https://cooby19.github.
 
 ## 放置 GLB 模型
 
-預設模型路徑是：
+預設 runtime 模型路徑是：
 
 ```text
-public/models/necklace.glb
+public/models/necklace.draco.glb
 ```
 
-瀏覽器執行時會透過 `versionedPublicAssetUrl('models/necklace.glb')` 載入；在本機 dev 通常解析為：
+原始 `public/models/necklace.glb` 保留作為 fallback 與重新壓縮來源。瀏覽器執行時會透過 `versionedPublicAssetUrl('models/necklace.draco.glb')` 載入；在本機 dev 通常解析為：
 
 ```text
-/models/necklace.glb?v=<version>-<commit>
+/models/necklace.draco.glb?v=<version>-<commit>
 ```
+
+新增或替換模型後，先執行 `npm run compress:glb` 產生 `.draco.glb`，再把 `src/config/necklaces.js` 指向壓縮檔。完整流程請看 `docs/assets-compression.md`。
 
 如果要新增多款項鍊，請在 `src/config/necklaces.js` 匯入並使用 `versionedPublicAssetUrl()` 產生 URL，讓 Cloudflare Pages 根路徑、preview URL、必要時的子路徑 rollback build 與 CDN cache key 差異下都能正確解析資產，避免 404 或讀到舊檔：
 
@@ -289,7 +295,7 @@ import { versionedPublicAssetUrl } from './assets.js';
 {
   id: 'silver-chain',
   label: '銀色鍊款',
-  url: versionedPublicAssetUrl('models/silver-chain.glb'),
+  url: versionedPublicAssetUrl('models/silver-chain.draco.glb'),
   preserveAuthorOrigin: true,
   occluderParts: {
     nameIncludes: ['neck', '脖', '頸', '圓柱'],
@@ -332,16 +338,17 @@ depth occluder 會用新的 `MeshBasicMaterial` 取代原材質以只寫入 Dept
 
 ## 測試步驟
 
-1. 將 `.glb` 放到 `public/models/necklace.glb`。
+1. 將原始 `.glb` 放到 `public/models/`。
 2. 執行 `npm install`。
-3. 執行 `npm run dev`。
-4. 用瀏覽器開啟 `http://localhost:5173`。
-5. 點擊「開始相機」並允許相機權限。
-6. 正面看向鏡頭，確認項鍊出現在下巴下方的脖子位置。
-7. 左右移動、靠近或遠離鏡頭、輕微歪頭，確認模型會跟隨位置、縮放與傾斜。
-8. 開啟「Debug 視覺化」，確認 landmarks、下巴點、脖子估算點與數值資訊有顯示。
-9. 確認脖子遮擋模型本身不可見，但項鍊後半段會被脖子深度遮擋。
-10. 離開鏡頭，確認項鍊平滑淡出且畫面不卡死。
+3. 執行 `npm run compress:glb`，並確認 `src/config/necklaces.js` 指向 `.draco.glb`。
+4. 執行 `npm run dev`。
+5. 用瀏覽器開啟 `http://localhost:5173`。
+6. 點擊「開始相機」並允許相機權限。
+7. 正面看向鏡頭，確認項鍊出現在下巴下方的脖子位置。
+8. 左右移動、靠近或遠離鏡頭、輕微歪頭，確認模型會跟隨位置、縮放與傾斜。
+9. 開啟「Debug 視覺化」，確認 landmarks、下巴點、脖子估算點與數值資訊有顯示。
+10. 確認脖子遮擋模型本身不可見，但項鍊後半段會被脖子深度遮擋。
+11. 離開鏡頭，確認項鍊平滑淡出且畫面不卡死。
 
 ## Landmark 與脖子估算假設
 

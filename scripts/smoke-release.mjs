@@ -10,7 +10,9 @@ const checks = [];
 
 await checkReleaseMetadata();
 await checkHtmlAndBuiltAssets();
-await checkGlbAsset('models/necklace.glb');
+await checkGlbAsset('models/necklace.draco.glb');
+await checkPublicAsset('draco/draco_wasm_wrapper.js');
+await checkPublicAsset('draco/draco_decoder.wasm', { requireWasmMimeType: true });
 await checkPublicAsset('vendor/mediapipe/face_mesh/face_mesh.binarypb');
 await checkPublicAsset('vendor/mediapipe/face_mesh/face_mesh.js');
 await checkPublicAsset('vendor/mediapipe/face_mesh/face_mesh_solution_packed_assets.data');
@@ -102,9 +104,12 @@ async function fetchExpectedReleaseMetadata(url) {
   throw lastError ?? new Error(`Timed out waiting for release metadata at ${url}.`);
 }
 
-async function checkPublicAsset(assetPath) {
+async function checkPublicAsset(assetPath, { requireWasmMimeType = false } = {}) {
   const response = await assertHeadOrGet(new URL(assetPath, baseUrl));
   assertLongLivedCache(response.headers, assetPath);
+  if (requireWasmMimeType) {
+    assertWasmMimeType(response.headers, assetPath);
+  }
   checks.push(`public asset reachable: ${assetPath}`);
 }
 
@@ -200,6 +205,13 @@ function assertLongLivedCache(headers, label) {
 
   if (!normalized.includes('public') || !normalized.includes('immutable') || maxAge < 31536000) {
     throw new Error(`${label} should be long-lived immutable cache, received Cache-Control: ${cacheControl || '(missing)'}`);
+  }
+}
+
+function assertWasmMimeType(headers, label) {
+  const contentType = headers.get('content-type') ?? '';
+  if (!contentType.toLowerCase().includes('application/wasm')) {
+    throw new Error(`${label} should be served as application/wasm, received Content-Type: ${contentType || '(missing)'}`);
   }
 }
 

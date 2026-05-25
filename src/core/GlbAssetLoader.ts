@@ -1,4 +1,5 @@
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { runtimeErrorReporter } from '../telemetry/RuntimeErrorReporter.js';
 import type {
   GlbAssetLoadResult,
@@ -33,7 +34,7 @@ export class GlbAssetLoader {
   glbBufferCache: Map<string, ArrayBuffer>;
 
   constructor({
-    loader = new GLTFLoader(),
+    loader = createDefaultGltfLoader(),
     maxCacheEntries = MAX_GLB_BUFFER_CACHE_ENTRIES,
     isDev = import.meta.env.DEV,
     logger = console,
@@ -181,6 +182,15 @@ export class GlbAssetLoader {
     const assetBasePath = url.slice(0, url.lastIndexOf('/') + 1);
     return this.loader.parseAsync(buffer, assetBasePath);
   }
+}
+
+export function createDefaultGltfLoader(): GLTFLoader {
+  const dracoLoader = new DRACOLoader();
+  dracoLoader.setDecoderPath(`${import.meta.env.BASE_URL}draco/`);
+  dracoLoader.setDecoderConfig({ type: 'wasm' });
+  dracoLoader.preload();
+
+  return new GLTFLoader().setDRACOLoader(dracoLoader);
 }
 
 function isAbortError(error: unknown): boolean {

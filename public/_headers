@@ -28,5 +28,12 @@
 /models/*
   Cache-Control: public, max-age=31536000, immutable
 
+/draco/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/draco/draco_decoder.wasm
+  Cache-Control: public, max-age=31536000, immutable
+  Content-Type: application/wasm
+
 /vendor/mediapipe/face_mesh/*
   Cache-Control: public, max-age=31536000, immutable

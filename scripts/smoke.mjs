@@ -24,7 +24,8 @@ try {
   await waitForUrl(baseUrl, previewServer);
   await checkReleaseMetadata();
   await checkHtmlAndBuiltAssets();
-  await checkGlbAsset('models/necklace.glb');
+  await checkGlbAsset('models/necklace.draco.glb');
+  await checkDracoAssets();
   await checkMediapipeAssets();
   browser = await chromium.launch({
     headless: true,
@@ -179,6 +180,21 @@ async function checkMediapipeAssets() {
       assertLongLivedCache(response.headers, asset);
     }
     checks.push(`MediaPipe asset reachable: ${asset}`);
+  }
+}
+
+async function checkDracoAssets() {
+  const assets = ['draco/draco_wasm_wrapper.js', 'draco/draco_decoder.wasm'];
+
+  for (const asset of assets) {
+    const response = await assertHeadOrGet(new URL(asset, baseUrl));
+    if (shouldCheckResponseHeaders) {
+      assertLongLivedCache(response.headers, asset);
+      if (asset.endsWith('.wasm')) {
+        assertWasmMimeType(response.headers, asset);
+      }
+    }
+    checks.push(`Draco decoder asset reachable: ${asset}`);
   }
 }
 
@@ -405,6 +421,13 @@ function assertLongLivedCache(headers, label) {
 
   if (!normalized.includes('public') || !normalized.includes('immutable') || maxAge < 31536000) {
     throw new Error(`${label} should be long-lived immutable cache, received Cache-Control: ${cacheControl || '(missing)'}`);
+  }
+}
+
+function assertWasmMimeType(headers, label) {
+  const contentType = headers.get('content-type') ?? '';
+  if (!contentType.toLowerCase().includes('application/wasm')) {
+    throw new Error(`${label} should be served as application/wasm, received Content-Type: ${contentType || '(missing)'}`);
   }
 }
 

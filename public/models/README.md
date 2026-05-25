@@ -6,13 +6,23 @@ GLB 款式資產放在：
 public/models/*.glb
 ```
 
-瀏覽器執行時，請從 `src/config/necklaces.js` 透過 `versionedPublicAssetUrl('models/檔名.glb')` 組合 URL。本機 dev 通常會解析成：
+瀏覽器執行時，請從 `src/config/necklaces.js` 透過 `versionedPublicAssetUrl('models/檔名.draco.glb')` 組合 URL。本機 dev 通常會解析成：
 
 ```text
-/models/檔名.glb?v=<version>-<commit>
+/models/檔名.draco.glb?v=<version>-<commit>
 ```
 
 不要在新增款式時硬編碼 `/models/...`，否則在 preview、子路徑 hosting 或部分 CDN 設定下容易 404 或讀到舊檔。
+
+## 壓縮流程
+
+原始 `.glb` 保留作為 fallback 與重新壓縮來源；runtime catalog 優先載入 `.draco.glb`。新增或替換模型後執行：
+
+```bash
+npm run compress:glb
+```
+
+此命令會掃描 `public/models/**/*.glb`，略過既有 `.draco.glb`，用 `gltf-pipeline` 產生 Draco 幾何壓縮檔，並將內嵌 PNG 最長邊壓到預設 512px。完整流程與目前壓縮數據請看 `docs/assets-compression.md`。
 
 ## 對位建議
 

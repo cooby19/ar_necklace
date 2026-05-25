@@ -230,7 +230,8 @@ npm run smoke
 - 當設定 `SMOKE_BASE_URL` 檢查遠端部署時，`assets/*`、`models/*` 與 `vendor/mediapipe/face_mesh/*` 必須回應長效 immutable Cache-Control。
 - `release.json` 可讀且包含 `version`、`commitSha`、`buildTime`、`environment`。
 - `window.__AR_NECKLACE_RELEASE__` 與 error reporting public status 已注入 runtime。
-- `models/necklace.glb` 可讀，且 GLB magic header、version、declared length 正確。
+- `models/necklace.draco.glb` 可讀，且 GLB magic header、version、declared length 正確。
+- `draco/draco_wasm_wrapper.js` 與 `draco/draco_decoder.wasm` 可讀；遠端 smoke 會確認 `.wasm` 是 `application/wasm`。
 - MediaPipe `face_mesh.js`、binarypb、packed data、loader JS、SIMD wasm JS、SIMD wasm 檔案可讀。
 - Showcase 初始頁載入，`#threeCanvas` 可見且尺寸合理。
 - 款式卡片、色票、Debug toggle 可基本互動。
@@ -262,14 +263,14 @@ CI 不要求真實 camera permission。相機權限、Face Mesh 真實追蹤、�
 - `index.html` 與 `/`：`Cache-Control: no-cache, max-age=0, must-revalidate`，確保新部署能立即拿到最新 asset manifest。
 - `release.json`：`no-cache`，確保 smoke、客服與 rollback 查驗看到當前部署版本。
 - `assets/*`：Vite hashed JS/CSS，`public, max-age=31536000, immutable`。
-- `models/*` 與 `vendor/mediapipe/face_mesh/*`：runtime URL 會加 release token query string，例如 `?v=0.2.0-<sha>`，因此即使 GLB/WASM/data 檔名未 hash，也可搭配 `public, max-age=31536000, immutable`。
+- `models/*`、`draco/*` 與 `vendor/mediapipe/face_mesh/*`：runtime URL 會加 release token query string，例如 `?v=0.2.0-<sha>`，因此即使 GLB/WASM/data 檔名未 hash，也可搭配 `public, max-age=31536000, immutable`。
 - `site.webmanifest`、`brand/*` 與 `icons/*`：支援 SEO、社群分享與加入主畫面的 public assets。若正式品牌圖或 icon 會在同一路徑替換，部署後需確認 CDN 已更新或短時間內可重新驗證。
 
 CDN 策略：
 
 - 預設使用 same-origin hosting CDN，避免額外 CORS 與 CSP 複雜度。
 - Cloudflare Pages 預設會把 query string 納入 cache key；若使用其他 CDN，需確認 CDN cache key 包含 `v` query string。
-- 若某平台或企業 CDN 忽略 query string，請改用 release-prefixed 路徑或 hashed filenames，例如 `/runtime-assets/<sha>/models/necklace.glb`，或把 `models/*` / `vendor/*` cache 降為短 TTL。
+- 若某平台或企業 CDN 忽略 query string，請改用 release-prefixed 路徑或 hashed filenames，例如 `/runtime-assets/<sha>/models/necklace.draco.glb`，或把 `models/*` / `draco/*` / `vendor/*` cache 降為短 TTL。
 - GLB、WASM、data 檔案若改走獨立 asset CDN，需要同時設定 CORS、CSP `script-src` / `connect-src` / `img-src`，並重新跑 `npm run smoke` 確認沒有 404 或 WebGL taint 問題。
 
 ## Security headers
@@ -409,7 +410,7 @@ Rollback 完成後至少確認：
 - `release.json.commitSha` 符合預期上一版。
 - `release.json.version` 符合預期上一版。
 - `index.html` 指向的 `assets/index-*.js` / `assets/index-*.css` 可讀。
-- `models/necklace.glb` 與 MediaPipe vendor 重要資產沒有 404。
+- `models/necklace.draco.glb`、`draco/draco_decoder.wasm` 與 MediaPipe vendor 重要資產沒有 404。
 - Showcase 初始畫面無 console error；相機與 iOS Safari 仍需人工實機抽測。
 - 若 rollback 是為了解 runtime crash，先查 error reporting 是否停止出現新版 release 的同類 event，再用 `SMOKE_BASE_URL=<production-url> EXPECTED_COMMIT_SHA=<old-sha> npm run smoke` 做完整 browser smoke。
 

@@ -7,6 +7,7 @@
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0",
+    "compress:glb": "node scripts/compress-glb.mjs",
     "lint": "eslint .",
     "test": "vitest run",
     "test:visual": "playwright test",
@@ -31,7 +32,9 @@
     "chrome-launcher": "^1.2.1",
     "eslint": "^10.4.0",
     "globals": "^17.6.0",
+    "gltf-pipeline": "^4.3.1",
     "lighthouse": "^13.3.0",
+    "sharp": "^0.34.5",
     "typescript": "^6.0.3",
     "vitest": "^2.1.9"
   }
