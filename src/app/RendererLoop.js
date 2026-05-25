@@ -16,6 +16,7 @@ import { APP_MODES } from './AppState.js';
  *   getState: () => AppStateSnapshot,
  *   getRealtimeSnapshot: () => RealtimeTrackingSnapshot,
  *   onStatsUpdate?: (stats: RenderStats) => void,
+ *   showcaseAnimationEnabled?: boolean,
  * }} RendererLoopOptions
  */
 
@@ -23,12 +24,13 @@ export class RendererLoop {
   /**
    * @param {RendererLoopOptions} options
    */
-  constructor({ scene, debugOverlay, getState, getRealtimeSnapshot, onStatsUpdate }) {
+  constructor({ scene, debugOverlay, getState, getRealtimeSnapshot, onStatsUpdate, showcaseAnimationEnabled = true }) {
     this.scene = scene;
     this.debugOverlay = debugOverlay;
     this.getState = getState;
     this.getRealtimeSnapshot = getRealtimeSnapshot;
     this.onStatsUpdate = onStatsUpdate;
+    this.showcaseAnimationEnabled = showcaseAnimationEnabled;
     /** @type {number | null} */
     this.frameHandle = null;
     /** @type {RenderStats} */
@@ -119,7 +121,7 @@ export class RendererLoop {
     this.updateRenderFps(now);
 
     const schedulerMode = this.resolveSchedulerMode(state);
-    const shouldAnimateShowcase = schedulerMode === 'showcase';
+    const shouldAnimateShowcase = schedulerMode === 'showcase' && this.showcaseAnimationEnabled;
     const shouldRenderLiveAr = schedulerMode === 'ar-live';
 
     if (shouldAnimateShowcase) {

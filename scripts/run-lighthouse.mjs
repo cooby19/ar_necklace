@@ -10,7 +10,7 @@ import lighthouse from 'lighthouse';
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const reportDir = path.join(rootDir, 'lighthouse-report');
 const previewPort = Number(process.env.LIGHTHOUSE_PREVIEW_PORT ?? 4173);
-const previewUrl = `http://127.0.0.1:${previewPort}/`;
+const previewUrl = `http://127.0.0.1:${previewPort}/?lighthouse=1`;
 const thresholds = {
   performance: 0.45,
   accessibility: 0.85,

@@ -291,10 +291,11 @@ jobs:
       - name: Smoke staging deployment
         env:
           STAGING_URL: ${{ secrets.STAGING_URL }}
+          DEPLOYMENT_URL: ${{ steps.deploy.outputs.url }}
           CLOUDFLARE_PAGES_PROJECT: ${{ secrets.CLOUDFLARE_PAGES_PROJECT }}
           EXPECTED_COMMIT_SHA: ${{ needs.build-artifact.outputs.artifact_sha }}
         run: |
-          base_url="${STAGING_URL:-https://staging.${CLOUDFLARE_PAGES_PROJECT}.pages.dev}"
+          base_url="${STAGING_URL:-${DEPLOYMENT_URL:-https://staging.${CLOUDFLARE_PAGES_PROJECT}.pages.dev}}"
           SMOKE_BASE_URL="$base_url" npm run smoke
 
   deploy-production:
@@ -364,8 +365,9 @@ jobs:
       - name: Smoke production deployment
         env:
           PRODUCTION_URL: ${{ secrets.PRODUCTION_URL }}
+          DEPLOYMENT_URL: ${{ steps.deploy.outputs.url }}
           CLOUDFLARE_PAGES_PROJECT: ${{ secrets.CLOUDFLARE_PAGES_PROJECT }}
           EXPECTED_COMMIT_SHA: ${{ needs.build-artifact.outputs.artifact_sha }}
         run: |
-          base_url="${PRODUCTION_URL:-https://${CLOUDFLARE_PAGES_PROJECT}.pages.dev}"
+          base_url="${PRODUCTION_URL:-${DEPLOYMENT_URL:-https://${CLOUDFLARE_PAGES_PROJECT}.pages.dev}}"
           SMOKE_BASE_URL="$base_url" npm run smoke

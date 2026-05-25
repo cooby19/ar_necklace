@@ -106,6 +106,9 @@ describe('createAppRuntime', () => {
       modelCatalog: runtime.modelCatalog,
       calibrationService: runtime.calibrationService,
     });
+    expect(mocks.RendererLoop).toHaveBeenCalledWith(expect.objectContaining({
+      showcaseAnimationEnabled: true,
+    }));
 
     runtime.scene.options.onError('broken model');
     expect(uiRoot.showError).toHaveBeenCalledWith('broken model');

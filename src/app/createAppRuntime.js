@@ -28,6 +28,7 @@ import { NecklaceScene } from '../core/NecklaceScene.js';
  *   necklaces: readonly NecklaceConfig[],
  *   realtimeStore?: RealtimeTrackingStore,
  *   onError?: (message: string) => void,
+ *   showcaseAnimationEnabled?: boolean,
  * }} CreateAppRuntimeOptions
  */
 
@@ -97,6 +98,7 @@ export function createAppRuntime(options) {
     debugOverlay,
     getState: () => appState.getSnapshot(),
     getRealtimeSnapshot: () => realtimeStore.getSnapshot(),
+    showcaseAnimationEnabled: options.showcaseAnimationEnabled ?? true,
     onStatsUpdate: (stats) => {
       realtimeStore.setRenderStats(stats);
       onRenderStatsUpdate(stats);

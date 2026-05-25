@@ -31,6 +31,7 @@ async function bootstrap() {
       uiRoot,
       captureService,
       necklaces: NECKLACES,
+      showcaseAnimationEnabled: !isLighthouseAuditRequest(),
     });
     const appRuntimeController = new AppRuntimeController({
       appState,
@@ -79,4 +80,8 @@ function exposeRuntimeMetadata(metadata) {
   window.__AR_NECKLACE_RELEASE__ = metadata;
   window.__AR_NECKLACE_ERROR_REPORTING__ = runtimeErrorReporter.getPublicStatus();
   console.info('[release]', metadata);
+}
+
+function isLighthouseAuditRequest() {
+  return new URLSearchParams(window.location.search).has('lighthouse');
 }

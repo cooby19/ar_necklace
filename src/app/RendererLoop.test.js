@@ -54,6 +54,25 @@ describe('RendererLoop scheduling modes', () => {
     expect(loop.getStats().schedulerMode).toBe('ar-live');
   });
 
+  it('can render showcase once without keeping animation RAF alive', () => {
+    const state = {
+      mode: APP_MODES.SHOWCASE,
+      cameraStarted: false,
+      debugEnabled: false,
+      modelLoaded: true,
+    };
+    const scene = createScene();
+    const loop = createLoop({ state, scene, showcaseAnimationEnabled: false });
+
+    loop.start();
+    runNextFrame(100);
+
+    expect(scene.updateShowcase).not.toHaveBeenCalled();
+    expect(scene.render).toHaveBeenCalledTimes(1);
+    expect(rafCallbacks.size).toBe(0);
+    expect(loop.getStats().schedulerMode).toBe('showcase');
+  });
+
   it('pauses and resumes rendering without losing dirty render requests', () => {
     const scene = createScene();
     const loop = createLoop({ scene });
@@ -74,7 +93,7 @@ describe('RendererLoop scheduling modes', () => {
   });
 });
 
-function createLoop({ state = {}, scene = createScene(), realtime = {} } = {}) {
+function createLoop({ state = {}, scene = createScene(), realtime = {}, showcaseAnimationEnabled = true } = {}) {
   const snapshot = {
     mode: APP_MODES.AR,
     cameraStarted: false,
@@ -92,6 +111,7 @@ function createLoop({ state = {}, scene = createScene(), realtime = {} } = {}) {
       debugData: null,
       ...realtime,
     }),
+    showcaseAnimationEnabled,
     onStatsUpdate: vi.fn(),
   });
 }
