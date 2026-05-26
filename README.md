@@ -4,6 +4,8 @@
 
 目前的定位方式不是完整的 3D 人體或脖子重建，而是根據下巴、臉寬、臉高與頭部傾斜估算項鍊應該出現的位置。若 GLB 內包含脖子遮擋模型，專案會讓該脖子模型不顯示顏色，但寫入深度緩衝區，讓項鍊後半段能被隱形脖子擋住。
 
+架構設計背景請看 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)，本機協作流程請看 [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md)，長期決策請看 [`docs/adr/`](docs/adr/)。
+
 ## 專案結構
 
 ```text
@@ -11,6 +13,10 @@
 ├── .github/
 │   └── workflows/
 ├── docs/
+│   ├── ARCHITECTURE.md
+│   ├── CONTRIBUTING.md
+│   ├── adr/
+│   ├── assets-compression.md
 │   └── deployment.md
 ├── index.html
 ├── package.json
@@ -53,21 +59,25 @@
 │   │   ├── accessibility.css
 │   │   └── components/
 │   ├── app/
+│   │   ├── use-cases/
 │   │   ├── AppState.js
 │   │   ├── AppState.test.js
+│   │   ├── AppRuntimeController.js
+│   │   ├── AppRuntimeController.test.js
 │   │   ├── ArSessionService.js
 │   │   ├── CalibrationService.js
 │   │   ├── CalibrationService.test.js
 │   │   ├── CaptureService.js
 │   │   ├── ModelCatalogService.js
 │   │   ├── ModelCatalogService.test.js
-│   │   ├── ModeController.js
 │   │   ├── RealtimeTrackingStore.js
 │   │   ├── RendererLoop.js
 │   │   ├── ShareWorkflow.js
 │   │   ├── ShareWorkflow.test.js
 │   │   ├── TrackingFeedbackService.js
-│   │   └── UiController.js
+│   │   ├── app-intents.ts
+│   │   ├── app-reducer.ts
+│   │   └── createAppRuntime.js
 │   ├── config/
 │   │   ├── assets.js
 │   │   ├── necklaces.js
@@ -97,6 +107,9 @@
 │   │   ├── domain.ts
 │   │   ├── scene-ports.ts
 │   │   └── ui-ports.ts
+│   ├── ui/
+│   │   ├── UiRoot.js
+│   │   └── UiRoot.test.js
 │   └── utils/
 │       ├── landmarks.js
 │       └── stageResize.js
@@ -105,23 +118,33 @@
     └── visual/
 ```
 
-其中 `src/main.js` 只負責載入樣式、安裝 runtime error reporter、暴露 release metadata，並組裝狀態、UI、模式控制與截圖服務。`src/app/ModeController.js` 是輕量 use-case orchestrator：接收 UI intent、協調 app services、提交 `AppState`，但不直接管理相機生命週期、模型 catalog/color、render loop、校準流程、分享流程或 debug/status 資料組裝。`src/app/` 放應用狀態、UI 綁定、工作流程服務與模式協調，`src/core/` 放相機、Face Mesh、Three.js scene 子服務、穿戴校準與品質提示等可重用核心邏輯，`src/utils/` 放 landmark 計算與預覽區尺寸監聽工具。
+其中 `src/main.js` 只負責載入樣式、安裝 runtime error reporter、暴露 release metadata，並組裝 `AppState`、`UiRoot`、`CaptureService`、runtime services 與 `AppRuntimeController`。`src/app/AppRuntimeController.js` 保留 UI handler routing surface；模式、相機、追蹤、模型、校準、分享、舞台互動與頁面生命週期副作用都放在 `src/app/use-cases/*`。`src/app/` 放應用狀態、工作流程服務與 use-case，`src/ui/` 放 DOM/UI root，`src/core/` 放相機、Face Mesh、Three.js scene 子服務、穿戴校準與品質提示等可重用核心邏輯，`src/utils/` 放 landmark 計算與預覽區尺寸監聽工具。
 
 ## 應用流程分層
 
-`ModeController` 的依賴方向是：
+runtime 的依賴方向是：
 
 ```text
-UiController intent
-  -> ModeController
+UiRoot intent
+  -> AppRuntimeController
+  -> src/app/use-cases/*
   -> src/app/*Service 或 *Workflow
   -> src/core/*、NecklaceScene、FaceTracker、CaptureService
   -> AppState durable state + RealtimeTrackingStore sampled state
-  -> UiController sync
+  -> UiRoot sync
 ```
 
 目前 app services 的責任如下：
 
+- `AppRuntimeController`：保留 `src/main.js` 需要綁定的 handler surface，只負責把 UI intent route 到 use-case。
+- `ModeUseCase`：管理模式切換、panel/bottom sheet、debug toggle 與項鍊顯示副作用。
+- `StageInteractionUseCase`：區分 showcase 拖曳旋轉與 AR 校準拖曳。
+- `RuntimeLifecycleUseCase`：管理初始化、頁面背景暫停/恢復、render loop start 與 AR session 預載入。
+- `CameraSessionUseCase`：管理啟動相機、停止相機、切換鏡頭、Face Mesh 載入與重試流程。
+- `TrackingUseCase`：接收 Face Mesh result，寫入 realtime store，並只在 live face status 改變時 transition。
+- `ModelUseCase`：管理款式選擇、模型載入、套色與模型載入後的 mode effect。
+- `CalibrationUseCase`：管理拖曳校準、調參 controls、save/reset/load 與提示狀態。
+- `ShareUseCase`：管理截圖、下載、native share fallback 與分享狀態。
 - `ArSessionService`：包裝 `CameraStream` 與 `FaceTracker`，管理 start、stop、switch camera、selfie mode 與 session reset。
 - `ModelCatalogService`：管理項鍊款式查找、模型載入序列、可換色 target、預設色票與 `NecklaceScene.applyColor()` 流程。
 - `RealtimeTrackingStore`：保存每幀 landmarks、debugData、hasFace、frame sequence、FaceTracker stats 與 render stats，不觸發 DOM 全量同步。
@@ -144,7 +167,7 @@ UiController intent
 
 - `AppState` 與 AR session lifecycle。
 - config schema：`tuning`、`necklaces`。
-- MediaPipe results、RealtimeTrackingStore、FaceTracker、ArSessionService、ModeController、NecklaceController、landmark metrics 的資料流。
+- MediaPipe results、RealtimeTrackingStore、FaceTracker、ArSessionService、TrackingUseCase、NecklaceController、landmark metrics 的資料流。
 - model/color、calibration、share、tracking feedback、renderer loop、camera stream、debug overlay、capture service。
 - scene boundary：NecklaceScene facade、GlbAssetLoader、ThreeRendererHost、NecklacePlacementAdapter、OccluderProcessor、MaterialCustomizationEngine、ModelResourceDisposer、ShowcasePresenter。
 - telemetry boundary：RuntimeErrorReporter、release metadata 與 sanitized error context。
@@ -152,10 +175,10 @@ UiController intent
 
 仍刻意未完整型別化的區域：
 
-- `src/app/UiController.js`：DOM query、event binding、UI render helper 與 focus trap 噪音較高。若要推進，建議先拆 DOM helper 或 view helper，再分段加 `// @ts-check`。
+- `src/ui/UiRoot.js`：DOM query、event binding、UI render helper 與 focus trap 噪音較高。若要推進，建議先拆 DOM helper 或 view helper，再分段加 `// @ts-check`。
 - `src/main.js`、`src/app/*.test.js` 與 `src/core/*.test.js`：適合作為下一階段低成本補強。
 
-目前不建議打開全域 `checkJs`，也不建議直接把 `UiController` 或剩餘高 DOM/WebGL 噪音模組整包轉成 TypeScript。維護時優先持續保護 runtime 資料形狀容易錯接的 service boundary。
+目前不建議打開全域 `checkJs`，也不建議直接把 `UiRoot` 或剩餘高 DOM/WebGL 噪音模組整包轉成 TypeScript。維護時優先持續保護 runtime 資料形狀容易錯接的 service boundary。
 
 `AppState` 保留 durable UI state，例如 mode、sessionStatus、cameraStarted、selectedNecklace、debugEnabled、capture/share 狀態與校準調參。每幀 landmarks、debugData、hasFace、frame sequence、tracker stats 與 render stats 放在 `RealtimeTrackingStore`。UI 只訂閱 `AppState` 以及節流後的 realtime snapshot，FaceMesh result 不再每幀觸發 DOM 同步。
 
@@ -184,7 +207,7 @@ http://localhost:5173
 
 ## 品質驗證
 
-本專案使用 Vitest 補輕量單元測試，優先覆蓋不需要真實相機、MediaPipe 或 WebGL 的純邏輯。這些測試主要保護 ModeController 重構後拆出的 app services 與狀態轉換規則。
+本專案使用 Vitest 補輕量單元測試，優先覆蓋不需要真實相機、MediaPipe 或 WebGL 的純邏輯。這些測試主要保護 runtime use-case、app services 與狀態轉換規則。
 
 ```bash
 npm run lint
@@ -218,7 +241,7 @@ npm audit --omit=dev
 - `AppState`：AR session 合法/不合法 transition，以及 durable UI state cleanup。
 - `RealtimeTrackingStore`：每幀資料、debugData、frame sequence、tracker stats 與 render stats。
 - `RendererLoop`：dirty idle render、AR live RAF、background pause/resume 的模式切換。
-- `ModeController`：FaceMesh result 寫入 realtime store，且只在 `noFace`/`tracking` 實際變化時 transition。
+- `TrackingUseCase`：FaceMesh result 寫入 realtime store，且只在 `noFace`/`tracking` 實際變化時 transition。
 - `ModelCatalogService`：預設顏色選擇、換色 target fallback、matched target label 與套色呼叫。
 - `CalibrationService`：調參 normalize、save/load/reset hint、localStorage 可用與不可用情境。
 - `ShareWorkflow`：截圖前置阻擋條件，包含相機未開、沒有目前影格、未偵測到臉與項鍊隱藏。

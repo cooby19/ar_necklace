@@ -1,5 +1,7 @@
 # 專案筆記：Web AR Necklace MVP
 
+重要導覽：架構設計與分層理由請先查 `docs/ARCHITECTURE.md`，長期決策請查 `docs/adr/`，本機開發與 PR 規範請查 `docs/CONTRIBUTING.md`。README 與本文件應只描述真實存在的檔案與入口。
+
 ## 專案概覽
 
 這是一個純前端的 Web AR 項鍊試戴 MVP。使用者開啟相機後，瀏覽器以相機畫面作為背景，透過 MediaPipe Face Mesh 偵測單人臉部 landmarks，再用 Three.js 疊加 `.glb` 項鍊模型。項鍊位置不是精準 3D 脖子重建，而是依據下巴、臉寬、臉高與頭部傾斜估算出脖子附近的位置。
@@ -51,7 +53,10 @@ npm run preview
 ## 目錄結構重點
 
 - `index.html`：頁面骨架，包含相機 video、Three.js canvas、debug canvas、狀態面板與控制側欄。
-- `src/main.js`：應用程式入口，載入樣式、安裝 runtime error reporter、注入 release metadata，並串接 `AppState`、`UiController`、`CaptureService` 與 `ModeController`。
+- `docs/ARCHITECTURE.md`：架構設計、分層圖、資料流、MediaPipe 取捨與暫時性妥協。
+- `docs/CONTRIBUTING.md`：本機指令、commit message、PR checklist 與漸進式 TypeScript 規則。
+- `docs/adr/`：Cloudflare Pages、漸進式 TypeScript、MediaPipe CSP 與 runtime use-case 邊界等決策記錄。
+- `src/main.js`：應用程式入口，載入樣式、安裝 runtime error reporter、注入 release metadata，並串接 `AppState`、`UiRoot`、`CaptureService`、runtime services 與 `AppRuntimeController`。
 - `src/styles/index.css`：全站樣式入口，匯入 reset、tokens、layout、states、responsive 與 component CSS。
 - `src/styles/components/*`：控制列、舞台、按鈕、色票、底部面板、分享面板、校準與 developer panel 等 UI 模組樣式。
 - `src/config/assets.js`：用 `import.meta.env.BASE_URL` 與 release token 產生 public asset URL。
@@ -60,7 +65,10 @@ npm run preview
 - `src/config/necklaces.js`：項鍊款式清單、每個 GLB 的模型修正參數與顏色自選設定。
 - `src/telemetry/RuntimeErrorReporter.js`：全域 error/unhandled rejection/resource load error 與模型、MediaPipe、WebGL 錯誤上報邊界。
 - `src/utils/landmarks.js`：Face Mesh landmark index、距離、插值、clamp 與臉部量測邏輯。
-- `src/app/ModeController.js`：輕量 use-case orchestrator，接收 UI intent、協調 app services、提交 `AppState`，避免直接承擔底層流程細節。
+- `src/ui/UiRoot.js`：DOM query、event binding、render helper、focus trap 與 UI 同步的 root。
+- `src/app/AppRuntimeController.js`：UI handler routing layer，保留 `src/main.js` 綁定 surface，將副作用轉發到 use-case。
+- `src/app/createAppRuntime.js`：建立 scene、controller、renderer loop、model catalog、calibration、share 與 tracking feedback 等 runtime services。
+- `src/app/use-cases/*`：模式、相機、追蹤、模型、校準、分享、舞台互動與 runtime lifecycle 的 use-case orchestration。
 - `src/app/*.test.js`：Vitest 輕量單元測試，優先保護 AppState session lifecycle、model catalog/color、校準與分享前置檢查等純邏輯。
 - `src/app/ArSessionService.js`：管理 `CameraStream` 與 `FaceTracker` lifecycle、鏡頭切換、selfie mode 與 session reset。
 - `src/app/ModelCatalogService.js`：管理項鍊選擇、模型載入序列、可換色 target、預設色票與套色流程。
@@ -102,7 +110,7 @@ npm run preview
 - AppState 與 AR session lifecycle。
 - config schema：`tuning`、`necklaces`。
 - model/color service、calibration、share workflow。
-- MediaPipe results 到 `FaceTracker`、`ArSessionService`、`ModeController`、`NecklaceController`、`computeFaceMetrics` 的資料流。
+- MediaPipe results 到 `FaceTracker`、`ArSessionService`、`TrackingUseCase`、`NecklaceController`、`computeFaceMetrics` 的資料流。
 - pure logic：landmarks、Smoother、WearCalibration、FaceQualityAdvisor。
 - 低噪音 service/debug/render/capture boundary：RealtimeTrackingStore、RendererLoop、TrackingFeedbackService、CameraStream、DebugOverlay、stageResize、CaptureService。
 - scene boundary：NecklaceScene facade、GlbAssetLoader、ThreeRendererHost、NecklacePlacementAdapter、OccluderProcessor、MaterialCustomizationEngine、ModelResourceDisposer、ShowcasePresenter 與 `src/types/scene-ports.ts`。
@@ -111,20 +119,20 @@ npm run preview
 
 仍刻意未完整型別化的區域：
 
-- `src/app/UiController.js`：DOM query、event binding、render helper 與 focus trap 噪音高。若要推進，先抽小型 DOM helper 或 view helper，再分段加 `// @ts-check`。
+- `src/ui/UiRoot.js`：DOM query、event binding、render helper 與 focus trap 噪音高。若要推進，先抽小型 DOM helper 或 view helper，再分段加 `// @ts-check`。
 - `src/main.js` 與 `src/app/*.test.js` / `src/core/*.test.js`：可作為下一階段低成本補強，但不應牽動整體架構。
 
-新增型別時優先把跨檔案共享的資料形狀放入 `src/types/domain.ts`。若只描述某個 service 依賴物件的少量方法，優先放入對應的 `src/types/app-ports.ts`、`src/types/ui-ports.ts` 或 `src/types/scene-ports.ts`，或使用該檔案內的 local port/interface。避免把 `UiController` 或大型 Three.js 實作 surface 暴露到全專案。
+新增型別時優先把跨檔案共享的資料形狀放入 `src/types/domain.ts`。若只描述某個 service 依賴物件的少量方法，優先放入對應的 `src/types/app-ports.ts`、`src/types/ui-ports.ts` 或 `src/types/scene-ports.ts`，或使用該檔案內的 local port/interface。避免把 `UiRoot` 或大型 Three.js 實作 surface 暴露到全專案。
 
 ## 執行流程
 
-1. `src/main.js` 載入 `src/styles/index.css`、安裝 `runtimeErrorReporter`、初始化 `AppState`、`UiController`、`CaptureService` 與 `ModeController`，並把 release/error-reporting public metadata 暴露到 `window`。
+1. `src/main.js` 載入 `src/styles/index.css`、安裝 `runtimeErrorReporter`、初始化 `AppState`、`UiRoot`、`CaptureService`、runtime services 與 `AppRuntimeController`，並把 release/error-reporting public metadata 暴露到 `window`。
 2. 啟動時先依 `NECKLACES[0]` 載入預設模型。
 3. `ModelCatalogService` 協調 `NecklaceScene.loadNecklace()` 載入模型，並套用目前款式的預設顏色設定。
 4. `RendererLoop` 啟動 render loop，負責 showcase update、Three.js render 與 debug overlay render。
-5. 使用者點擊「開始相機」後，`ModeController` 將 `AppState.sessionStatus` 切到 `cameraStarting`，再交給 `ArSessionService` 啟動相機與 Face Mesh。
+5. 使用者點擊「開始相機」後，`CameraSessionUseCase` 將 `AppState.sessionStatus` 切到 `cameraStarting`，再交給 `ArSessionService` 啟動相機與 Face Mesh。
 6. `ArSessionService` 透過 `CameraStream` 要求鏡頭權限，依實際鏡頭設定 `FaceTracker.selfieMode`，再啟動 Face Mesh frame processing。
-7. 偵測結果回到 `ModeController` 後，先寫入 `RealtimeTrackingStore`，再只在需要時提交 `noFace` / `tracking` 狀態與呼叫 `NecklaceController.updateFromLandmarks()`。
+7. 偵測結果回到 `TrackingUseCase` 後，先寫入 `RealtimeTrackingStore`，再只在需要時提交 `noFace` / `tracking` 狀態與呼叫 `NecklaceController.updateFromLandmarks()`。
 8. `NecklaceController` 呼叫 `computeFaceMetrics()`，根據下巴位置、臉高、臉寬、roll、yaw 與校準值計算項鍊 transform。
 9. `NecklaceScene` 更新項鍊 group 的 position、scale、rotation 與材質 opacity。若款式設定 `preserveAuthorOrigin: true`，GLB 作者原點會保留為 AR anchor。
 10. `TrackingFeedbackService` 從節流後的 realtime snapshot 組裝追蹤狀態、debug panel 與 FaceQualityAdvisor 提示；未偵測到臉或關閉顯示項鍊時，項鍊會平滑淡出。
@@ -268,8 +276,8 @@ showcase -> arIdle -> cameraStarting -> noFace <-> tracking -> capturing -> shar
 - 使用 TypeScript 做漸進式型別檢查，命令為 `npm run typecheck`。
 - 使用 ESLint、Playwright visual、Playwright + axe a11y、bundle budget、synthetic smoke 與 Lighthouse 作為不需真實相機權限的品質閘門。
 - 優先測純邏輯與低 DOM 依賴，避免在單元測試中啟動真實 camera、MediaPipe 或 WebGL。
-- 目前測試重點包含 `AppState` session transition 與 stale data cleanup、`RealtimeTrackingStore` live data、`RendererLoop` RAF/background pause、`ModeController` realtime 寫入與 session transition、`ModelCatalogService` default color/target resolution/matched target labels、`CalibrationService` normalize/load/save/reset hint 與 localStorage 可用性、`ShareWorkflow` capture blocker 判斷，以及 `NecklaceScene`/scene 子服務的 GLB cache LRU、resource disposal、occluder、材質自訂、placement 與 showcase presenter。
-- 新增或調整 ModeController 周邊 service 時，優先補對應 service 的單元測試，再視風險補瀏覽器或人工驗證。
+- 目前測試重點包含 `AppState` session transition 與 stale data cleanup、`RealtimeTrackingStore` live data、`RendererLoop` RAF/background pause、`TrackingUseCase` realtime 寫入與 session transition、`ModeUseCase` 模式/顯示切換、`RuntimeLifecycleUseCase` 背景暫停與預載入、`StageInteractionUseCase` 舞台指標事件、`ModelCatalogService` default color/target resolution/matched target labels、`CalibrationService` normalize/load/save/reset hint 與 localStorage 可用性、`ShareWorkflow` capture blocker 判斷，以及 `NecklaceScene`/scene 子服務的 GLB cache LRU、resource disposal、occluder、材質自訂、placement 與 showcase presenter。
+- 新增或調整 runtime use-case 周邊 service 時，優先補對應 service/use-case 的單元測試，再視風險補瀏覽器或人工驗證。
 
 ## 已知限制
 
@@ -287,8 +295,8 @@ showcase -> arIdle -> cameraStarting -> noFace <-> tracking -> capturing -> shar
 - 需要刪除文件時，只能一次刪除一個明確路徑的文件。
 - 如果需要批量刪除文件，應停止操作並請用戶手動刪除。
 - 優先保持目前的純前端架構，不要引入後端，除非需求明確要求。
-- `ModeController` 應維持輕量 use-case orchestrator；新增功能時優先放入明確的 `src/app/*Service.js` 或 `src/app/*Workflow.js`，再由 `ModeController` 協調。
-- 不要把 camera/session lifecycle、模型 catalog/color 邏輯、render loop、校準流程、分享流程或 telemetry/debug 資料組裝重新塞回 `ModeController`。
+- `AppRuntimeController` 應維持輕量 routing layer；新增功能時優先放入明確的 `src/app/use-cases/*`、`src/app/*Service.js` 或 `src/app/*Workflow.js`，再由 controller 轉發 UI intent。
+- 不要把 camera/session lifecycle、模型 catalog/color 邏輯、render loop、校準流程、分享流程或 telemetry/debug 資料組裝塞回 `AppRuntimeController`。
 - 調整 AR session lifecycle 時，優先更新 `AppState.AR_SESSION_STATES`、合法 transition 與 stale data cleanup 規則，不要只用零散 patch。
 - 修改追蹤效果時，優先從 `src/config/tuning.js` 與 `src/config/necklaces.js` 調整，再考慮改核心演算法。
 - 新增項鍊款式時，將 GLB 放入 `public/models/`，再於 `src/config/necklaces.js` 新增一筆設定。
