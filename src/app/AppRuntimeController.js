@@ -1,16 +1,15 @@
 // @ts-check
 
-import {
-  APP_MODES,
-  AR_SESSION_STATES,
-} from './AppState.js';
-import { reduceAppIntent } from './app-reducer';
 import { CalibrationUseCase } from './use-cases/CalibrationUseCase.js';
 import { CameraSessionUseCase } from './use-cases/CameraSessionUseCase.js';
+import { ModeUseCase } from './use-cases/ModeUseCase.js';
 import { ModelUseCase } from './use-cases/ModelUseCase.js';
+import { RuntimeLifecycleUseCase } from './use-cases/RuntimeLifecycleUseCase.js';
 import { ShareUseCase } from './use-cases/ShareUseCase.js';
+import { StageInteractionUseCase } from './use-cases/StageInteractionUseCase.js';
 import { TrackingUseCase } from './use-cases/TrackingUseCase.js';
 
+/** @typedef {import('../types/domain').AppMode} AppMode */
 /** @typedef {import('../types/domain').AppStateMeta} AppStateMeta */
 /** @typedef {import('../types/domain').AppStateSnapshot} AppStateSnapshot */
 /** @typedef {import('../types/domain').ArSessionStatus} ArSessionStatus */
@@ -26,8 +25,6 @@ import { TrackingUseCase } from './use-cases/TrackingUseCase.js';
 /** @typedef {import('../types/ui-ports').ColorSwatchesUiModel} ColorSwatchesUiModel */
 /** @typedef {import('../types/ui-ports').TuningControlsReadResult} TuningControlsReadResult */
 /** @typedef {import('../types/scene-ports').NecklaceSceneModePort} NecklaceSceneModePort */
-/** @typedef {import('./app-intents').AppIntent} AppIntent */
-/** @typedef {import('./app-reducer').AppReducerResult} AppReducerResult */
 /** @typedef {import('./createAppRuntime.js').AppRuntime} AppRuntime */
 
 /**
@@ -71,8 +68,7 @@ import { TrackingUseCase } from './use-cases/TrackingUseCase.js';
 /**
  * @typedef {{
  *   appState: AppStatePort,
- *   uiRoot?: AppRuntimeUiPort,
- *   uiController?: AppRuntimeUiPort,
+ *   uiRoot: AppRuntimeUiPort,
  *   runtime: AppRuntime,
  * }} AppRuntimeControllerOptions
  */
@@ -81,15 +77,14 @@ export class AppRuntimeController {
   /**
    * @param {AppRuntimeControllerOptions} options
    */
-  constructor({ appState, uiRoot, uiController, runtime }) {
-    const ui = uiRoot ?? uiController;
-    if (!ui) {
+  constructor({ appState, uiRoot, runtime }) {
+    if (!uiRoot) {
       throw new Error('AppRuntimeController requires a uiRoot');
     }
 
     this.runtime = runtime;
     this.appState = appState;
-    this.ui = ui;
+    this.ui = uiRoot;
     this.realtimeStore = runtime.realtimeStore;
     /** @type {NecklaceSceneModePort} */
     this.scene = /** @type {NecklaceSceneModePort} */ (runtime.scene);
@@ -100,8 +95,7 @@ export class AppRuntimeController {
     this.shareWorkflow = runtime.shareWorkflow;
     this.rendererLoop = runtime.rendererLoop;
     this.feedbackService = runtime.feedbackService;
-    /** @type {(() => void) | null} */
-    this.cancelSessionServicePreload = null;
+
     this.calibrationUseCase = new CalibrationUseCase({
       appState: this.appState,
       ui: this.ui,
@@ -139,6 +133,17 @@ export class AppRuntimeController {
       onFaceTrackerStats: (stats) => this.handleFaceTrackerStats(stats),
       showError: (message) => this.showError(message),
     });
+    this.modeUseCase = new ModeUseCase({
+      appState: this.appState,
+      ui: this.ui,
+      scene: this.scene,
+      debugOverlay: this.debugOverlay,
+      necklaceController: this.controller,
+      rendererLoop: this.rendererLoop,
+      cameraSessionUseCase: this.cameraSessionUseCase,
+      trackingUseCase: this.trackingUseCase,
+      preloadSessionService: () => this.preloadSessionService(),
+    });
     this.modelUseCase = new ModelUseCase({
       appState: this.appState,
       ui: this.ui,
@@ -149,92 +154,45 @@ export class AppRuntimeController {
       syncModeEffects: () => this.syncModeEffects(),
       showError: (message) => this.showError(message),
     });
-    /** @type {(() => void)[]} */
-    this.lifecycleDisposers = [];
+    this.stageInteractionUseCase = new StageInteractionUseCase({
+      appState: this.appState,
+      ui: this.ui,
+      scene: this.scene,
+      calibrationUseCase: this.calibrationUseCase,
+    });
+    this.lifecycleUseCase = new RuntimeLifecycleUseCase({
+      appState: this.appState,
+      ui: this.ui,
+      realtimeStore: this.realtimeStore,
+      rendererLoop: this.rendererLoop,
+      necklaceController: this.controller,
+      calibrationUseCase: this.calibrationUseCase,
+      cameraSessionUseCase: this.cameraSessionUseCase,
+      modelUseCase: this.modelUseCase,
+      modeUseCase: this.modeUseCase,
+      trackingUseCase: this.trackingUseCase,
+    });
+
     runtime.setRenderStatsUpdateHandler(() => this.scheduleTrackingFeedbackUpdate());
   }
 
-  /**
-   * @returns {void}
-   */
+  /** @returns {void} */
   init() {
-    const state = this.getState();
-    this.ui.populateNecklaceSelect(state.selectedNecklace.id);
-    this.ui.populateColorSwatches({
-      necklace: state.selectedNecklace,
-      selectedColorIdsByTarget: state.selectedColorIdsByTarget,
-      fallbackColorId: state.selectedColorId,
-      targetIds: [],
-    });
-    this.ui.syncFromState(state);
-    this.applyCalibrationForSelectedNecklace();
-    this.syncColorAvailability();
-    this.syncModeEffects();
-    this.loadSelectedNecklace();
-    this.bindPageLifecycle();
-    this.rendererLoop.start();
-    this.scheduleSessionServicePreload();
+    this.lifecycleUseCase.init();
   }
 
-  /**
-   * @returns {void}
-   */
+  /** @returns {void} */
   destroy() {
-    this.cancelSessionServicePreload?.();
-    this.cancelSessionServicePreload = null;
-    this.lifecycleDisposers.splice(0).forEach((dispose) => dispose());
-    this.trackingUseCase.dispose();
+    this.lifecycleUseCase.destroy();
     this.runtime.setRenderStatsUpdateHandler(null);
   }
 
   /**
-   * @param {AppIntent} intent
-   * @returns {AppStateSnapshot | null}
-   */
-  dispatchAppIntent(intent) {
-    return this.applyAppReducerResult(reduceAppIntent(this.getState(), intent));
-  }
-
-  /**
-   * @param {AppReducerResult} result
-   * @returns {AppStateSnapshot | null}
-   */
-  applyAppReducerResult(result) {
-    if (result.kind === 'none') return null;
-
-    if (result.kind === 'session-transition') {
-      return this.appState.transitionSession(result.nextStatus, result.patch, result.eventName);
-    }
-
-    return this.appState.set(result.patch, result.eventName);
-  }
-
-  /**
-   * @param {string | null | undefined} mode
+   * @param {AppMode | string | null | undefined} mode
    * @returns {void}
    */
   selectMode(mode) {
-    const state = this.getState();
-    const result = reduceAppIntent(state, { type: 'mode/select', mode });
-    if (result.kind === 'none') return;
-
-    if (mode === APP_MODES.SHOWCASE && state.cameraStarted) {
-      this.stopCameraSession({
-        nextStatus: AR_SESSION_STATES.SHOWCASE,
-        eventName: 'mode-camera-stop',
-      });
-    }
-
-    this.applyAppReducerResult(result);
-
-    if (mode === APP_MODES.AR) {
-      this.scene.setShowcaseMode(false);
-      this.controller.reset();
-      this.rendererLoop.requestRender();
-      void this.preloadSessionService();
-    }
-
-    this.syncModeEffects();
+    this.modeUseCase.selectMode(mode);
   }
 
   /**
@@ -242,16 +200,12 @@ export class AppRuntimeController {
    * @returns {void}
    */
   selectControlPanel(panelName) {
-    if (!panelName) return;
-    if (!this.ui.canSelectControlPanel(panelName)) return;
-    this.dispatchAppIntent({ type: 'panel/select', panelName });
+    this.modeUseCase.selectControlPanel(panelName);
   }
 
-  /**
-   * @returns {void}
-   */
+  /** @returns {void} */
   toggleBottomSheet() {
-    this.dispatchAppIntent({ type: 'bottom-sheet/toggle' });
+    this.modeUseCase.toggleBottomSheet();
   }
 
   /**
@@ -259,17 +213,7 @@ export class AppRuntimeController {
    * @returns {void}
    */
   handleShowcasePointerDown(event) {
-    const state = this.getState();
-    if (state.mode === APP_MODES.AR) {
-      this.handleCalibrationPointerDown(event);
-      return;
-    }
-
-    if (state.mode !== APP_MODES.SHOWCASE || !state.modelLoaded) return;
-
-    this.ui.elements.threeCanvas.setPointerCapture?.(event.pointerId);
-    this.ui.setShowcaseDragging(true);
-    this.scene.beginShowcaseDrag(event.clientX);
+    this.stageInteractionUseCase.handlePointerDown(event);
   }
 
   /**
@@ -277,15 +221,7 @@ export class AppRuntimeController {
    * @returns {void}
    */
   handleShowcasePointerMove(event) {
-    const state = this.getState();
-    if (state.mode === APP_MODES.AR) {
-      this.handleCalibrationPointerMove(event);
-      return;
-    }
-
-    if (state.mode !== APP_MODES.SHOWCASE || !state.modelLoaded) return;
-
-    this.scene.dragShowcase(event.clientX);
+    this.stageInteractionUseCase.handlePointerMove(event);
   }
 
   /**
@@ -293,17 +229,7 @@ export class AppRuntimeController {
    * @returns {void}
    */
   handleShowcasePointerUp(event) {
-    const state = this.getState();
-    if (state.mode === APP_MODES.AR) {
-      this.handleCalibrationPointerUp(event);
-      return;
-    }
-
-    if (state.mode !== APP_MODES.SHOWCASE) return;
-
-    this.ui.elements.threeCanvas.releasePointerCapture?.(event.pointerId);
-    this.ui.setShowcaseDragging(false);
-    this.scene.endShowcaseDrag();
+    this.stageInteractionUseCase.handlePointerUp(event);
   }
 
   /**
@@ -330,23 +256,17 @@ export class AppRuntimeController {
     this.calibrationUseCase.handlePointerUp(event);
   }
 
-  /**
-   * @returns {Promise<void>}
-   */
+  /** @returns {Promise<void>} */
   async startExperience() {
     return this.cameraSessionUseCase.startExperience();
   }
 
-  /**
-   * @returns {void}
-   */
+  /** @returns {void} */
   stopExperience() {
     this.cameraSessionUseCase.stopExperience();
   }
 
-  /**
-   * @returns {Promise<void>}
-   */
+  /** @returns {Promise<void>} */
   async switchCamera() {
     return this.cameraSessionUseCase.switchCamera();
   }
@@ -355,34 +275,26 @@ export class AppRuntimeController {
    * @param {{ nextStatus?: ArSessionStatus, eventName?: string }} [options]
    * @returns {void}
    */
-  stopCameraSession({ nextStatus = AR_SESSION_STATES.AR_IDLE, eventName = 'camera-stop' } = {}) {
-    this.cameraSessionUseCase.stopCameraSession({ nextStatus, eventName });
+  stopCameraSession(options) {
+    this.cameraSessionUseCase.stopCameraSession(options);
   }
 
-  /**
-   * @returns {Promise<void>}
-   */
+  /** @returns {Promise<void>} */
   async handleCapture() {
     return this.shareUseCase.handleCapture();
   }
 
-  /**
-   * @returns {void}
-   */
+  /** @returns {void} */
   downloadCapture() {
     this.shareUseCase.downloadCapture();
   }
 
-  /**
-   * @returns {Promise<void>}
-   */
+  /** @returns {Promise<void>} */
   async shareCapture() {
     return this.shareUseCase.shareCapture();
   }
 
-  /**
-   * @returns {void}
-   */
+  /** @returns {void} */
   closeShareSheet() {
     this.shareUseCase.closeShareSheet();
   }
@@ -417,10 +329,7 @@ export class AppRuntimeController {
    * @returns {void}
    */
   handleDebugToggle(isEnabled) {
-    this.dispatchAppIntent({ type: 'debug/toggle', isEnabled });
-    this.debugOverlay.setEnabled(this.appState.get('mode') === APP_MODES.AR && isEnabled);
-    this.updateDeveloperPanel();
-    this.updateTrackingStatus();
+    this.modeUseCase.handleDebugToggle(isEnabled);
   }
 
   /**
@@ -428,38 +337,25 @@ export class AppRuntimeController {
    * @returns {void}
    */
   handleNecklaceToggle(isVisible) {
-    this.dispatchAppIntent({ type: 'necklace-visibility/toggle', isVisible });
-
-    if (!isVisible) {
-      this.controller.fadeOut();
-    }
-    this.rendererLoop.requestRender();
+    this.modeUseCase.handleNecklaceToggle(isVisible);
   }
 
-  /**
-   * @returns {void}
-   */
+  /** @returns {void} */
   updateTuningFromControls() {
     this.calibrationUseCase.updateTuningFromControls();
   }
 
-  /**
-   * @returns {void}
-   */
+  /** @returns {void} */
   saveCalibration() {
     this.calibrationUseCase.saveCalibration();
   }
 
-  /**
-   * @returns {void}
-   */
+  /** @returns {void} */
   resetCalibration() {
     this.calibrationUseCase.resetCalibration();
   }
 
-  /**
-   * @returns {void}
-   */
+  /** @returns {void} */
   applyCalibrationForSelectedNecklace() {
     this.calibrationUseCase.applyCalibrationForSelectedNecklace();
   }
@@ -468,8 +364,8 @@ export class AppRuntimeController {
    * @param {{ dirty?: boolean }} [options]
    * @returns {void}
    */
-  updateCalibrationHint({ dirty = false } = {}) {
-    this.calibrationUseCase.updateHint({ dirty });
+  updateCalibrationHint(options) {
+    this.calibrationUseCase.updateHint(options);
   }
 
   /**
@@ -477,7 +373,7 @@ export class AppRuntimeController {
    * @param {string} [eventName]
    * @returns {void}
    */
-  applyTuning(adjustments, eventName = 'tuning-change') {
+  applyTuning(adjustments, eventName) {
     this.calibrationUseCase.applyTuning(adjustments, eventName);
   }
 
@@ -489,40 +385,14 @@ export class AppRuntimeController {
     this.calibrationUseCase.applyHint(hint);
   }
 
-  /**
-   * @returns {Promise<void>}
-   */
+  /** @returns {Promise<void>} */
   async loadSelectedNecklace() {
     return this.modelUseCase.loadSelectedNecklace();
   }
 
-  /**
-   * @returns {void}
-   */
+  /** @returns {void} */
   syncModeEffects() {
-    const state = this.getState();
-    const isShowcase = state.mode === APP_MODES.SHOWCASE;
-
-    this.debugOverlay.setEnabled(!isShowcase && state.debugEnabled);
-
-    if (isShowcase) {
-      this.scene.setShowcaseMode(state.modelLoaded);
-      this.rendererLoop.requestRender();
-      this.ui.setStatus(
-        state.modelLoaded ? 'tracking' : 'loading',
-        state.modelLoaded ? '模型展示' : '模型載入中',
-        state.modelLoaded ? '拖曳旋轉模型，選擇喜歡的色彩' : state.selectedNecklace.label,
-      );
-      return;
-    }
-
-    this.scene.setShowcaseMode(false);
-
-    if (!state.cameraStarted && state.modelLoaded) {
-      this.controller.reset();
-      this.rendererLoop.requestRender();
-      this.ui.setStatus('idle', 'AR 試戴', '開啟相機後即可即時試戴');
-    }
+    this.modeUseCase.syncModeEffects();
   }
 
   /**
@@ -549,9 +419,7 @@ export class AppRuntimeController {
     return this.trackingUseCase.shouldPreserveWorkflowStatus(state);
   }
 
-  /**
-   * @returns {void}
-   */
+  /** @returns {void} */
   markCalibrationReady() {
     this.calibrationUseCase.markFaceReady();
   }
@@ -568,42 +436,34 @@ export class AppRuntimeController {
    * @param {{ force?: boolean }} [options]
    * @returns {void}
    */
-  scheduleTrackingFeedbackUpdate({ force = false } = {}) {
-    this.trackingUseCase.scheduleFeedbackUpdate({ force });
+  scheduleTrackingFeedbackUpdate(options) {
+    this.trackingUseCase.scheduleFeedbackUpdate(options);
   }
 
   /**
    * @param {number} [now]
    * @returns {void}
    */
-  flushTrackingFeedback(now = performance.now()) {
+  flushTrackingFeedback(now) {
     this.trackingUseCase.flushFeedback(now);
   }
 
-  /**
-   * @returns {void}
-   */
+  /** @returns {void} */
   updateDeveloperPanel() {
     this.trackingUseCase.updateDeveloperPanel();
   }
 
-  /**
-   * @returns {void}
-   */
+  /** @returns {void} */
   updateTrackingStatus() {
     this.trackingUseCase.updateTrackingStatus();
   }
 
-  /**
-   * @returns {void}
-   */
+  /** @returns {void} */
   syncColorAvailability() {
     this.modelUseCase.syncColorAvailability();
   }
 
-  /**
-   * @returns {string}
-   */
+  /** @returns {string} */
   getActiveCameraLabel() {
     return this.cameraSessionUseCase.getActiveCameraLabel();
   }
@@ -633,111 +493,38 @@ export class AppRuntimeController {
     this.ui.showError(message);
   }
 
-  /**
-   * @returns {void}
-   */
+  /** @returns {void} */
   bindPageLifecycle() {
-    if (this.lifecycleDisposers.length) return;
-
-    const onVisibilityChange = () => {
-      if (document.hidden) {
-        this.handlePageHidden();
-        return;
-      }
-
-      this.handlePageVisible();
-    };
-    const onPageHide = () => this.handlePageHidden();
-    const onPageShow = () => this.handlePageVisible();
-
-    document.addEventListener('visibilitychange', onVisibilityChange);
-    window.addEventListener('pagehide', onPageHide);
-    window.addEventListener('pageshow', onPageShow);
-
-    this.lifecycleDisposers.push(
-      () => document.removeEventListener('visibilitychange', onVisibilityChange),
-      () => window.removeEventListener('pagehide', onPageHide),
-      () => window.removeEventListener('pageshow', onPageShow),
-    );
+    this.lifecycleUseCase.bindPageLifecycle();
   }
 
-  /**
-   * @returns {void}
-   */
+  /** @returns {void} */
   handlePageHidden() {
-    this.rendererLoop.pause();
-    this.cameraSessionUseCase.pauseTracking();
-    this.realtimeStore.clearTracking();
-    this.controller.fadeOut();
+    this.lifecycleUseCase.handlePageHidden();
   }
 
-  /**
-   * @returns {void}
-   */
+  /** @returns {void} */
   handlePageVisible() {
-    this.rendererLoop.resume();
-    this.rendererLoop.requestRender();
-
-    if (!this.appState.get('cameraStarted')) return;
-
-    this.cameraSessionUseCase.resumeTracking().catch((error) => {
-      this.showError(`Face Mesh 恢復偵測失敗：${formatUnknownError(error)}`);
-    });
+    this.lifecycleUseCase.handlePageVisible();
   }
 
-  /**
-   * @returns {Promise<import('./ArSessionService.js').ArSessionService>}
-   */
+  /** @returns {Promise<import('./ArSessionService.js').ArSessionService>} */
   async getSessionService() {
     return this.cameraSessionUseCase.getSessionService();
   }
 
-  /**
-   * @returns {Promise<import('./ArSessionService.js').ArSessionService | null>}
-   */
+  /** @returns {Promise<import('./ArSessionService.js').ArSessionService | null>} */
   preloadSessionService() {
     return this.cameraSessionUseCase.preloadSessionService();
   }
 
-  /**
-   * @returns {void}
-   */
+  /** @returns {void} */
   scheduleSessionServicePreload() {
-    if (this.cancelSessionServicePreload) return;
-
-    this.cancelSessionServicePreload = scheduleIdleWork(() => {
-      this.cancelSessionServicePreload = null;
-      void this.preloadSessionService();
-    });
+    this.lifecycleUseCase.scheduleSessionServicePreload();
   }
 
-  /**
-   * @returns {AppStateSnapshot}
-   */
+  /** @returns {AppStateSnapshot} */
   getState() {
     return this.appState.getSnapshot();
   }
-}
-
-/**
- * @param {unknown} error
- * @returns {string}
- */
-function formatUnknownError(error) {
-  if (error instanceof Error) return error.message;
-  return String(error);
-}
-
-/**
- * @param {() => void} callback
- * @returns {() => void}
- */
-function scheduleIdleWork(callback) {
-  if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
-    const handle = window.requestIdleCallback(callback, { timeout: 2500 });
-    return () => window.cancelIdleCallback(handle);
-  }
-
-  const handle = globalThis.setTimeout(callback, 0);
-  return () => globalThis.clearTimeout(handle);
 }

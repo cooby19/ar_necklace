@@ -22,8 +22,7 @@ import { NecklaceScene } from '../core/NecklaceScene.js';
 /**
  * @typedef {{
  *   appState: AppStatePort,
- *   uiRoot?: UiRuntimePort,
- *   uiController?: UiRuntimePort,
+ *   uiRoot: UiRuntimePort,
  *   captureService: CaptureServicePort,
  *   necklaces: readonly NecklaceConfig[],
  *   realtimeStore?: RealtimeTrackingStore,
@@ -56,14 +55,11 @@ import { NecklaceScene } from '../core/NecklaceScene.js';
 export function createAppRuntime(options) {
   const {
     appState,
+    uiRoot,
     captureService,
     necklaces,
     realtimeStore = new RealtimeTrackingStore(),
   } = options;
-  const uiRoot = options.uiRoot ?? options.uiController;
-  if (!uiRoot) {
-    throw new Error('createAppRuntime requires a uiRoot');
-  }
   const onError = options.onError ?? ((message) => uiRoot.showError(message));
   const scene = new NecklaceScene({
     canvas: uiRoot.elements.threeCanvas,

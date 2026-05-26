@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
-import { APP_MODES, AR_SESSION_STATES } from './AppState.js';
+import { APP_MODES } from './AppState.js';
 import { AppRuntimeController } from './AppRuntimeController.js';
 import { RealtimeTrackingStore } from './RealtimeTrackingStore.js';
 import { NECKLACES } from '../config/necklaces.js';
 
-describe('AppRuntimeController runtime injection', () => {
+describe('AppRuntimeController runtime routing', () => {
   it('keeps public handlers available while using injected runtime ports', () => {
     const controller = createAppRuntimeController();
 
@@ -34,229 +34,61 @@ describe('AppRuntimeController runtime injection', () => {
 
     expect(controller.runtime.setRenderStatsUpdateHandler).toHaveBeenCalledTimes(1);
   });
-});
 
-describe('AppRuntimeController mode and panel intents', () => {
-  it('transitions from showcase to AR idle and resets showcase effects', () => {
-    const controller = createAppRuntimeController({
-      mode: APP_MODES.SHOWCASE,
-      sessionStatus: AR_SESSION_STATES.SHOWCASE,
-      cameraStarted: false,
-    });
+  it('routes UI handlers to their use-cases', () => {
+    const controller = createAppRuntimeController();
+    vi.spyOn(controller.modeUseCase, 'selectMode').mockImplementation(() => {});
+    vi.spyOn(controller.modeUseCase, 'selectControlPanel').mockImplementation(() => {});
+    vi.spyOn(controller.modeUseCase, 'toggleBottomSheet').mockImplementation(() => {});
+    vi.spyOn(controller.stageInteractionUseCase, 'handlePointerDown').mockImplementation(() => {});
+    vi.spyOn(controller.cameraSessionUseCase, 'startExperience').mockResolvedValue();
+    vi.spyOn(controller.shareUseCase, 'handleCapture').mockResolvedValue();
 
+    const pointerEvent = { pointerId: 1, clientX: 100 };
     controller.selectMode(APP_MODES.AR);
-
-    expect(controller.appState.transitionSession).toHaveBeenCalledWith(
-      AR_SESSION_STATES.AR_IDLE,
-      { mode: APP_MODES.AR },
-      'mode-select',
-    );
-    expect(controller.scene.setShowcaseMode).toHaveBeenCalledWith(false);
-    expect(controller.controller.reset).toHaveBeenCalledTimes(1);
-    expect(controller.rendererLoop.requestRender).toHaveBeenCalledTimes(1);
-    expect(controller.syncModeEffects).toHaveBeenCalledTimes(1);
-    expect(controller.getState()).toMatchObject({
-      mode: APP_MODES.AR,
-      sessionStatus: AR_SESSION_STATES.AR_IDLE,
-    });
-  });
-
-  it('preloads the AR session service immediately when entering AR mode', () => {
-    const controller = createAppRuntimeController({
-      mode: APP_MODES.SHOWCASE,
-      sessionStatus: AR_SESSION_STATES.SHOWCASE,
-      cameraStarted: false,
-    });
-    const preloadSessionService = vi.spyOn(controller, 'preloadSessionService').mockResolvedValue(null);
-
-    controller.selectMode(APP_MODES.AR);
-
-    expect(preloadSessionService).toHaveBeenCalledTimes(1);
-  });
-
-  it('stops the active camera session before returning from AR to showcase', () => {
-    const controller = createAppRuntimeController({
-      mode: APP_MODES.AR,
-      sessionStatus: AR_SESSION_STATES.TRACKING,
-      cameraStarted: true,
-    });
-
-    controller.selectMode(APP_MODES.SHOWCASE);
-
-    expect(controller.cameraSessionUseCase.sessionService.stop).toHaveBeenCalledTimes(1);
-    expect(controller.realtimeStore.getSnapshot()).toMatchObject({
-      hasFace: false,
-      latestLandmarks: null,
-    });
-    expect(controller.ui.setCameraOn).toHaveBeenCalledWith(false);
-    expect(controller.ui.setCaptureDisabled).toHaveBeenCalledWith(true);
-    expect(controller.appState.transitionSession).toHaveBeenNthCalledWith(
-      1,
-      AR_SESSION_STATES.SHOWCASE,
-      {
-        cameraStarted: false,
-        isSwitchingCamera: false,
-      },
-      'mode-camera-stop',
-    );
-    expect(controller.appState.transitionSession).toHaveBeenNthCalledWith(
-      2,
-      AR_SESSION_STATES.SHOWCASE,
-      { mode: APP_MODES.SHOWCASE },
-      'mode-select',
-    );
-    expect(controller.getState()).toMatchObject({
-      mode: APP_MODES.SHOWCASE,
-      sessionStatus: AR_SESSION_STATES.SHOWCASE,
-      cameraStarted: false,
-    });
-  });
-
-  it('ignores invalid or unchanged modes', () => {
-    const controller = createAppRuntimeController({
-      mode: APP_MODES.AR,
-      sessionStatus: AR_SESSION_STATES.AR_IDLE,
-    });
-
-    controller.selectMode('unknown-mode');
-    controller.selectMode(APP_MODES.AR);
-
-    expect(controller.appState.transitionSession).not.toHaveBeenCalled();
-    expect(controller.scene.setShowcaseMode).not.toHaveBeenCalled();
-    expect(controller.controller.reset).not.toHaveBeenCalled();
-    expect(controller.rendererLoop.requestRender).not.toHaveBeenCalled();
-    expect(controller.syncModeEffects).not.toHaveBeenCalled();
-  });
-
-  it('returns the fit panel to styles when switching to non-AR mode', () => {
-    const controller = createAppRuntimeController({
-      mode: APP_MODES.AR,
-      sessionStatus: AR_SESSION_STATES.AR_IDLE,
-      activePanel: 'fit',
-    });
-
-    controller.selectMode(APP_MODES.SHOWCASE);
-
-    expect(controller.appState.transitionSession).toHaveBeenCalledWith(
-      AR_SESSION_STATES.SHOWCASE,
-      {
-        mode: APP_MODES.SHOWCASE,
-        activePanel: 'styles',
-      },
-      'mode-select',
-    );
-    expect(controller.getState().activePanel).toBe('styles');
-  });
-
-  it('ignores missing or unavailable control panels', () => {
-    const controller = createAppRuntimeController({ activePanel: 'styles' });
-    controller.ui.canSelectControlPanel.mockReturnValue(false);
-
-    controller.selectControlPanel();
     controller.selectControlPanel('fit');
-
-    expect(controller.ui.canSelectControlPanel).toHaveBeenCalledTimes(1);
-    expect(controller.appState.set).not.toHaveBeenCalled();
-    expect(controller.getState().activePanel).toBe('styles');
-  });
-
-  it('writes valid control panel selection to app state', () => {
-    const controller = createAppRuntimeController({ activePanel: 'styles' });
-
-    controller.selectControlPanel('fit');
-
-    expect(controller.ui.canSelectControlPanel).toHaveBeenCalledWith('fit');
-    expect(controller.appState.set).toHaveBeenCalledWith({ activePanel: 'fit' }, 'panel-select');
-    expect(controller.getState().activePanel).toBe('fit');
-  });
-
-  it('toggles bottom sheet collapsed state through app state dispatch', () => {
-    const controller = createAppRuntimeController({ controlsCollapsed: true });
-
     controller.toggleBottomSheet();
-    controller.toggleBottomSheet();
+    controller.handleShowcasePointerDown(pointerEvent);
+    void controller.startExperience();
+    void controller.handleCapture();
 
-    expect(controller.appState.set).toHaveBeenCalledTimes(2);
-    expect(controller.appState.set).toHaveBeenNthCalledWith(
-      1,
-      { controlsCollapsed: false },
-      'bottom-sheet-toggle',
-    );
-    expect(controller.appState.set).toHaveBeenNthCalledWith(
-      2,
-      { controlsCollapsed: true },
-      'bottom-sheet-toggle',
-    );
-    expect(controller.getState().controlsCollapsed).toBe(true);
+    expect(controller.modeUseCase.selectMode).toHaveBeenCalledWith(APP_MODES.AR);
+    expect(controller.modeUseCase.selectControlPanel).toHaveBeenCalledWith('fit');
+    expect(controller.modeUseCase.toggleBottomSheet).toHaveBeenCalledTimes(1);
+    expect(controller.stageInteractionUseCase.handlePointerDown).toHaveBeenCalledWith(pointerEvent);
+    expect(controller.cameraSessionUseCase.startExperience).toHaveBeenCalledTimes(1);
+    expect(controller.shareUseCase.handleCapture).toHaveBeenCalledTimes(1);
+  });
+
+  it('routes lifecycle methods to RuntimeLifecycleUseCase', () => {
+    const controller = createAppRuntimeController();
+    vi.spyOn(controller.lifecycleUseCase, 'init').mockImplementation(() => {});
+    vi.spyOn(controller.lifecycleUseCase, 'destroy').mockImplementation(() => {});
+
+    controller.init();
+    controller.destroy();
+
+    expect(controller.lifecycleUseCase.init).toHaveBeenCalledTimes(1);
+    expect(controller.lifecycleUseCase.destroy).toHaveBeenCalledTimes(1);
+    expect(controller.runtime.setRenderStatsUpdateHandler).toHaveBeenLastCalledWith(null);
+  });
+
+  it('forwards render stats notifications to tracking feedback scheduling', () => {
+    const controller = createAppRuntimeController();
+    vi.spyOn(controller, 'scheduleTrackingFeedbackUpdate').mockImplementation(() => {});
+
+    controller.runtime.renderStatsUpdateHandler();
+
+    expect(controller.scheduleTrackingFeedbackUpdate).toHaveBeenCalledTimes(1);
   });
 });
 
-describe('AppRuntimeController UI toggles', () => {
-  it('syncs debug toggle to state, overlay, developer panel, and tracking status', () => {
-    const controller = createAppRuntimeController({
-      mode: APP_MODES.AR,
-      debugEnabled: false,
-    });
-
-    controller.handleDebugToggle(true);
-
-    expect(controller.appState.set).toHaveBeenCalledWith({ debugEnabled: true }, 'debug-toggle');
-    expect(controller.debugOverlay.setEnabled).toHaveBeenCalledWith(true);
-    expect(controller.updateDeveloperPanel).toHaveBeenCalledTimes(1);
-    expect(controller.updateTrackingStatus).toHaveBeenCalledTimes(1);
-    expect(controller.getState().debugEnabled).toBe(true);
-  });
-
-  it('fades out the necklace and requests a render when necklace visibility is disabled', () => {
-    const controller = createAppRuntimeController({ necklaceVisible: true });
-
-    controller.handleNecklaceToggle(false);
-
-    expect(controller.appState.set).toHaveBeenCalledWith({ necklaceVisible: false }, 'necklace-toggle');
-    expect(controller.controller.fadeOut).toHaveBeenCalledTimes(1);
-    expect(controller.rendererLoop.requestRender).toHaveBeenCalledTimes(1);
-    expect(controller.getState().necklaceVisible).toBe(false);
-  });
-
-});
-
-describe('AppRuntimeController AR session preload scheduling', () => {
-  it('runs the app-init preload on an idle timer without blocking the current task', async () => {
-    vi.useFakeTimers();
-    try {
-      const controller = createAppRuntimeController();
-      const preloadSessionService = vi.spyOn(controller, 'preloadSessionService').mockResolvedValue(null);
-
-      controller.scheduleSessionServicePreload();
-
-      expect(preloadSessionService).not.toHaveBeenCalled();
-
-      await vi.runOnlyPendingTimersAsync();
-
-      expect(preloadSessionService).toHaveBeenCalledTimes(1);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-});
-
-function createAppRuntimeController(overrides = {}, options = {}) {
-  let state = {
+function createAppRuntimeController(overrides = {}) {
+  const state = {
     mode: APP_MODES.SHOWCASE,
-    sessionStatus: AR_SESSION_STATES.SHOWCASE,
-    cameraStarted: false,
-    cameraFacingMode: 'user',
-    isSwitchingCamera: false,
-    modelLoaded: false,
-    necklaceVisible: true,
-    debugEnabled: false,
-    activePanel: 'styles',
-    controlsCollapsed: true,
     selectedNecklace: NECKLACES[0],
     selectedColorId: '',
     selectedColorIdsByTarget: {},
-    captureDataUrl: '',
-    captureBlob: null,
     adjustments: {
       horizontalOffset: 0,
       verticalOffset: 0,
@@ -265,20 +97,31 @@ function createAppRuntimeController(overrides = {}, options = {}) {
     },
     ...overrides,
   };
-  const debugData = { scale: 1.2, rotationY: 0.1 };
-  const setState = (patch = {}) => {
-    if (!patch) return state;
-    state = { ...state, ...patch };
-    return state;
-  };
   const realtimeStore = new RealtimeTrackingStore({ now: () => 100 });
   const uiRoot = {
+    populateNecklaceSelect: vi.fn(),
+    populateColorSwatches: vi.fn(),
+    syncFromState: vi.fn(),
     canSelectControlPanel: vi.fn(() => true),
     closeShareSheet: vi.fn(),
+    clearError: vi.fn(),
+    showError: vi.fn(),
+    setShowcaseDragging: vi.fn(),
     setCalibrationDragging: vi.fn(),
+    syncTuningControlsFromAdjustments: vi.fn(),
+    setCalibrationHint: vi.fn(),
+    readTuningControls: vi.fn(() => ({ adjustments: {} })),
     setCameraOn: vi.fn(),
     setCaptureDisabled: vi.fn(),
+    setCaptureBusy: vi.fn(),
     setStartButtonLabel: vi.fn(),
+    setStatus: vi.fn(),
+    setShareImage: vi.fn(),
+    openShareSheet: vi.fn(),
+    updateDeveloperPanel: vi.fn(),
+    updateColorUiAvailability: vi.fn(),
+    syncNecklaceSelection: vi.fn(),
+    hasCurrentVideoFrame: vi.fn(() => true),
     elements: {
       stage: {},
       video: {},
@@ -293,7 +136,6 @@ function createAppRuntimeController(overrides = {}, options = {}) {
     },
   };
   const runtime = {
-    debugData,
     realtimeStore,
     scene: {
       setShowcaseMode: vi.fn(),
@@ -305,7 +147,7 @@ function createAppRuntimeController(overrides = {}, options = {}) {
     necklaceController: {
       fadeOut: vi.fn(),
       reset: vi.fn(),
-      updateFromLandmarks: vi.fn(() => (options.includeDebugData ? debugData : null)),
+      updateFromLandmarks: vi.fn(() => null),
       setAdjustments: vi.fn(),
     },
     debugOverlay: {
@@ -320,12 +162,27 @@ function createAppRuntimeController(overrides = {}, options = {}) {
     },
     modelCatalog: {
       getById: vi.fn(() => null),
-      buildColorUiModel: vi.fn(),
+      buildColorUiModel: vi.fn(() => ({
+        swatches: {
+          necklace: state.selectedNecklace,
+          selectedColorIdsByTarget: state.selectedColorIdsByTarget,
+          fallbackColorId: state.selectedColorId,
+          targetIds: [],
+        },
+        availability: {
+          necklace: state.selectedNecklace,
+          modelLoaded: false,
+          hasColorableMaterials: false,
+          targetLabels: [],
+        },
+      })),
       getColorableMaterialCount: vi.fn(() => 0),
     },
     calibrationService: {
       cancelDrag: vi.fn(),
+      mergeAdjustments: vi.fn((current, next) => ({ ...current, ...next })),
       markFaceReady: vi.fn(() => null),
+      load: vi.fn(() => ({ adjustments: state.adjustments, hint: null })),
     },
     shareWorkflow: {},
     feedbackService: {},
@@ -335,28 +192,14 @@ function createAppRuntimeController(overrides = {}, options = {}) {
     }),
   };
 
-  const controller = new AppRuntimeController({
+  return new AppRuntimeController({
     appState: {
-      transitionSession: vi.fn((nextStatus, patch = {}) => setState({ ...patch, sessionStatus: nextStatus })),
-      set: vi.fn((patch) => setState(patch)),
-      update: vi.fn((updater) => setState(updater({ ...state }))),
+      transitionSession: vi.fn(),
+      set: vi.fn(),
       get: vi.fn((key) => state[key]),
       getSnapshot: vi.fn(() => state),
     },
     uiRoot,
     runtime,
   });
-
-  controller.debugData = debugData;
-  controller.runtime = runtime;
-  controller.cameraSessionUseCase.sessionService = {
-    stop: vi.fn(),
-  };
-  vi.spyOn(controller, 'updateDeveloperPanel').mockImplementation(() => {});
-  vi.spyOn(controller, 'updateTrackingStatus').mockImplementation(() => {});
-  vi.spyOn(controller, 'syncModeEffects').mockImplementation(() => {});
-  vi.spyOn(controller, 'scheduleTrackingFeedbackUpdate').mockImplementation(() => {});
-  vi.spyOn(controller, 'markCalibrationReady').mockImplementation(() => {});
-
-  return controller;
 }
