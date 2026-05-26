@@ -8,13 +8,16 @@ import { RuntimeLifecycleUseCase } from './use-cases/RuntimeLifecycleUseCase.js'
 import { ShareUseCase } from './use-cases/ShareUseCase.js';
 import { StageInteractionUseCase } from './use-cases/StageInteractionUseCase.js';
 import { TrackingUseCase } from './use-cases/TrackingUseCase.js';
+import { installRouter, parseUrlState } from './router.js';
 
 /** @typedef {import('../types/domain').AppMode} AppMode */
 /** @typedef {import('../types/domain').AppStateMeta} AppStateMeta */
+/** @typedef {import('../types/domain').AppStatePatch} AppStatePatch */
 /** @typedef {import('../types/domain').AppStateSnapshot} AppStateSnapshot */
 /** @typedef {import('../types/domain').ArSessionStatus} ArSessionStatus */
 /** @typedef {import('../types/domain').DeveloperPanelModel} DeveloperPanelModel */
 /** @typedef {import('../types/domain').FaceMeshResults} FaceMeshResults */
+/** @typedef {import('../types/domain').NecklaceConfig} NecklaceConfig */
 /** @typedef {import('../types/domain').RealtimeTrackingSnapshot} RealtimeTrackingSnapshot */
 /** @typedef {import('../types/domain').TrackerStats} TrackerStats */
 /** @typedef {import('../types/domain').WearAdjustmentPatch} WearAdjustmentPatch */
@@ -26,6 +29,7 @@ import { TrackingUseCase } from './use-cases/TrackingUseCase.js';
 /** @typedef {import('../types/ui-ports').TuningControlsReadResult} TuningControlsReadResult */
 /** @typedef {import('../types/scene-ports').NecklaceSceneModePort} NecklaceSceneModePort */
 /** @typedef {import('./createAppRuntime.js').AppRuntime} AppRuntime */
+/** @typedef {import('./router.js').UrlState} UrlState */
 
 /**
  * Local composition port for the UI root surface consumed by runtime wiring and use-cases.
@@ -95,6 +99,9 @@ export class AppRuntimeController {
     this.shareWorkflow = runtime.shareWorkflow;
     this.rendererLoop = runtime.rendererLoop;
     this.feedbackService = runtime.feedbackService;
+    /** @type {UrlState | null} */
+    this._pendingUrlState = null;
+    this._suppressUrlSync = false;
 
     this.calibrationUseCase = new CalibrationUseCase({
       appState: this.appState,
@@ -172,19 +179,132 @@ export class AppRuntimeController {
       modeUseCase: this.modeUseCase,
       trackingUseCase: this.trackingUseCase,
     });
+    this.lifecycleDisposers = this.lifecycleUseCase.lifecycleDisposers;
 
     runtime.setRenderStatsUpdateHandler(() => this.scheduleTrackingFeedbackUpdate());
   }
 
   /** @returns {void} */
   init() {
-    this.lifecycleUseCase.init();
+    const urlState = parseUrlState();
+    this.applyInitialUrlState(urlState);
+
+    const state = this.getState();
+    this.ui.populateNecklaceSelect(state.selectedNecklace.id);
+    this.ui.populateColorSwatches({
+      necklace: state.selectedNecklace,
+      selectedColorIdsByTarget: state.selectedColorIdsByTarget,
+      fallbackColorId: state.selectedColorId,
+      targetIds: [],
+    });
+    this.ui.syncFromState(state);
+    this.calibrationUseCase.applyCalibrationForSelectedNecklace();
+    this.modelUseCase.syncColorAvailability();
+    this.modeUseCase.syncModeEffects();
+    void this.loadSelectedNecklace().then(() => this.applyPendingUrlColors());
+    this.bindPageLifecycle();
+    this.rendererLoop.start();
+    this.scheduleSessionServicePreload();
+    this.lifecycleDisposers.push(
+      installRouter({
+        onHashChange: (nextUrlState) => {
+          void this.applyUrlState(nextUrlState);
+        },
+      }),
+    );
   }
 
   /** @returns {void} */
   destroy() {
     this.lifecycleUseCase.destroy();
     this.runtime.setRenderStatsUpdateHandler(null);
+  }
+
+  /** @returns {boolean} */
+  isApplyingUrlState() {
+    return this._suppressUrlSync;
+  }
+
+  /**
+   * @param {UrlState} urlState
+   * @returns {Promise<void>}
+   */
+  async applyUrlState(urlState) {
+    if (!urlState.necklaceId) return;
+
+    const necklace = this.modelCatalog.getById(urlState.necklaceId);
+    if (!necklace) return;
+
+    const previousSuppression = this._suppressUrlSync;
+    this._suppressUrlSync = true;
+
+    try {
+      this._pendingUrlState = urlState;
+      const currentNecklace = this.appState.get('selectedNecklace');
+
+      if (currentNecklace.id !== necklace.id) {
+        this.appState.set(createUrlHydrationPatch(this.modelCatalog, necklace, urlState), 'url-hydrate');
+        this.controller.reset();
+        this.applyCalibrationForSelectedNecklace();
+        await this.loadSelectedNecklace();
+      }
+
+      this.applyPendingUrlColors();
+    } finally {
+      this._suppressUrlSync = previousSuppression;
+    }
+  }
+
+  /** @returns {void} */
+  applyPendingUrlColors() {
+    if (!this._pendingUrlState) return;
+
+    const targetIds = this.modelCatalog.getColorableTargets();
+    if (!targetIds.length && !this.appState.get('modelLoaded')) return;
+
+    const urlState = this._pendingUrlState;
+    const necklace = this.appState.get('selectedNecklace');
+    const previousSuppression = this._suppressUrlSync;
+    this._suppressUrlSync = true;
+
+    try {
+      targetIds.forEach((targetId) => {
+        const targetColorId = urlState.colorByTarget[targetId];
+        if (isPaletteColor(necklace, targetColorId)) {
+          this.selectColor(targetColorId, targetId);
+          return;
+        }
+
+        const fallbackColorId = urlState.colorFallback;
+        if (fallbackColorId && isPaletteColor(necklace, fallbackColorId)) {
+          this.selectColor(fallbackColorId, targetId);
+        }
+      });
+    } finally {
+      this._pendingUrlState = null;
+      this._suppressUrlSync = previousSuppression;
+    }
+  }
+
+  /**
+   * @param {UrlState} urlState
+   * @returns {void}
+   */
+  applyInitialUrlState(urlState) {
+    if (!urlState.necklaceId) return;
+
+    const necklace = this.modelCatalog.getById(urlState.necklaceId);
+    if (!necklace) return;
+
+    const previousSuppression = this._suppressUrlSync;
+    this._suppressUrlSync = true;
+
+    try {
+      this.appState.set(createUrlHydrationPatch(this.modelCatalog, necklace, urlState), 'url-hydrate');
+      this._pendingUrlState = urlState;
+    } finally {
+      this._suppressUrlSync = previousSuppression;
+    }
   }
 
   /**
@@ -527,4 +647,48 @@ export class AppRuntimeController {
   getState() {
     return this.appState.getSnapshot();
   }
+}
+
+/**
+ * @param {import('./ModelCatalogService.js').ModelCatalogService} modelCatalog
+ * @param {NecklaceConfig} necklace
+ * @param {UrlState} urlState
+ * @returns {AppStatePatch}
+ */
+function createUrlHydrationPatch(modelCatalog, necklace, urlState) {
+  const patch = modelCatalog.createSelectionPatch(necklace);
+  const selectedColorIdsByTarget = { ...(patch.selectedColorIdsByTarget ?? {}) };
+
+  Object.entries(urlState.colorByTarget).forEach(([targetId, colorId]) => {
+    if (!isConfiguredColorTarget(necklace, targetId) || !isPaletteColor(necklace, colorId)) return;
+    selectedColorIdsByTarget[targetId] = colorId;
+  });
+
+  patch.selectedColorIdsByTarget = selectedColorIdsByTarget;
+
+  const fallbackColorId = urlState.colorFallback;
+  if (fallbackColorId && isPaletteColor(necklace, fallbackColorId)) {
+    patch.selectedColorId = fallbackColorId;
+  }
+
+  return patch;
+}
+
+/**
+ * @param {NecklaceConfig} necklace
+ * @param {string | null | undefined} colorId
+ * @returns {boolean}
+ */
+function isPaletteColor(necklace, colorId) {
+  if (!colorId) return false;
+  return Boolean(necklace.colorCustomization?.palette?.some((colorOption) => colorOption.id === colorId));
+}
+
+/**
+ * @param {NecklaceConfig} necklace
+ * @param {string} targetId
+ * @returns {boolean}
+ */
+function isConfiguredColorTarget(necklace, targetId) {
+  return Boolean(necklace.colorCustomization?.targets?.some((target) => target.id === targetId));
 }

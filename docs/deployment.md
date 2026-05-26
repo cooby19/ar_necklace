@@ -7,6 +7,7 @@
 - 專案是純前端 Vite app，正式建置輸出在 `dist/`。
 - 相機、MediaPipe live tracking、iOS Safari 實機體驗不可作為 CI 必通條件；部署 smoke 檢查 showcase 可載入、版本 metadata、核心靜態資產與不需真實相機的基本互動。
 - `vite.config.js` 預設 `base: '/'`，符合 Cloudflare Pages production / preview 的根路徑部署；不得沿用 GitHub Pages 的 `/ar_necklace/` 作為正式 build base。
+- 款式與換色深連結使用 hash router，例如 `#n=crystal-cone-necklace&c.metal=citrine&c.gem=amethyst`；hash 不會送到 CDN 或 server，因此 Cloudflare Pages 只需要回應同一份 `index.html`，不需 rewrite 規則或額外路由設定。
 - 若需要重建歷史 GitHub Pages fallback，才使用 `VITE_BASE_PATH=/ar_necklace/ npm run build` 明確覆寫。
 - runtime 資產已透過 `import.meta.env.BASE_URL` 組出 `models/`、`thumbnails/` 與 MediaPipe vendor 路徑，並加上 release token query string。正式 Cloudflare Pages build 會解析為 `/models/...`、`/vendor/...`，大型 GLB/WASM/data 可搭配 Cloudflare edge cache。
 - 不硬編碼正式站 URL；遠端 smoke 使用 `SMOKE_BASE_URL`，workflow 使用 `PRODUCTION_URL` / `STAGING_URL` secrets 作為自訂網域 fallback。
@@ -235,6 +236,7 @@ npm run smoke
 - MediaPipe `face_mesh.js`、binarypb、packed data、loader JS、SIMD wasm JS、SIMD wasm 檔案可讀。
 - Showcase 初始頁載入，`#threeCanvas` 可見且尺寸合理。
 - 款式卡片、色票、Debug toggle 可基本互動。
+- Hash 深連結可載入指定款式與逐 target 色票，例如 `#n=crystal-cone-necklace&c.metal=citrine&c.gem=amethyst`；換色與切換款式後 URL 應以 `replaceState` 更新，不累積每一步 browser history。
 - Share sheet 可在不要求 camera permission 的測試狀態下開啟與關閉。
 
 部署後輕量 release smoke 仍保留：
@@ -253,6 +255,13 @@ CI/CD 串接：
 - Rollback workflow 使用 `smoke:release` 驗證回退後的版本與核心 asset；若要做完整 UI smoke，可手動對 rollback URL 執行 `SMOKE_BASE_URL=<url> npm run smoke`。
 
 CI 不要求真實 camera permission。相機權限、Face Mesh 真實追蹤、前後鏡頭切換、iOS Safari 權限與效能仍是人工實機驗收項目。
+
+發布 hash router 或款式分享相關改動時，production smoke 之外還要用瀏覽器人工確認：
+
+- 直接開啟 production 深連結後，初始款式不應先載入預設模型再載入目標模型。
+- 逐 target 指定的色票優先於 fallback `c=<colorId>`。
+- 無效款式或未知色票不應讓 app 初始化失敗。
+- 切換款式/換色後的 URL 可複製到新分頁並重現相同款式與顏色狀態。
 
 ## Cache-control 與 asset CDN
 

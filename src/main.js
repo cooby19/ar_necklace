@@ -3,6 +3,7 @@ import { NECKLACES } from './config/necklaces.js';
 import { RELEASE_METADATA } from './config/release.js';
 import { AppState } from './app/AppState.js';
 import { CaptureService } from './app/CaptureService.js';
+import { serializeUrlState } from './app/router.js';
 import { runtimeErrorReporter } from './telemetry/RuntimeErrorReporter.js';
 import { UiRoot } from './ui/UiRoot.js';
 
@@ -41,6 +42,19 @@ async function bootstrap() {
 
     appState.subscribe((snapshot, meta) => {
       uiRoot.syncFromState(snapshot, meta);
+      if (appRuntimeController.isApplyingUrlState()) return;
+      if (!shouldSyncUrlState(meta.changes)) return;
+
+      const hash = serializeUrlState({
+        necklaceId: snapshot.selectedNecklace.id,
+        colorByTarget: snapshot.selectedColorIdsByTarget,
+        colorFallback: null,
+      });
+      const nextUrl = window.location.pathname + window.location.search + (hash ? `#${hash}` : '');
+
+      if (nextUrl !== window.location.pathname + window.location.search + window.location.hash) {
+        history.replaceState(null, '', nextUrl);
+      }
     });
 
     uiRoot.bind({
@@ -84,4 +98,8 @@ function exposeRuntimeMetadata(metadata) {
 
 function isLighthouseAuditRequest() {
   return new URLSearchParams(window.location.search).has('lighthouse');
+}
+
+function shouldSyncUrlState(changes) {
+  return changes.includes('selectedNecklace') || changes.includes('selectedColorIdsByTarget');
 }

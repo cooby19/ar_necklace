@@ -64,6 +64,8 @@
 │   │   ├── AppState.test.js
 │   │   ├── AppRuntimeController.js
 │   │   ├── AppRuntimeController.test.js
+│   │   ├── router.js
+│   │   ├── router.test.js
 │   │   ├── ArSessionService.js
 │   │   ├── CalibrationService.js
 │   │   ├── CalibrationService.test.js
@@ -118,7 +120,7 @@
     └── visual/
 ```
 
-其中 `src/main.js` 只負責載入樣式、安裝 runtime error reporter、暴露 release metadata，並組裝 `AppState`、`UiRoot`、`CaptureService`、runtime services 與 `AppRuntimeController`。`src/app/AppRuntimeController.js` 保留 UI handler routing surface；模式、相機、追蹤、模型、校準、分享、舞台互動與頁面生命週期副作用都放在 `src/app/use-cases/*`。`src/app/` 放應用狀態、工作流程服務與 use-case，`src/ui/` 放 DOM/UI root，`src/core/` 放相機、Face Mesh、Three.js scene 子服務、穿戴校準與品質提示等可重用核心邏輯，`src/utils/` 放 landmark 計算與預覽區尺寸監聽工具。
+其中 `src/main.js` 只負責載入樣式、安裝 runtime error reporter、暴露 release metadata，並組裝 `AppState`、`UiRoot`、`CaptureService`、runtime services 與 `AppRuntimeController`。`src/app/router.js` 是純函式 hash router，負責解析與序列化可分享的款式/顏色 URL state，不 import controller 或 AppState。`src/app/AppRuntimeController.js` 保留 UI handler routing surface；模式、相機、追蹤、模型、校準、分享、舞台互動、URL hydration 與頁面生命週期副作用都由 controller 轉發或協調到明確邊界。`src/app/` 放應用狀態、工作流程服務與 use-case，`src/ui/` 放 DOM/UI root，`src/core/` 放相機、Face Mesh、Three.js scene 子服務、穿戴校準與品質提示等可重用核心邏輯，`src/utils/` 放 landmark 計算與預覽區尺寸監聽工具。
 
 ## 應用流程分層
 
@@ -182,6 +184,29 @@ UiRoot intent
 
 `AppState` 保留 durable UI state，例如 mode、sessionStatus、cameraStarted、selectedNecklace、debugEnabled、capture/share 狀態與校準調參。每幀 landmarks、debugData、hasFace、frame sequence、tracker stats 與 render stats 放在 `RealtimeTrackingStore`。UI 只訂閱 `AppState` 以及節流後的 realtime snapshot，FaceMesh result 不再每幀觸發 DOM 同步。
 
+## 可分享深連結
+
+LUNERA 以 hash URL 保存可分享的款式與換色狀態，維持純前端部署與 Cloudflare Pages 根路徑相容。URL schema：
+
+```text
+#n=<necklaceId>
+#n=<necklaceId>&c=<fallbackColorId>
+#n=<necklaceId>&c.<targetId>=<colorId>
+```
+
+範例：
+
+```text
+http://localhost:5173/#n=crystal-cone-necklace&c.metal=citrine&c.gem=amethyst
+```
+
+- `n` 是必填的項鍊款式 id，對應 `src/config/necklaces.js` 的 `NECKLACES[].id`。
+- `c` 是 fallback 色票 id，會套用到沒有逐 target 指定的可換色 target。
+- `c.<targetId>` 會優先套用到指定 target，例如 `metal`、`gem`；target 與 palette 也都來自 `src/config/necklaces.js`。
+- 無效款式、未知 key、空值或不存在於目前款式 palette 的色票會被忽略，不顯示錯誤。
+- App 初始化時先根據 hash 更新 `AppState`，避免初始模型雙載；模型載入完成後才依實際可換色材質 target 套用逐 target 顏色。
+- 使用者切換款式或換色時，`src/main.js` 會在 UI sync 後用 `history.replaceState` 回寫 hash，不會把每次換色都推成新的瀏覽器歷史紀錄。
+
 AR session lifecycle 以 `sessionStatus` 表達，合法轉換大致為：
 
 ```text
@@ -243,6 +268,7 @@ npm audit --omit=dev
 - `RendererLoop`：dirty idle render、AR live RAF、background pause/resume 的模式切換。
 - `TrackingUseCase`：FaceMesh result 寫入 realtime store，且只在 `noFace`/`tracking` 實際變化時 transition。
 - `ModelCatalogService`：預設顏色選擇、換色 target fallback、matched target label 與套色呼叫。
+- `router` 與 `AppRuntimeController`：hash parse/serialize、初始 URL hydration、模型載入後 pending 顏色套用、hashchange 與 URL sync suppression。
 - `CalibrationService`：調參 normalize、save/load/reset hint、localStorage 可用與不可用情境。
 - `ShareWorkflow`：截圖前置阻擋條件，包含相機未開、沒有目前影格、未偵測到臉與項鍊隱藏。
 - `NecklaceScene`：GLB buffer cache LRU、`dispose()` teardown、共享 geometry/material/texture 去重釋放，以及 depth occluder 替換前原材質釋放。
@@ -289,6 +315,7 @@ CI 的 npm audit 先以 production dependency 為範圍執行 `npm audit --omit=
 - 確認 title、description、canonical、Open Graph、Twitter Card、manifest link 與 JSON-LD 在 production HTML 中存在，且 URL 指向正式網域。
 - 確認 `site.webmanifest`、`brand/lunera-logo.png`、`icons/lunera-icon-192.png`、`icons/lunera-icon-512.png` 與 `icons/apple-touch-icon.png` 沒有 404。
 - 確認 showcase 初始畫面、Three.js canvas、`models/necklace.draco.glb`、`draco/draco_decoder.wasm` 與 `vendor/mediapipe/face_mesh/*` 路徑沒有 404，且大型資產回應 `Cache-Control: public, max-age=31536000, immutable`。
+- 開啟一組 hash 深連結，例如 `#n=crystal-cone-necklace&c.metal=citrine&c.gem=amethyst`，確認會載入指定款式與逐 target 顏色，且切換款式/換色後 URL 即時更新。
 - 基本操作款式卡片、色票、AR/模型展示切換與 Debug toggle。
 - 相機權限、Face Mesh 真實追蹤、前後鏡頭切換與 iOS Safari 表現仍需人工實機確認。
 

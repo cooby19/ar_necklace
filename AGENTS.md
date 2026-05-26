@@ -15,6 +15,7 @@
 - `@mediapipe/face_mesh` 用於臉部 landmark 偵測。
 - MediaPipe wasm/model 等執行資產已 vendored 到 `public/vendor/mediapipe/face_mesh`，執行時不依賴 CDN。
 - 預設項鍊 runtime 模型位於 `public/models/necklace.draco.glb`，原始 `public/models/necklace.glb` 保留作為 fallback 與重新壓縮來源。設定入口為 `src/config/necklaces.js`。runtime URL 需透過 `src/config/assets.js` 的 `versionedPublicAssetUrl()` 組合，避免 preview、子路徑 hosting 或 CDN cache 造成資產載入錯誤。
+- `src/app/router.js` 是純函式 hash router，支援可分享深連結 `#n=<necklaceId>`、`#c=<colorId>` 與 `#c.<targetId>=<colorId>`；不得 import AppState、AppRuntimeController 或 use-case，也不得引入 router library。
 - 樣式入口為 `src/styles/index.css`，再拆成 reset、tokens、layout、states、responsive 與 `src/styles/components/*`。
 - Runtime release metadata 由 `vite.config.js` 注入，`src/config/release.js` 讀取，build 後會產生 `dist/release.json`。
 - `src/telemetry/RuntimeErrorReporter.js` 提供 optional Sentry-compatible error reporting；不得上傳相機畫面、截圖 Blob/data URL 或 Face Mesh landmarks。
@@ -67,6 +68,7 @@ npm run preview
 - `src/utils/landmarks.js`：Face Mesh landmark index、距離、插值、clamp 與臉部量測邏輯。
 - `src/ui/UiRoot.js`：DOM query、event binding、render helper、focus trap 與 UI 同步的 root。
 - `src/app/AppRuntimeController.js`：UI handler routing layer，保留 `src/main.js` 綁定 surface，將副作用轉發到 use-case。
+- `src/app/router.js`：hash URL state parse/serialize/install，讓款式與逐 target 色票可被分享。
 - `src/app/createAppRuntime.js`：建立 scene、controller、renderer loop、model catalog、calibration、share 與 tracking feedback 等 runtime services。
 - `src/app/use-cases/*`：模式、相機、追蹤、模型、校準、分享、舞台互動與 runtime lifecycle 的 use-case orchestration。
 - `src/app/*.test.js`：Vitest 輕量單元測試，優先保護 AppState session lifecycle、model catalog/color、校準與分享前置檢查等純邏輯。
@@ -127,15 +129,16 @@ npm run preview
 ## 執行流程
 
 1. `src/main.js` 載入 `src/styles/index.css`、安裝 `runtimeErrorReporter`、初始化 `AppState`、`UiRoot`、`CaptureService`、runtime services 與 `AppRuntimeController`，並把 release/error-reporting public metadata 暴露到 `window`。
-2. 啟動時先依 `NECKLACES[0]` 載入預設模型。
+2. `AppRuntimeController.init()` 會先解析 hash 深連結。若 `n` 對應有效款式，先用 `ModelCatalogService.createSelectionPatch()` 做 `url-hydrate` state patch，並保存 pending URL colors，避免初始模型雙載。
 3. `ModelCatalogService` 協調 `NecklaceScene.loadNecklace()` 載入模型，並套用目前款式的預設顏色設定。
-4. `RendererLoop` 啟動 render loop，負責 showcase update、Three.js render 與 debug overlay render。
-5. 使用者點擊「開始相機」後，`CameraSessionUseCase` 將 `AppState.sessionStatus` 切到 `cameraStarting`，再交給 `ArSessionService` 啟動相機與 Face Mesh。
-6. `ArSessionService` 透過 `CameraStream` 要求鏡頭權限，依實際鏡頭設定 `FaceTracker.selfieMode`，再啟動 Face Mesh frame processing。
-7. 偵測結果回到 `TrackingUseCase` 後，先寫入 `RealtimeTrackingStore`，再只在需要時提交 `noFace` / `tracking` 狀態與呼叫 `NecklaceController.updateFromLandmarks()`。
-8. `NecklaceController` 呼叫 `computeFaceMetrics()`，根據下巴位置、臉高、臉寬、roll、yaw 與校準值計算項鍊 transform。
-9. `NecklaceScene` 更新項鍊 group 的 position、scale、rotation 與材質 opacity。若款式設定 `preserveAuthorOrigin: true`，GLB 作者原點會保留為 AR anchor。
-10. `TrackingFeedbackService` 從節流後的 realtime snapshot 組裝追蹤狀態、debug panel 與 FaceQualityAdvisor 提示；未偵測到臉或關閉顯示項鍊時，項鍊會平滑淡出。
+4. 模型載入完成後，controller 才根據實際 `getColorableTargets()` 把 `c.<targetId>` 或 fallback `c` 套用到可換色材質 target。
+5. `RendererLoop` 啟動 render loop，負責 showcase update、Three.js render 與 debug overlay render。
+6. 使用者點擊「開始相機」後，`CameraSessionUseCase` 將 `AppState.sessionStatus` 切到 `cameraStarting`，再交給 `ArSessionService` 啟動相機與 Face Mesh。
+7. `ArSessionService` 透過 `CameraStream` 要求鏡頭權限，依實際鏡頭設定 `FaceTracker.selfieMode`，再啟動 Face Mesh frame processing。
+8. 偵測結果回到 `TrackingUseCase` 後，先寫入 `RealtimeTrackingStore`，再只在需要時提交 `noFace` / `tracking` 狀態與呼叫 `NecklaceController.updateFromLandmarks()`。
+9. `NecklaceController` 呼叫 `computeFaceMetrics()`，根據下巴位置、臉高、臉寬、roll、yaw 與校準值計算項鍊 transform。
+10. `NecklaceScene` 更新項鍊 group 的 position、scale、rotation 與材質 opacity。若款式設定 `preserveAuthorOrigin: true`，GLB 作者原點會保留為 AR anchor。
+11. `TrackingFeedbackService` 從節流後的 realtime snapshot 組裝追蹤狀態、debug panel 與 FaceQualityAdvisor 提示；未偵測到臉或關閉顯示項鍊時，項鍊會平滑淡出。
 
 ## AR Session 狀態
 
@@ -174,6 +177,17 @@ showcase -> arIdle -> cameraStarting -> noFace <-> tracking -> capturing -> shar
 `NecklaceScene` 載入模型後會收集符合上述名稱的材質，並透過 `applyColor(target, color)` 改變 `material.color`。套色時只改顏色，不應覆蓋或移除原本的 `normalMap`、`roughnessMap`、`metalnessMap`、`aoMap`、`opacity` 等材質設定。
 
 如果 GLB 沒有找到任何可換色材質，控制欄會顯示溫和提示並停用色票，但相機、Face Mesh、追蹤、debug overlay 與模型試戴仍應正常運作。新增或替換模型時，若希望啟用換色，請在建模工具中替對應 material 命名加入上述 `Colorable_*` 關鍵字後重新匯出 GLB。
+
+## Hash 深連結與 URL 同步
+
+- URL schema：`#n=<necklaceId>` 必填，`#c=<colorId>` 是 fallback，`#c.<targetId>=<colorId>` 是逐 target 指定且優先於 fallback。
+- `parseUrlState()` 需支援有 `#` 或無 `#`，忽略未知 key 與空值，並用 `URLSearchParams` 處理 URI decode。
+- `serializeUrlState()` 回傳不含 `#` 的字串；不要序列化 null、空字串或空物件；順序固定為 `n`、`c`、字母序 `c.<target>`。
+- 初始 hydration 不得呼叫 `selectNecklace()`，避免預設款與目標款雙載；應以 `url-hydrate` patch 更新 state，再由既有初始 `loadSelectedNecklace()` 載入目前 state 的款式。
+- `getColorableTargets()` 在模型載入前通常為空，因此逐 target 顏色要保存在 `_pendingUrlState`，待模型載入完成後再依實際 target 呼叫 `selectColor(colorId, targetId)`。
+- `src/main.js` 的 `appState.subscribe` 必須永遠先執行 `uiRoot.syncFromState(snapshot, meta)`。若 `appRuntimeController.isApplyingUrlState()` 為 true，只跳過 URL 寫回，不跳過 UI sync。
+- state 到 URL 的同步只針對 `selectedNecklace` 或 `selectedColorIdsByTarget`，使用 `history.replaceState`，不要用 `pushState`。
+- 修改 hash router、款式 id、palette id 或 target id 時，需補/更新 `src/app/router.test.js` 與 `src/app/AppRuntimeController.test.js`，並手動驗證一組深連結，例如 `#n=crystal-cone-necklace&c.metal=citrine&c.gem=amethyst`。
 
 ## Landmark 與追蹤假設
 
@@ -266,7 +280,7 @@ showcase -> arIdle -> cameraStarting -> noFace <-> tracking -> capturing -> shar
 - `npm run build` 會產出 `dist/`；Cloudflare Pages 部署應使用 build 後的 `dist`，並讓 `PRODUCTION_URL` 指向目前正式站。
 - 靜態資產 URL 應透過 `import.meta.env.BASE_URL` 或相容方式組合，避免硬編碼根目錄造成模型或 MediaPipe 資產在 preview、子路徑 hosting 或 CDN 環境載入失敗。
 - 部署 Cloudflare Pages production 前先確認 `npm run lint`、`npm run typecheck`、`npm test`、`npm run build`、`npm run budget` 與 `npm run smoke` 成功。
-- 部署後需對 Cloudflare Pages production URL 做冒煙測試：頁面載入無 console error、bundle 指向最新檔、showcase/Three.js canvas 正常、`models/necklace.draco.glb`、`draco/draco_decoder.wasm` 與 `vendor/mediapipe/face_mesh/*` 沒有 404，款式卡片/色票/debug toggle 基本互動可用。
+- 部署後需對 Cloudflare Pages production URL 做冒煙測試：頁面載入無 console error、bundle 指向最新檔、showcase/Three.js canvas 正常、`models/necklace.draco.glb`、`draco/draco_decoder.wasm` 與 `vendor/mediapipe/face_mesh/*` 沒有 404，款式卡片/色票/debug toggle 基本互動可用，hash 深連結可重現指定款式與逐 target 顏色。
 - 若仍保留 `https://cooby19.github.io/ar_necklace/`，應定位為 demo/fallback 或舊版，不需要每次 Cloudflare Pages production release 都手動更新。
 - 自動化環境通常無法完整驗證相機權限、真實 Face Mesh 追蹤、前後鏡頭切換、iOS Safari 權限與效能；這些需人工實機確認。
 
@@ -276,7 +290,7 @@ showcase -> arIdle -> cameraStarting -> noFace <-> tracking -> capturing -> shar
 - 使用 TypeScript 做漸進式型別檢查，命令為 `npm run typecheck`。
 - 使用 ESLint、Playwright visual、Playwright + axe a11y、bundle budget、synthetic smoke 與 Lighthouse 作為不需真實相機權限的品質閘門。
 - 優先測純邏輯與低 DOM 依賴，避免在單元測試中啟動真實 camera、MediaPipe 或 WebGL。
-- 目前測試重點包含 `AppState` session transition 與 stale data cleanup、`RealtimeTrackingStore` live data、`RendererLoop` RAF/background pause、`TrackingUseCase` realtime 寫入與 session transition、`ModeUseCase` 模式/顯示切換、`RuntimeLifecycleUseCase` 背景暫停與預載入、`StageInteractionUseCase` 舞台指標事件、`ModelCatalogService` default color/target resolution/matched target labels、`CalibrationService` normalize/load/save/reset hint 與 localStorage 可用性、`ShareWorkflow` capture blocker 判斷，以及 `NecklaceScene`/scene 子服務的 GLB cache LRU、resource disposal、occluder、材質自訂、placement 與 showcase presenter。
+- 目前測試重點包含 `AppState` session transition 與 stale data cleanup、`router` hash parse/serialize/install、`AppRuntimeController` URL hydration 與 URL sync suppression、`RealtimeTrackingStore` live data、`RendererLoop` RAF/background pause、`TrackingUseCase` realtime 寫入與 session transition、`ModeUseCase` 模式/顯示切換、`RuntimeLifecycleUseCase` 背景暫停與預載入、`StageInteractionUseCase` 舞台指標事件、`ModelCatalogService` default color/target resolution/matched target labels、`CalibrationService` normalize/load/save/reset hint 與 localStorage 可用性、`ShareWorkflow` capture blocker 判斷，以及 `NecklaceScene`/scene 子服務的 GLB cache LRU、resource disposal、occluder、材質自訂、placement 與 showcase presenter。
 - 新增或調整 runtime use-case 周邊 service 時，優先補對應 service/use-case 的單元測試，再視風險補瀏覽器或人工驗證。
 
 ## 已知限制
@@ -297,6 +311,7 @@ showcase -> arIdle -> cameraStarting -> noFace <-> tracking -> capturing -> shar
 - 優先保持目前的純前端架構，不要引入後端，除非需求明確要求。
 - `AppRuntimeController` 應維持輕量 routing layer；新增功能時優先放入明確的 `src/app/use-cases/*`、`src/app/*Service.js` 或 `src/app/*Workflow.js`，再由 controller 轉發 UI intent。
 - 不要把 camera/session lifecycle、模型 catalog/color 邏輯、render loop、校準流程、分享流程或 telemetry/debug 資料組裝塞回 `AppRuntimeController`。
+- 不要把 router 邏輯放進 `AppState.js`；`src/app/router.js` 應保持純函式與 DOM `hashchange` 綁定，不持有 app state 或 suppression flag。
 - 調整 AR session lifecycle 時，優先更新 `AppState.AR_SESSION_STATES`、合法 transition 與 stale data cleanup 規則，不要只用零散 patch。
 - 修改追蹤效果時，優先從 `src/config/tuning.js` 與 `src/config/necklaces.js` 調整，再考慮改核心演算法。
 - 新增項鍊款式時，將 GLB 放入 `public/models/`，再於 `src/config/necklaces.js` 新增一筆設定。

@@ -47,6 +47,7 @@ npm run lighthouse
 - 文檔同步：README、AGENTS、ARCHITECTURE、CONTRIBUTING、ADR 與實際檔名/流程要一致。
 - CSP 影響：新增外部網域、worker、blob/data URL、WASM 或 runtime eval 需求時，同步更新 `public/_headers`、smoke scripts 與 ADR。
 - Cloudflare Pages：PR 需要貼 preview link；部署相關 PR 需確認 production/staging URL、release metadata、cache header 與 smoke 結果。
+- 深連結：改 `src/app/router.js`、款式 catalog、換色 state 或 URL sync 時，需測 `#n=<necklaceId>`、`#c=<colorId>`、`#c.<targetId>=<colorId>`、無效值忽略，以及換色後不累積 browser history。
 - 相機與 WebGL：改相機、Face Mesh、座標轉換、GLB 載入或 renderer lifecycle 時，補單元測試；合併前安排瀏覽器或實機驗證。
 - 隱私：不得上傳相機畫面、截圖 Blob/data URL 或 Face Mesh landmarks 到 telemetry。
 

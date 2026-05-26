@@ -7,6 +7,7 @@
 ```mermaid
 flowchart TB
   Presentation["presentation\nindex.html、src/ui/UiRoot.js、CSS components"]
+  Router["url state\nsrc/app/router.js"]
   Controller["controller\nsrc/app/AppRuntimeController.js"]
   UseCase["use-case\nsrc/app/use-cases/*"]
   State["state\nAppState、RealtimeTrackingStore"]
@@ -14,11 +15,13 @@ flowchart TB
   Assets["public assets\nGLB、Draco、MediaPipe vendor files"]
 
   Presentation -->|"UI intent"| Controller
+  Router -->|"hash parse / hashchange"| Controller
   Controller -->|"route only"| UseCase
   UseCase -->|"durable change"| State
   UseCase -->|"side effect"| Infrastructure
   Infrastructure --> Assets
   State -->|"snapshot sync"| Presentation
+  State -->|"selected style sync"| Router
   Infrastructure -->|"render / tracking sample"| State
 ```
 
@@ -30,6 +33,7 @@ flowchart TB
 sequenceDiagram
   actor User
   participant UI as UiRoot
+  participant Hash as router.js
   participant Router as AppRuntimeController
   participant UseCase as UseCase
   participant AppState
@@ -42,6 +46,7 @@ sequenceDiagram
   Router->>UseCase: 轉發 intent
   UseCase->>AppState: set 或 transitionSession
   AppState-->>UI: snapshot + meta
+  AppState-->>Hash: 款式/顏色 change 後 serialize hash
   UseCase->>Infra: 啟動相機、載入模型、套色、截圖
   Infra-->>Realtime: 寫入每幀 landmarks / stats
   Realtime-->>UseCase: 節流後組裝追蹤回饋
@@ -55,7 +60,9 @@ sequenceDiagram
 
 Presentation 層負責 DOM query、event binding、狀態文字、表單控制、底部面板與可及性狀態。`UiRoot` 可以知道按鈕、色票、canvas 與面板，但不應該知道相機如何恢復、Face Mesh 如何初始化、GLB 怎麼釋放，也不應該直接修改 `AppState`。
 
-Controller 層目前只有 `AppRuntimeController`。它的工作是保留對外 handler surface，讓 `src/main.js` 可以把 UI callback 接上來，再把事件轉發到對應 use-case。controller 不應直接執行相機、render、debug overlay、模型載入、校準儲存或狀態轉換副作用；這些副作用屬於 use-case。這個限制讓 controller 可以保持很薄，也降低新貢獻者因歷史命名而 import 到錯誤模組的風險。
+URL state 層目前只有 `src/app/router.js`。它是無 class、無外部依賴的純函式模組，負責 `#n=<necklaceId>`、`#c=<colorId>` 與 `#c.<targetId>=<colorId>` 的 parse/serialize，以及安裝 `hashchange` listener。router 不 import `AppState`、`AppRuntimeController` 或任何 use-case，也不持有 suppression flag；URL 套用中的回授抑制由 controller 暴露 `isApplyingUrlState()` 給 `src/main.js` 判斷。
+
+Controller 層目前只有 `AppRuntimeController`。它的工作是保留對外 handler surface，讓 `src/main.js` 可以把 UI callback 接上來，再把事件轉發到對應 use-case。controller 不應直接執行相機、render、debug overlay、模型載入、校準儲存或狀態轉換副作用；這些副作用屬於 use-case。URL hydration 是例外的協調責任：controller 會在 UI populate 前解析 hash、用 `ModelCatalogService.createSelectionPatch()` 更新 durable state、避免初始模型雙載，並在 GLB 載入完成後才依實際可換色 target 套用 pending 顏色。這個限制讓 controller 可以保持很薄，也降低新貢獻者因歷史命名而 import 到錯誤模組的風險。
 
 Use-case 層負責應用流程：`CameraSessionUseCase` 管理啟動、停止、切換鏡頭與 Face Mesh 載入錯誤；`TrackingUseCase` 接 Face Mesh 結果並更新項鍊 transform 與追蹤回饋；`ModelUseCase` 管理款式選擇、GLB 載入與套色；`CalibrationUseCase` 管理拖曳與調參；`ShareUseCase` 管理截圖、下載與分享；`ModeUseCase` 管理模式、debug 與項鍊顯示；`StageInteractionUseCase` 區分 showcase 拖曳與 AR 校準拖曳；`RuntimeLifecycleUseCase` 管理初始化、背景暫停、恢復與預載入。Use-case 可以協調多個 service，但不應該做 DOM query，也不應該碰 Three.js geometry/material disposal 細節。
 
