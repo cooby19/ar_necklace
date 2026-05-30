@@ -137,7 +137,7 @@ ar-necklace-dist-${GITHUB_SHA}
 
 1. Resolve target：依 event 決定 `preview` / `staging` / `production`。
 2. Secret preflight：沒有 secrets 時 deploy jobs 會跳過，不假裝部署成功。
-3. Build deploy artifact：執行 lint、typecheck、unit、build、budget、synthetic smoke，並上傳 `dist/` artifact；production build 以 `PRODUCTION_URL` secret 設定 `VITE_SITE_URL`，staging build 以 `STAGING_URL` secret 設定 `VITE_SITE_URL`，preview build 若無穩定可預知 URL 則保留 Vite fallback。
+3. Build deploy artifact：執行 lint、typecheck、unit、build、budget、synthetic smoke，並上傳 `dist/` artifact；production build 以 `PRODUCTION_URL` secret 設定 `VITE_SITE_URL`，未設定時 fallback 到 Cloudflare Pages project URL；staging build 以 `STAGING_URL` secret 設定 `VITE_SITE_URL`，未設定時 fallback 到 `staging` branch URL；preview build 若無穩定可預知 URL 則保留 Vite fallback。
 4. PR preview：用 Cloudflare Pages branch deploy `pr-<number>`。
 5. Staging：部署到 Cloudflare Pages `staging` branch，接著跑 smoke。
 6. Production：push 到 `master` / `main`、release event 或手動 target=`production` 時，只有 staging smoke 成功後才把同一份 artifact 部署到 Cloudflare Pages project 的 `production_branch`。
@@ -160,7 +160,7 @@ STAGING_URL
 PRODUCTION_URL
 ```
 
-`STAGING_URL`、`PRODUCTION_URL` 用於 build-time `VITE_SITE_URL` 注入，也用於自訂網域或 Wrangler output 無法解析 Pages URL 時的 smoke fallback；不應在程式碼中硬編碼正式站 URL。若 production target 未設定 `PRODUCTION_URL`，artifact 會保留 `vite.config.js` 的本機開發 fallback `http://localhost:5173/`，workflow 會輸出 notice 提醒。
+`STAGING_URL`、`PRODUCTION_URL` 用於 build-time `VITE_SITE_URL` 注入，也用於自訂網域或 Wrangler output 無法解析 Pages URL 時的 smoke fallback；不應在程式碼中硬編碼正式站 URL。若 production target 未設定 `PRODUCTION_URL`，artifact 會使用 `https://${CLOUDFLARE_PAGES_PROJECT}.pages.dev`；若 staging target 未設定 `STAGING_URL`，artifact 會使用 `https://staging.${CLOUDFLARE_PAGES_PROJECT}.pages.dev`。只有 Cloudflare Pages project secret 也缺漏時，才會保留 `vite.config.js` 的本機開發 fallback `http://localhost:5173/` 並輸出 notice。
 
 建議設定的 GitHub Environments：
 
@@ -312,7 +312,7 @@ CDN 策略：
 
 正式 Cloudflare Pages production 發布前需完成：
 
-- 確認 GitHub Actions production build 可讀取 `PRODUCTION_URL` secret；若未設定，build-time `VITE_SITE_URL` 會 fallback 到 `http://localhost:5173/`。
+- 確認 GitHub Actions production build 可讀取 `PRODUCTION_URL` secret；若未設定，build-time `VITE_SITE_URL` 會 fallback 到 Cloudflare Pages project 的穩定 `pages.dev` URL。
 - 將暫用方形 logo 換成正式品牌素材；社群分享建議另備 1200x630 preview image，並同步更新 `og:image:width` / `og:image:height` / alt。
 - 用 production URL 檢查 `site.webmanifest`、`brand/lunera-logo.png`、`icons/lunera-icon-192.png`、`icons/lunera-icon-512.png`、`icons/apple-touch-icon.png` 沒有 404。
 - 用社群分享偵錯工具或瀏覽器檢查 production HTML 中的 title、description、OG、Twitter Card 與 JSON-LD 都讀得到最新內容。
