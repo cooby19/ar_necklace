@@ -8,13 +8,15 @@ const rootDir = fileURLToPath(new URL('.', import.meta.url));
 const packageJson = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'));
 const viteBasePath = normalizeBasePath(process.env.VITE_BASE_PATH ?? '/');
 const releaseMetadata = createReleaseMetadata();
+const siteUrl = resolveSiteUrl(process.env.VITE_SITE_URL, viteBasePath);
 
 export default defineConfig({
   base: viteBasePath,
   define: {
     __APP_RELEASE_METADATA__: JSON.stringify(releaseMetadata),
+    __SITE_URL__: JSON.stringify(siteUrl),
   },
-  plugins: [releaseMetadataPlugin(releaseMetadata)],
+  plugins: [releaseMetadataPlugin(releaseMetadata), htmlSiteUrlPlugin(siteUrl)],
   resolve: {
     alias: [
       {
@@ -52,6 +54,12 @@ function normalizeBasePath(value) {
   return withLeadingSlash.endsWith('/') ? withLeadingSlash : `${withLeadingSlash}/`;
 }
 
+function resolveSiteUrl(rawSiteUrl, basePath) {
+  const origin = String(rawSiteUrl ?? '').trim().replace(/\/+$/, '') || 'http://localhost:5173';
+  const base = basePath === '/' || basePath === './' || basePath === '.' ? '/' : basePath;
+  return `${origin}${base}`;
+}
+
 function createReleaseMetadata() {
   return {
     version: process.env.npm_package_version ?? packageJson.version,
@@ -80,6 +88,18 @@ function releaseMetadataPlugin(metadata) {
       const outputDir = path.join(rootDir, 'dist');
       mkdirSync(outputDir, { recursive: true });
       writeFileSync(path.join(outputDir, 'release.json'), `${JSON.stringify(metadata, null, 2)}\n`);
+    },
+  };
+}
+
+function htmlSiteUrlPlugin(siteUrl) {
+  return {
+    name: 'html-site-url',
+    transformIndexHtml: {
+      order: 'pre',
+      handler(html) {
+        return html.replaceAll('%SITE_URL%', siteUrl);
+      },
     },
   };
 }

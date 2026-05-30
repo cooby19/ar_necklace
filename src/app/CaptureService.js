@@ -1,5 +1,7 @@
 // @ts-check
 
+import { SITE_URL } from '../config/site.js';
+
 const SHARE_IMAGE_SIZE = 1080;
 const SHARE_FILE_NAME = 'soft-jewelry-try-on.png';
 
@@ -90,6 +92,7 @@ export class CaptureService {
       files: [file],
       title: '我的項鍊試戴',
       text: 'Soft Jewelry Studio AR Necklace Try-On',
+      ...(SITE_URL ? { url: SITE_URL } : {}),
     };
 
     if (!navigator.canShare?.(sharePayload)) {

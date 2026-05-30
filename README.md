@@ -281,14 +281,14 @@ CI 的 npm audit 先以 production dependency 為範圍執行 `npm audit --omit=
 
 目前已補上商業化最低門檻的 SEO / OG / Twitter Card / Web App Manifest / JSON-LD 基礎：
 
-- `index.html`：包含繁體中文 title、description、robots、canonical、theme-color、mobile web app tags、Open Graph、Twitter Card 與 JSON-LD `@graph`。
+- `index.html`：包含繁體中文 title、description、robots、canonical、theme-color、mobile web app tags、Open Graph、Twitter Card 與 JSON-LD `@graph`；canonical、`og:url` 與 JSON-LD URL 由 build-time `VITE_SITE_URL` 注入。
 - `public/site.webmanifest`：定義 `name`、`short_name`、description、start URL、scope、display、theme/background color、`zh-Hant` 語系、categories 與 icon 清單。
 - `public/brand/lunera-logo.png`：暫用的 LUNERA logo，供 OG/Twitter image 與 JSON-LD logo/image 使用。
 - `public/icons/*`：由暫用 logo 產生的 192、512 與 Apple touch icon，避免 manifest 或 iOS install flow 引用不存在的檔案。
 
 正式上線前仍需確認：
 
-- 將 `index.html` 內 TODO 標註的 canonical、`og:url` 與 JSON-LD `url` 換成 Cloudflare Pages production URL 或自訂網域的絕對 URL。
+- GitHub Actions build 環境需提供 `VITE_SITE_URL`；目前 deploy workflow 會在 production build 使用 `PRODUCTION_URL` secret、staging build 使用 `STAGING_URL` secret，未設定時會保留本機開發 fallback。
 - 將暫用的方形 `brand/lunera-logo.png` 替換或補上正式 1200x630 社群分享預覽圖，並同步更新 `og:image` / `twitter:image` 與尺寸。
 - 確認最終品牌名稱是否使用 `LUNERA`，或改回 `Soft Jewelry Studio` / 其他正式名稱。
 
@@ -305,7 +305,7 @@ CI 的 npm audit 先以 production dependency 為範圍執行 `npm audit --omit=
 - `.github/workflows/deploy.yml`：Cloudflare Pages PR preview、`staging` branch preview，以及 `master` / `main` push 後的 production deploy。沒有 Cloudflare secrets 時部署 job 會跳過。
 - `.github/workflows/rollback.yml`：Cloudflare Pages rollback workflow，rollback 後會以 `npm run smoke:release` 驗證版本、header 與資產。
 
-若使用此 repo 的 GitHub Actions CD workflow 維護 Cloudflare Pages，需在 GitHub repository secrets 設定 `CLOUDFLARE_API_TOKEN`、`CLOUDFLARE_ACCOUNT_ID`、`CLOUDFLARE_PAGES_PROJECT`；`STAGING_URL`、`PRODUCTION_URL` 可選，用於自訂網域 smoke fallback。建議替 `production` environment 開啟 required reviewers。正式線上入口以 Cloudflare Pages production URL 或自訂網域為準。
+若使用此 repo 的 GitHub Actions CD workflow 維護 Cloudflare Pages，需在 GitHub repository secrets 設定 `CLOUDFLARE_API_TOKEN`、`CLOUDFLARE_ACCOUNT_ID`、`CLOUDFLARE_PAGES_PROJECT`；`STAGING_URL`、`PRODUCTION_URL` 可選，但建議設定，因為此 workflow 是 GitHub Actions 先 build 再 Direct Upload prebuilt `dist/`，canonical、OG、JSON-LD 與 Web Share URL 需要在 GitHub Actions build 階段透過 `VITE_SITE_URL` 注入。Cloudflare Pages 專案端 env 只有改成 Cloudflare 端 build 時才會影響 artifact。建議替 `production` environment 開啟 required reviewers。正式線上入口以 Cloudflare Pages production URL 或自訂網域為準。
 
 線上部署後建議對 Cloudflare Pages production URL 做冒煙測試：
 
