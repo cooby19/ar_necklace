@@ -1,7 +1,7 @@
 import './styles/index.css';
 import { NECKLACES } from './config/necklaces.js';
 import { RELEASE_METADATA } from './config/release.js';
-import { AppState } from './app/AppState.js';
+import { APP_ROUTES, AppState } from './app/AppState.js';
 import { CaptureService } from './app/CaptureService.js';
 import { serializeUrlState } from './app/router.js';
 import { runtimeErrorReporter } from './telemetry/RuntimeErrorReporter.js';
@@ -45,11 +45,14 @@ async function bootstrap() {
       if (appRuntimeController.isApplyingUrlState()) return;
       if (!shouldSyncUrlState(meta.changes)) return;
 
-      const hash = serializeUrlState({
-        necklaceId: snapshot.selectedNecklace.id,
-        colorByTarget: snapshot.selectedColorIdsByTarget,
-        colorFallback: null,
-      });
+      const hash =
+        snapshot.route === APP_ROUTES.EXPERIENCE
+          ? serializeUrlState({
+              necklaceId: snapshot.selectedNecklace.id,
+              colorByTarget: snapshot.selectedColorIdsByTarget,
+              colorFallback: null,
+            })
+          : '';
       const nextUrl = window.location.pathname + window.location.search + (hash ? `#${hash}` : '');
 
       if (nextUrl !== window.location.pathname + window.location.search + window.location.hash) {
@@ -71,6 +74,8 @@ async function bootstrap() {
       onDebugToggle: (isEnabled) => appRuntimeController.handleDebugToggle(isEnabled),
       onNecklaceToggle: (isVisible) => appRuntimeController.handleNecklaceToggle(isVisible),
       onNecklaceSelect: (necklaceId) => appRuntimeController.selectNecklace(necklaceId),
+      onGallerySelect: (necklaceId) => appRuntimeController.enterExperience(necklaceId),
+      onBackToGallery: () => appRuntimeController.showGallery(),
       onColorSelect: (colorId, targetId) => appRuntimeController.selectColor(colorId, targetId),
       onTuningInput: () => appRuntimeController.updateTuningFromControls(),
       onSaveCalibration: () => appRuntimeController.saveCalibration(),
@@ -101,5 +106,9 @@ function isLighthouseAuditRequest() {
 }
 
 function shouldSyncUrlState(changes) {
-  return changes.includes('selectedNecklace') || changes.includes('selectedColorIdsByTarget');
+  return (
+    changes.includes('selectedNecklace') ||
+    changes.includes('selectedColorIdsByTarget') ||
+    changes.includes('route')
+  );
 }

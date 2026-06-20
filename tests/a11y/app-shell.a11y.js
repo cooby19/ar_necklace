@@ -11,9 +11,11 @@ const SAMPLE_CAPTURE = `data:image/svg+xml,${encodeURIComponent(`
 `)}`;
 
 async function openApp(page) {
-  await page.goto('/');
+  // Deep link straight into the experience; the bare path now lands on the gallery.
+  await page.goto('/#n=default-necklace');
   await expect(page.locator('#app')).toBeVisible();
-  await expect(page.locator('.stage')).toBeVisible();
+  // Wait for the JS to resolve the deep link into the experience (stage starts hidden).
+  await page.locator('.stage').waitFor({ state: 'visible', timeout: 30000 });
   await page.locator('.necklace-card').first().waitFor({ state: 'attached' });
   await page.evaluate(() => document.fonts?.ready ?? Promise.resolve());
 }
@@ -36,6 +38,14 @@ function formatViolations(violations) {
     })
     .join('\n\n');
 }
+
+test('gallery initial screen has no critical accessibility violations', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('.gallery-card').first().waitFor({ state: 'visible', timeout: 30000 });
+  await page.evaluate(() => document.fonts?.ready ?? Promise.resolve());
+
+  await expectNoA11yViolations(page);
+});
 
 test('showcase initial screen has no critical accessibility violations', async ({ page }) => {
   await openApp(page);

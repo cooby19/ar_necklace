@@ -102,7 +102,16 @@
     </script>
   </head>
   <body>
-    <main id="app" class="app-shell">
+    <main id="app" class="app-shell is-gallery-route">
+      <section id="galleryScreen" class="gallery-screen" aria-label="款式選擇" hidden>
+        <header class="gallery-screen__header">
+          <p class="eyebrow">Soft Jewelry Studio</p>
+          <h1>選擇款式</h1>
+          <p class="gallery-screen__subtitle">挑選一款項鍊，進入 3D 預覽與 AR 試戴。</p>
+        </header>
+        <div id="galleryCards" class="gallery-grid"></div>
+      </section>
+
       <div class="experience-column">
         <section class="stage" aria-label="AR necklace preview">
           <div class="stage-placeholder" aria-hidden="true">
@@ -153,9 +162,17 @@
           </aside>
 
           <div class="stage-topbar">
-            <div class="stage-brand">
-              <span class="studio-mark">Soft Jewelry Studio</span>
-              <span class="live-pill">3D Model</span>
+            <div class="stage-topbar__lead">
+              <button id="backToGalleryButton" class="back-to-gallery" type="button" aria-label="返回款式選擇">
+                <svg aria-hidden="true" viewBox="0 0 24 24">
+                  <path d="m14 6-6 6 6 6" />
+                </svg>
+                <span>款式</span>
+              </button>
+              <div class="stage-brand">
+                <span class="studio-mark">Soft Jewelry Studio</span>
+                <span class="live-pill">3D Model</span>
+              </div>
             </div>
 
             <div class="mode-tabs stage-mode-tabs" role="group" aria-label="預覽模式">

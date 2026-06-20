@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   APP_MODES,
+  APP_ROUTES,
   AR_SESSION_STATES,
   AppState,
   canTransitionSession,
@@ -8,6 +9,13 @@ import {
   createSessionPatch,
 } from './AppState.js';
 import { NECKLACES } from '../config/necklaces.js';
+
+describe('AppState route', () => {
+  it('starts on the gallery route', () => {
+    const appState = new AppState({ necklaces: NECKLACES });
+    expect(appState.get('route')).toBe(APP_ROUTES.GALLERY);
+  });
+});
 
 describe('AppState AR session lifecycle', () => {
   it('defines expected legal and illegal session transitions', () => {

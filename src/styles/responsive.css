@@ -70,6 +70,10 @@
     gap: 6px;
   }
 
+  .back-to-gallery {
+    min-height: 38px;
+  }
+
   .stage-mode-tabs {
     width: min(238px, 62vw);
   }

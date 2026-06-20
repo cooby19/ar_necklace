@@ -4,10 +4,12 @@ import { CalibrationUseCase } from './use-cases/CalibrationUseCase.js';
 import { CameraSessionUseCase } from './use-cases/CameraSessionUseCase.js';
 import { ModeUseCase } from './use-cases/ModeUseCase.js';
 import { ModelUseCase } from './use-cases/ModelUseCase.js';
+import { RouteUseCase } from './use-cases/RouteUseCase.js';
 import { RuntimeLifecycleUseCase } from './use-cases/RuntimeLifecycleUseCase.js';
 import { ShareUseCase } from './use-cases/ShareUseCase.js';
 import { StageInteractionUseCase } from './use-cases/StageInteractionUseCase.js';
 import { TrackingUseCase } from './use-cases/TrackingUseCase.js';
+import { APP_ROUTES } from './AppState.js';
 import { installRouter, parseUrlState } from './router.js';
 
 /** @typedef {import('../types/domain').AppMode} AppMode */
@@ -44,6 +46,7 @@ import { installRouter, parseUrlState } from './router.js';
  *     stopCameraButton: HTMLButtonElement,
  *   },
  *   populateNecklaceSelect: (selectedNecklaceId: string) => void,
+ *   populateGallery: () => void,
  *   populateColorSwatches: (model: ColorSwatchesUiModel) => void,
  *   syncFromState: (state: AppStateSnapshot, meta?: Partial<AppStateMeta>) => void,
  *   canSelectControlPanel: (panelName: string) => boolean,
@@ -161,6 +164,13 @@ export class AppRuntimeController {
       syncModeEffects: () => this.syncModeEffects(),
       showError: (message) => this.showError(message),
     });
+    this.routeUseCase = new RouteUseCase({
+      appState: this.appState,
+      modelCatalog: this.modelCatalog,
+      modelUseCase: this.modelUseCase,
+      modeUseCase: this.modeUseCase,
+      cameraSessionUseCase: this.cameraSessionUseCase,
+    });
     this.stageInteractionUseCase = new StageInteractionUseCase({
       appState: this.appState,
       ui: this.ui,
@@ -191,6 +201,7 @@ export class AppRuntimeController {
 
     const state = this.getState();
     this.ui.populateNecklaceSelect(state.selectedNecklace.id);
+    this.ui.populateGallery();
     this.ui.populateColorSwatches({
       necklace: state.selectedNecklace,
       selectedColorIdsByTarget: state.selectedColorIdsByTarget,
@@ -230,10 +241,15 @@ export class AppRuntimeController {
    * @returns {Promise<void>}
    */
   async applyUrlState(urlState) {
-    if (!urlState.necklaceId) return;
+    const necklace = urlState.necklaceId ? this.modelCatalog.getById(urlState.necklaceId) : null;
 
-    const necklace = this.modelCatalog.getById(urlState.necklaceId);
-    if (!necklace) return;
+    if (!necklace) {
+      // Empty or unknown hash returns to the gallery (e.g. browser Back from a deep link).
+      if (this.appState.get('route') !== APP_ROUTES.GALLERY) {
+        this.appState.set({ route: APP_ROUTES.GALLERY }, 'route-gallery');
+      }
+      return;
+    }
 
     const previousSuppression = this._suppressUrlSync;
     this._suppressUrlSync = true;
@@ -247,6 +263,12 @@ export class AppRuntimeController {
         this.controller.reset();
         this.applyCalibrationForSelectedNecklace();
         await this.loadSelectedNecklace();
+      }
+
+      // Set the route independently of the necklace check so a deep link to the
+      // already-selected style (e.g. the default) still leaves the gallery.
+      if (this.appState.get('route') !== APP_ROUTES.EXPERIENCE) {
+        this.appState.set({ route: APP_ROUTES.EXPERIENCE }, 'route-experience');
       }
 
       this.applyPendingUrlColors();
@@ -300,7 +322,10 @@ export class AppRuntimeController {
     this._suppressUrlSync = true;
 
     try {
-      this.appState.set(createUrlHydrationPatch(this.modelCatalog, necklace, urlState), 'url-hydrate');
+      this.appState.set(
+        { ...createUrlHydrationPatch(this.modelCatalog, necklace, urlState), route: APP_ROUTES.EXPERIENCE },
+        'url-hydrate',
+      );
       this._pendingUrlState = urlState;
     } finally {
       this._suppressUrlSync = previousSuppression;
@@ -313,6 +338,19 @@ export class AppRuntimeController {
    */
   selectMode(mode) {
     this.modeUseCase.selectMode(mode);
+  }
+
+  /**
+   * @param {string | null | undefined} necklaceId
+   * @returns {void}
+   */
+  enterExperience(necklaceId) {
+    this.routeUseCase.enterExperience(necklaceId);
+  }
+
+  /** @returns {void} */
+  showGallery() {
+    this.routeUseCase.showGallery();
   }
 
   /**

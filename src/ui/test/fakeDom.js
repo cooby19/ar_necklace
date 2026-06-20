@@ -1,5 +1,5 @@
 import { vi } from 'vitest';
-import { APP_MODES, AR_SESSION_STATES, CAMERA_FACING_MODES } from '../../app/AppState.js';
+import { APP_MODES, APP_ROUTES, AR_SESSION_STATES, CAMERA_FACING_MODES } from '../../app/AppState.js';
 import { NECKLACES } from '../../config/necklaces.js';
 
 export class FakeClassList {
@@ -251,6 +251,9 @@ export const REQUIRED_SELECTORS = [
   '#debugToggle',
   '#necklaceCards',
   '#necklaceSelect',
+  '#galleryScreen',
+  '#galleryCards',
+  '#backToGalleryButton',
   '#colorSwatches',
   '#colorHint',
   '#colorMeaning',
@@ -355,6 +358,7 @@ export function createChildElement(parent, tagName, { dataset = {}, attributes =
 export function createState(overrides = {}) {
   return {
     mode: APP_MODES.SHOWCASE,
+    route: APP_ROUTES.EXPERIENCE,
     controlsCollapsed: true,
     activePanel: 'styles',
     modelLoaded: true,

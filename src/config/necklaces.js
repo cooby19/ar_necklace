@@ -152,6 +152,7 @@ export const NECKLACES = [
     label: '晶錐墜鍊',
     description: '幾何水晶墜飾款',
     url: versionedPublicAssetUrl('models/necklace_2.draco.glb'),
+    thumbnailUrl: versionedPublicAssetUrl('thumbnails/crystal-cone-necklace.svg'),
     preserveAuthorOrigin: true,
     occluderParts: CRYSTAL_CONE_OCCLUDER_PARTS,
     colorCustomization: CRYSTAL_CONE_COLOR_CUSTOMIZATION,
