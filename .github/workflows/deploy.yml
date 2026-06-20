@@ -148,6 +148,32 @@ jobs:
         id: release_meta
         run: echo "build_time=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_OUTPUT"
 
+      - name: Resolve build-time site URL
+        env:
+          DEPLOY_ENVIRONMENT: ${{ needs.resolve.outputs.target }}
+          PRODUCTION_URL: ${{ secrets.PRODUCTION_URL }}
+          STAGING_URL: ${{ secrets.STAGING_URL }}
+          CLOUDFLARE_PAGES_PROJECT: ${{ secrets.CLOUDFLARE_PAGES_PROJECT }}
+        run: |
+          site_url=""
+          if [ "$DEPLOY_ENVIRONMENT" = "production" ]; then
+            site_url="$PRODUCTION_URL"
+            if [ -z "$site_url" ] && [ -n "$CLOUDFLARE_PAGES_PROJECT" ]; then
+              site_url="https://${CLOUDFLARE_PAGES_PROJECT}.pages.dev"
+            fi
+          elif [ "$DEPLOY_ENVIRONMENT" = "staging" ]; then
+            site_url="$STAGING_URL"
+            if [ -z "$site_url" ] && [ -n "$CLOUDFLARE_PAGES_PROJECT" ]; then
+              site_url="https://staging.${CLOUDFLARE_PAGES_PROJECT}.pages.dev"
+            fi
+          fi
+
+          if [ -z "$site_url" ]; then
+            echo "::notice::No deploy site URL is configured; build-time VITE_SITE_URL will use the local development fallback."
+          fi
+
+          echo "VITE_SITE_URL=$site_url" >> "$GITHUB_ENV"
+
       - name: Lint
         run: npm run lint
 

@@ -24,6 +24,7 @@ export default [
       globals: {
         ...globals.browser,
         __APP_RELEASE_METADATA__: 'readonly',
+        __SITE_URL__: 'readonly',
       },
     },
     rules: {

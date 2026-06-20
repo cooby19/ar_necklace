@@ -10,7 +10,7 @@
 - 款式與換色深連結使用 hash router，例如 `#n=crystal-cone-necklace&c.metal=citrine&c.gem=amethyst`；hash 不會送到 CDN 或 server，因此 Cloudflare Pages 只需要回應同一份 `index.html`，不需 rewrite 規則或額外路由設定。
 - 若需要重建歷史 GitHub Pages fallback，才使用 `VITE_BASE_PATH=/ar_necklace/ npm run build` 明確覆寫。
 - runtime 資產已透過 `import.meta.env.BASE_URL` 組出 `models/`、`thumbnails/` 與 MediaPipe vendor 路徑，並加上 release token query string。正式 Cloudflare Pages build 會解析為 `/models/...`、`/vendor/...`，大型 GLB/WASM/data 可搭配 Cloudflare edge cache。
-- 不硬編碼正式站 URL；遠端 smoke 使用 `SMOKE_BASE_URL`，workflow 使用 `PRODUCTION_URL` / `STAGING_URL` secrets 作為自訂網域 fallback。
+- 不硬編碼正式站 URL；canonical、OG、JSON-LD 與 Web Share URL 由 build-time `VITE_SITE_URL` 注入，GitHub Actions deploy workflow 會依 target 從 `PRODUCTION_URL` / `STAGING_URL` secrets 帶入。
 - GitHub Pages 不再是例行 production 發布目標；若保留既有 URL，定位為 demo/fallback 或停在穩定版本，避免對外文件同時出現兩個「正式站」。
 
 ## 環境規劃
@@ -137,11 +137,11 @@ ar-necklace-dist-${GITHUB_SHA}
 
 1. Resolve target：依 event 決定 `preview` / `staging` / `production`。
 2. Secret preflight：沒有 secrets 時 deploy jobs 會跳過，不假裝部署成功。
-3. Build deploy artifact：執行 lint、typecheck、unit、build、budget、synthetic smoke，並上傳 `dist/` artifact。
+3. Build deploy artifact：執行 lint、typecheck、unit、build、budget、synthetic smoke，並上傳 `dist/` artifact；production build 以 `PRODUCTION_URL` secret 設定 `VITE_SITE_URL`，未設定時 fallback 到 Cloudflare Pages project URL；staging build 以 `STAGING_URL` secret 設定 `VITE_SITE_URL`，未設定時 fallback 到 `staging` branch URL；preview build 若無穩定可預知 URL 則保留 Vite fallback。
 4. PR preview：用 Cloudflare Pages branch deploy `pr-<number>`。
 5. Staging：部署到 Cloudflare Pages `staging` branch，接著跑 smoke。
 6. Production：push 到 `master` / `main`、release event 或手動 target=`production` 時，只有 staging smoke 成功後才把同一份 artifact 部署到 Cloudflare Pages project 的 `production_branch`。
-7. Production smoke：使用 `PRODUCTION_URL` secret；若未設定則 fallback 到 `<project>.pages.dev`。
+7. Production smoke：使用 `PRODUCTION_URL` secret；若未設定則 fallback 到 `<project>.pages.dev`。注意 smoke URL 只決定遠端驗證目標，不會改變已經建好的 `dist/index.html`。
 
 需要設定的 GitHub Secrets：
 
@@ -160,7 +160,7 @@ STAGING_URL
 PRODUCTION_URL
 ```
 
-`STAGING_URL`、`PRODUCTION_URL` 用於自訂網域或 Wrangler output 無法解析 Pages URL 時的 smoke fallback；不應在程式碼中硬編碼正式站 URL。
+`STAGING_URL`、`PRODUCTION_URL` 用於 build-time `VITE_SITE_URL` 注入，也用於自訂網域或 Wrangler output 無法解析 Pages URL 時的 smoke fallback；不應在程式碼中硬編碼正式站 URL。若 production target 未設定 `PRODUCTION_URL`，artifact 會使用 `https://${CLOUDFLARE_PAGES_PROJECT}.pages.dev`；若 staging target 未設定 `STAGING_URL`，artifact 會使用 `https://staging.${CLOUDFLARE_PAGES_PROJECT}.pages.dev`。只有 Cloudflare Pages project secret 也缺漏時，才會保留 `vite.config.js` 的本機開發 fallback `http://localhost:5173/` 並輸出 notice。
 
 建議設定的 GitHub Environments：
 
@@ -177,6 +177,7 @@ Cloudflare Pages project 設定：
 - Build command / output directory：若使用 Direct Upload，不需要在 Cloudflare 端設定 build command；GitHub Actions 產出的 `dist/` 是唯一部署輸入。
 - Production base path：`/`。正式 build 不設定 `VITE_BASE_PATH`，避免 `/ar_necklace/` 這類 GitHub Pages 子路徑殘留。
 - 自訂網域：可在 Cloudflare Pages project 綁定正式網域；綁定後把該 URL 放入 `PRODUCTION_URL` 方便 smoke。
+- Environment variables：目前是 GitHub Actions build + Cloudflare Pages Direct Upload，`VITE_SITE_URL` 必須存在於 GitHub Actions build 環境。只有改成 Cloudflare Pages 端 build 時，Cloudflare Pages project 的 build env 才會影響產出的 HTML 與 runtime bundle。
 
 ## Release versioning
 
@@ -307,10 +308,11 @@ CDN 策略：
 - Open Graph 與 Twitter Card，暫用 `public/brand/lunera-logo.png` 作為分享圖片。
 - `public/site.webmanifest`，包含 `name`、`short_name`、description、`start_url`、`scope`、`display`、`theme_color`、`background_color`、`lang`、categories 與 icons。
 - JSON-LD `@graph`，包含 `Organization`、`WebSite` 與 `WebApplication`，描述線上 AR 項鍊試戴、免安裝、瀏覽器相機即時預覽與飾品展示 / 電商導購用途。
+- canonical、`og:url`、JSON-LD URL 與 runtime Web Share URL 都來自同一個 build-time `VITE_SITE_URL` / `__SITE_URL__` 注入值。
 
 正式 Cloudflare Pages production 發布前需完成：
 
-- 將 `index.html` 內 TODO 標註的 canonical、`og:url` 與 JSON-LD `url` 從相對 URL 換成正式 production URL 或自訂網域的絕對 URL。
+- 確認 GitHub Actions production build 可讀取 `PRODUCTION_URL` secret；若未設定，build-time `VITE_SITE_URL` 會 fallback 到 Cloudflare Pages project 的穩定 `pages.dev` URL。
 - 將暫用方形 logo 換成正式品牌素材；社群分享建議另備 1200x630 preview image，並同步更新 `og:image:width` / `og:image:height` / alt。
 - 用 production URL 檢查 `site.webmanifest`、`brand/lunera-logo.png`、`icons/lunera-icon-192.png`、`icons/lunera-icon-512.png`、`icons/apple-touch-icon.png` 沒有 404。
 - 用社群分享偵錯工具或瀏覽器檢查 production HTML 中的 title、description、OG、Twitter Card 與 JSON-LD 都讀得到最新內容。
