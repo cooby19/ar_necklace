@@ -1,0 +1,47 @@
+name: Update visual baselines
+
+# Manually-triggered helper: regenerates the Playwright visual-regression
+# baselines on Linux (matching the `visual` CI job) and commits them back to
+# the branch it runs on. Use after a change that intentionally alters the UI.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update-baselines:
+    name: Regenerate Playwright snapshots
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Update visual snapshots
+        run: npm run test:visual:update
+
+      - name: Commit updated baselines
+        run: |
+          if [ -z "$(git status --porcelain tests/visual)" ]; then
+            echo "No baseline changes to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tests/visual
+          git commit -m "test(visual): refresh Playwright baselines for gallery entry screen"
+          git push origin HEAD:${{ github.ref_name }}

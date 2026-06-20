@@ -105,4 +105,10 @@ export class AppShellView {
   setControlsCollapsed(isCollapsed) {
     this.elements.app.classList.toggle('is-controls-collapsed', isCollapsed);
   }
+
+  setRoute(route) {
+    const isGallery = route === 'gallery';
+    this.elements.app.classList.toggle('is-gallery-route', isGallery);
+    this.elements.app.classList.toggle('is-experience-route', !isGallery);
+  }
 }

@@ -33,7 +33,7 @@ describe('NECKLACES catalog', () => {
       },
     });
     expect(necklace?.url).toContain('models/necklace_2.draco.glb');
-    expect(necklace?.thumbnailUrl).toBeUndefined();
+    expect(necklace?.thumbnailUrl).toContain('thumbnails/crystal-cone-necklace.svg');
   });
 
   it('sets the crystal cone occluder to only match the GLB neck helper mesh', () => {

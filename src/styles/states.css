@@ -93,3 +93,8 @@
 .share-sheet[hidden] {
   display: none;
 }
+
+#app.is-gallery-route .experience-column,
+#app.is-gallery-route .controls {
+  visibility: hidden;
+}

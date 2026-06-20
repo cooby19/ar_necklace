@@ -2,6 +2,8 @@ export type CameraFacingMode = 'user' | 'environment';
 
 export type AppMode = 'showcase' | 'ar';
 
+export type AppRoute = 'gallery' | 'experience';
+
 export type ArSessionStatus =
   | 'showcase'
   | 'arIdle'
@@ -189,6 +191,7 @@ export type ColorSelectionByTarget = Record<string, string>;
 
 export interface AppStateSnapshot {
   mode: AppMode;
+  route: AppRoute;
   sessionStatus: ArSessionStatus;
   cameraStarted: boolean;
   cameraFacingMode: CameraFacingMode;

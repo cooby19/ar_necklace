@@ -1,10 +1,11 @@
-import { APP_MODES, AR_SESSION_STATES, isSelfieCamera } from '../app/AppState.js';
+import { APP_MODES, APP_ROUTES, AR_SESSION_STATES, isSelfieCamera } from '../app/AppState.js';
 import { AppShellView } from './AppShellView.js';
 import { CalibrationPanelView } from './CalibrationPanelView.js';
 import { CameraToolbarView } from './CameraToolbarView.js';
 import { ColorPanelView } from './ColorPanelView.js';
 import { DeveloperPanelView } from './DeveloperPanelView.js';
 import { createListenerRegistry, queryRequired } from './domHelpers.js';
+import { GalleryView } from './GalleryView.js';
 import { NecklacePanelView } from './NecklacePanelView.js';
 import { ShareSheetView } from './ShareSheetView.js';
 import { StatusPanelView } from './StatusPanelView.js';
@@ -16,6 +17,7 @@ export class UiRoot {
     this.appShellView = new AppShellView();
     this.cameraToolbarView = new CameraToolbarView({ appShell: this.appShellView });
     this.necklacePanelView = new NecklacePanelView({ necklaces });
+    this.galleryView = new GalleryView({ necklaces });
     this.colorPanelView = new ColorPanelView();
     this.calibrationPanelView = new CalibrationPanelView();
     this.shareSheetView = new ShareSheetView({
@@ -33,6 +35,7 @@ export class UiRoot {
       ...this.developerPanelView.elements,
       ...this.cameraToolbarView.elements,
       ...this.necklacePanelView.elements,
+      ...this.galleryView.elements,
       ...this.colorPanelView.elements,
       ...this.calibrationPanelView.elements,
       ...this.shareSheetView.elements,
@@ -48,6 +51,7 @@ export class UiRoot {
     this.appShellView.bind(handlers, listen);
     this.cameraToolbarView.bind(handlers, listen);
     this.necklacePanelView.bind(handlers, listen);
+    this.galleryView.bind(handlers, listen);
     this.colorPanelView.bind(handlers, listen);
     this.calibrationPanelView.bind(handlers, listen);
     this.shareSheetView.bind(handlers, listen, {
@@ -63,6 +67,10 @@ export class UiRoot {
     this.necklacePanelView.populate(selectedNecklaceId);
   }
 
+  populateGallery() {
+    this.galleryView.populate();
+  }
+
   populateColorSwatches(model) {
     this.colorPanelView.populate(model);
   }
@@ -70,6 +78,10 @@ export class UiRoot {
   syncFromState(state, meta = {}) {
     const changes = meta.changes ?? [];
     const shouldSync = (keys) => !changes.length || keys.some((key) => changes.includes(key));
+
+    if (shouldSync(['route'])) {
+      this.syncRouteUi(state);
+    }
 
     if (shouldSync(['mode', 'controlsCollapsed', 'activePanel', 'modelLoaded'])) {
       this.syncModeUi(state);
@@ -100,6 +112,11 @@ export class UiRoot {
     if (shouldSync(['mode', 'debugEnabled'])) {
       this.setDeveloperPanelVisible(state.mode === APP_MODES.AR && state.debugEnabled);
     }
+  }
+
+  syncRouteUi(state) {
+    this.appShellView.setRoute(state.route);
+    this.galleryView.setVisible(state.route === APP_ROUTES.GALLERY);
   }
 
   syncModeUi(state) {

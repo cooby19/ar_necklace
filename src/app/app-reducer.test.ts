@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { APP_MODES, AR_SESSION_STATES, CAMERA_FACING_MODES } from './AppState.js';
+import { APP_MODES, APP_ROUTES, AR_SESSION_STATES, CAMERA_FACING_MODES } from './AppState.js';
 import { reduceAppIntent } from './app-reducer';
 import { NECKLACES } from '../config/necklaces.js';
 import type { AppStateSnapshot } from '../types/domain';
@@ -120,6 +120,7 @@ describe('app reducer pure UI intents', () => {
 function createState(overrides: Partial<AppStateSnapshot> = {}): AppStateSnapshot {
   return {
     mode: APP_MODES.SHOWCASE,
+    route: APP_ROUTES.EXPERIENCE,
     sessionStatus: AR_SESSION_STATES.SHOWCASE,
     cameraStarted: false,
     cameraFacingMode: CAMERA_FACING_MODES.USER,

@@ -1,6 +1,7 @@
 // @ts-check
 
 /** @typedef {import('../types/domain').AppMode} AppMode */
+/** @typedef {import('../types/domain').AppRoute} AppRoute */
 /** @typedef {import('../types/domain').AppStateListener} AppStateListener */
 /** @typedef {import('../types/domain').AppStatePatch} AppStatePatch */
 /** @typedef {import('../types/domain').AppStateSnapshot} AppStateSnapshot */
@@ -27,6 +28,12 @@ export const CAMERA_FACING_MODES = {
 export const APP_MODES = {
   SHOWCASE: 'showcase',
   AR: 'ar',
+};
+
+/** @satisfies {{ readonly GALLERY: AppRoute, readonly EXPERIENCE: AppRoute }} */
+export const APP_ROUTES = {
+  GALLERY: 'gallery',
+  EXPERIENCE: 'experience',
 };
 
 /** @satisfies {Record<string, ArSessionStatus>} */
@@ -140,6 +147,7 @@ export class AppState {
     /** @type {AppStateSnapshot} */
     this.state = {
       mode: APP_MODES.SHOWCASE,
+      route: APP_ROUTES.GALLERY,
       sessionStatus: AR_SESSION_STATES.SHOWCASE,
       cameraStarted: false,
       cameraFacingMode: CAMERA_FACING_MODES.USER,

@@ -10,6 +10,7 @@
 @import './components/controls.css' layer(components);
 @import './components/bottom-sheet.css' layer(components);
 @import './components/product-card.css' layer(components);
+@import './components/gallery.css' layer(components);
 @import './components/color-swatch.css' layer(components);
 @import './components/calibration.css' layer(components);
 @import './components/share-sheet.css' layer(components);

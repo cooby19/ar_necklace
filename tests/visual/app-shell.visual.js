@@ -33,7 +33,8 @@ const SAMPLE_CAPTURE = `data:image/svg+xml,${encodeURIComponent(`
 `)}`;
 
 async function openStableApp(page) {
-  await page.goto('/');
+  // Deep link straight into the experience; the bare path now lands on the gallery.
+  await page.goto('/#n=default-necklace');
   await expect(page.locator('#app')).toBeVisible();
   await expect(page.locator('.stage')).toBeVisible();
   await page.locator('.necklace-card').first().waitFor({ state: 'attached' });
@@ -68,6 +69,21 @@ test('share sheet remains visually stable', async ({ page }) => {
   await expect(page.locator('.share-card')).toBeVisible();
 
   await expect(page).toHaveScreenshot('share-sheet.png', {
+    animations: 'disabled',
+    caret: 'hide',
+    fullPage: true,
+  });
+});
+
+test('gallery screen remains visually stable', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#galleryScreen')).toBeVisible();
+  await page.locator('.gallery-card').first().waitFor({ state: 'visible' });
+  await page.addStyleTag({ content: STABLE_MEDIA_CSS });
+  await page.evaluate(() => document.fonts?.ready ?? Promise.resolve());
+  await page.waitForTimeout(200);
+
+  await expect(page).toHaveScreenshot('gallery-screen.png', {
     animations: 'disabled',
     caret: 'hide',
     fullPage: true,

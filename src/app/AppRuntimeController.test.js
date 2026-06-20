@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { APP_MODES, createDefaultColorSelection } from './AppState.js';
+import { APP_MODES, APP_ROUTES, createDefaultColorSelection } from './AppState.js';
 import { AppRuntimeController } from './AppRuntimeController.js';
 import { RealtimeTrackingStore } from './RealtimeTrackingStore.js';
 import { NECKLACES } from '../config/necklaces.js';
@@ -282,6 +282,46 @@ describe('AppRuntimeController URL hydration', () => {
   });
 });
 
+describe('AppRuntimeController gallery routing', () => {
+  it('enters the experience route when booting from a deep link', async () => {
+    const controller = createAppRuntimeController({
+      hash: '#n=crystal-cone-necklace',
+      targetIds: ['gem'],
+    });
+
+    controller.init();
+    await flushPromises();
+
+    const hydrateCall = controller.appState.set.mock.calls.find((call) => call[1] === 'url-hydrate');
+    expect(hydrateCall[0]).toMatchObject({ route: APP_ROUTES.EXPERIENCE });
+  });
+
+  it('returns to the gallery route when the hash is cleared', async () => {
+    const controller = createAppRuntimeController({
+      stateOverrides: { route: APP_ROUTES.EXPERIENCE, selectedNecklace: NECKLACES[1], modelLoaded: true },
+      targetIds: ['gem'],
+    });
+
+    await controller.applyUrlState({ necklaceId: null, colorByTarget: {}, colorFallback: null });
+
+    const galleryCall = controller.appState.set.mock.calls.find((call) => call[1] === 'route-gallery');
+    expect(galleryCall?.[0]).toEqual({ route: APP_ROUTES.GALLERY });
+  });
+
+  it('leaves the gallery for a deep link to the already-selected necklace without reloading', async () => {
+    const controller = createAppRuntimeController({
+      stateOverrides: { route: APP_ROUTES.GALLERY, selectedNecklace: NECKLACES[1], modelLoaded: true },
+      targetIds: ['gem'],
+    });
+
+    await controller.applyUrlState({ necklaceId: 'crystal-cone-necklace', colorByTarget: {}, colorFallback: null });
+
+    expect(controller.modelCatalog.load).not.toHaveBeenCalled();
+    const experienceCall = controller.appState.set.mock.calls.find((call) => call[1] === 'route-experience');
+    expect(experienceCall?.[0]).toEqual({ route: APP_ROUTES.EXPERIENCE });
+  });
+});
+
 function createAppRuntimeController({ hash = '', targetIds = ['gem'], stateOverrides = {}, onSet, runtimeOverrides = {} } = {}) {
   window.location.hash = hash;
   let state = {
@@ -307,6 +347,7 @@ function createAppRuntimeController({ hash = '', targetIds = ['gem'], stateOverr
   const realtimeStore = new RealtimeTrackingStore({ now: () => 100 });
   const uiRoot = {
     populateNecklaceSelect: vi.fn(),
+    populateGallery: vi.fn(),
     populateColorSwatches: vi.fn(),
     syncFromState: vi.fn(),
     canSelectControlPanel: vi.fn(() => true),
