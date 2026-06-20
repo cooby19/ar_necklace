@@ -216,6 +216,13 @@ async function checkBrowserExperience(browserInstance) {
 
   await page.goto(baseUrl, { waitUntil: 'networkidle' });
   await waitForVisible(page, '#app');
+
+  // The app opens on the style gallery; tap a card to enter the showcase/AR experience.
+  await waitForVisible(page, '#galleryScreen');
+  await waitForVisible(page, '.gallery-card');
+  await page.locator('.gallery-card').first().click();
+  checks.push('gallery entry opens experience');
+
   await waitForVisible(page, '.stage');
   await page.waitForFunction(() => window.__AR_NECKLACE_RELEASE__?.version);
   await assertReleaseMetadataExposed(page);
